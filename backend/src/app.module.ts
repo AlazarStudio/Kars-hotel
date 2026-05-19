@@ -19,6 +19,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { TimelineModule } from './modules/timeline/timeline.module';
 import { ReservationsModule } from './modules/reservations/reservations.module';
 import { TenantModule } from './modules/tenant/tenant.module';
+import { SuperAdminModule } from './modules/super-admin/super-admin.module';
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { TenantModule } from './modules/tenant/tenant.module';
     TimelineModule,
     ReservationsModule,
     TenantModule,
+    SuperAdminModule,
   ],
   providers: [
     // Global guard — every controller is protected unless explicitly marked @Public().

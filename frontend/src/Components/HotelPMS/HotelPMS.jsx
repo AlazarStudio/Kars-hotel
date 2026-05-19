@@ -12,6 +12,7 @@ import Revenue from './components/Revenue/Revenue';
 import Reports from './components/Reports/Reports';
 import Settings from './components/Settings/Settings';
 import { useTenantSettings } from '../../hooks/api/useTenantSettings';
+import ImpersonationBanner from '../AdminPanel/ImpersonationBanner';
 
 const SECTIONS = ['dashboard', 'timeline', 'bookings', 'rooms', 'housekeeping', 'tariffs', 'revenue', 'reports', 'settings'];
 
@@ -51,9 +52,12 @@ function HotelPMS() {
   return (
     <div className={classes.root}>
       <Sidebar hotel={hotel} />
-      <main className={classes.content}>
-        {renderContent()}
-      </main>
+      <div className={classes.body}>
+        <ImpersonationBanner />
+        <main className={classes.content}>
+          {renderContent()}
+        </main>
+      </div>
     </div>
   );
 }

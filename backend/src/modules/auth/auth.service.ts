@@ -36,6 +36,7 @@ export interface AuthenticatedUser {
   fullName: string;
   roleCode: string;
   permissions: string[];
+  isSuperAdmin?: boolean;
 }
 
 @Injectable()
@@ -50,7 +51,7 @@ export class AuthService implements OnModuleInit {
 
   // ─── Lifecycle ──────────────────────────────────────────────────────────────
 
-  /** Seed the global Permission catalogue once on startup. */
+  /** Seed the global Permission catalogue + platform admin account once on startup. */
   async onModuleInit(): Promise<void> {
     let inserted = 0;
     for (const perm of SYSTEM_PERMISSIONS) {
@@ -62,6 +63,7 @@ export class AuthService implements OnModuleInit {
       if (result) inserted += 1;
     }
     this.logger.log(`Synced ${inserted}/${SYSTEM_PERMISSIONS.length} system permissions`);
+    await this.seedPlatformAdmin();
   }
 
   // ─── Public API ─────────────────────────────────────────────────────────────
@@ -198,12 +200,15 @@ export class AuthService implements OnModuleInit {
 
     const permissions = user.role.rolePermissions.map((rp) => rp.permission.code);
 
+    const isSuperAdmin = (user.role.code as string) === 'SUPER_ADMIN';
+
     const tokens = await this.issueTokens({
       userId: user.id,
       tenantId: user.tenant.id,
       email: user.email,
       roleCode: user.role.code,
       permissions,
+      isSuperAdmin,
       ip,
       userAgent,
     });
@@ -216,6 +221,7 @@ export class AuthService implements OnModuleInit {
         fullName: user.fullName,
         roleCode: user.role.code,
         permissions,
+        isSuperAdmin,
       },
       tokens,
     };
@@ -259,6 +265,7 @@ export class AuthService implements OnModuleInit {
     });
 
     const permissions = tokenRow.user.role.rolePermissions.map((rp) => rp.permission.code);
+    const isSuperAdmin = (tokenRow.user.role.code as string) === 'SUPER_ADMIN';
 
     return this.issueTokens({
       userId: tokenRow.user.id,
@@ -266,6 +273,7 @@ export class AuthService implements OnModuleInit {
       email: tokenRow.user.email,
       roleCode: tokenRow.user.role.code,
       permissions,
+      isSuperAdmin,
       ip,
       userAgent,
     });
@@ -297,10 +305,110 @@ export class AuthService implements OnModuleInit {
       fullName: user.fullName,
       roleCode: user.role.code,
       permissions: user.role.rolePermissions.map((rp) => rp.permission.code),
+      isSuperAdmin: (user.role.code as string) === 'SUPER_ADMIN',
     };
   }
 
+  /**
+   * Issue a short-lived impersonation access token (no refresh token) that
+   * gives the caller OWNER-level access to a specific tenant. Only callable
+   * by super-admin users. Returns just the access token string.
+   */
+  async issueImpersonationToken(
+    targetTenantId: string,
+    adminUserId: string,
+  ): Promise<{ accessToken: string; accessTtlSeconds: number }> {
+    const tenant = await this.prisma.admin.tenant.findUnique({
+      where: { id: targetTenantId },
+      select: { id: true, isActive: true },
+    });
+    if (!tenant || !tenant.isActive) {
+      throw new ForbiddenException('Tenant not found or inactive');
+    }
+
+    // Find the OWNER user in the target tenant.
+    const owner = await this.prisma.admin.user.findFirst({
+      where: { tenantId: targetTenantId, isActive: true },
+      include: {
+        role: { include: { rolePermissions: { include: { permission: true } } } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!owner) {
+      throw new ForbiddenException('No active user found in target tenant');
+    }
+
+    const permissions = owner.role.rolePermissions.map((rp) => rp.permission.code);
+
+    // Issue a 1-hour access token for the owner user, tagged with the admin's userId.
+    const accessPayload: JwtAccessPayload = {
+      sub: owner.id,
+      tid: targetTenantId,
+      role: owner.role.code,
+      perms: permissions,
+      email: owner.email,
+      imp: adminUserId,
+    };
+
+    const accessTtlSeconds = 3600; // 1 hour
+    const accessToken = await this.jwt.signAsync(accessPayload, {
+      secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
+      expiresIn: accessTtlSeconds,
+    });
+
+    return { accessToken, accessTtlSeconds };
+  }
+
   // ─── Internals ──────────────────────────────────────────────────────────────
+
+  /**
+   * Seed the platform tenant + SUPER_ADMIN user from env vars.
+   * Safe to re-run on every startup (upsert-based, no duplicates).
+   */
+  private async seedPlatformAdmin(): Promise<void> {
+    const email = this.config.get<string>('SUPER_ADMIN_EMAIL');
+    const password = this.config.get<string>('SUPER_ADMIN_PASSWORD');
+    if (!email || !password) {
+      this.logger.warn('SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD not set — skipping platform admin seed');
+      return;
+    }
+
+    // Upsert platform tenant.
+    const tenant = await this.prisma.admin.tenant.upsert({
+      where: { slug: 'platform' },
+      create: { slug: 'platform', name: 'Platform Admin', timezone: 'UTC', currency: 'USD', plan: 'PREMIUM' },
+      update: {},
+    });
+
+    // Upsert SUPER_ADMIN role in the platform tenant.
+    const role = await this.prisma.admin.role.upsert({
+      where: { tenantId_code: { tenantId: tenant.id, code: 'SUPER_ADMIN' } },
+      create: { tenantId: tenant.id, code: 'SUPER_ADMIN', name: 'Super Admin', isSystem: true },
+      update: {},
+    });
+
+    // Check if the super-admin user already exists.
+    const existing = await this.prisma.admin.user.findUnique({
+      where: { email: email.toLowerCase() },
+      select: { id: true },
+    });
+    if (existing) {
+      this.logger.log('Platform super-admin already exists — no changes');
+      return;
+    }
+
+    const passwordHash = await this.hashPassword(password);
+    await this.prisma.admin.user.create({
+      data: {
+        tenantId: tenant.id,
+        email: email.toLowerCase(),
+        passwordHash,
+        fullName: 'Super Admin',
+        roleId: role.id,
+      },
+    });
+    this.logger.log(`Platform super-admin seeded: ${email}`);
+  }
 
   /**
    * Pick a slug that is not yet taken. If `seed` already passes our format,
@@ -331,6 +439,8 @@ export class AuthService implements OnModuleInit {
     email: string;
     roleCode: string;
     permissions: string[];
+    isSuperAdmin?: boolean;
+    impersonatedBy?: string;
     ip?: string;
     userAgent?: string;
   }): Promise<AuthTokens> {
@@ -343,6 +453,8 @@ export class AuthService implements OnModuleInit {
       role: args.roleCode,
       perms: args.permissions,
       email: args.email,
+      ...(args.isSuperAdmin ? { isa: true } : {}),
+      ...(args.impersonatedBy ? { imp: args.impersonatedBy } : {}),
     };
 
     const accessToken = await this.jwt.signAsync(accessPayload, {

@@ -2,28 +2,33 @@ import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
 
-// In-memory access token storage. Refresh token lives in an httpOnly cookie
-// managed by the backend, so the SPA never sees it directly.
 let accessToken = null;
 const accessListeners = new Set();
+
+// Flag: while impersonating, the 401 interceptor must NOT auto-refresh.
+// Auto-refresh during impersonation rotates the admin's refresh token, making
+// exit-impersonation impossible (rotated token → 401 → logout).
+let impersonating = false;
 
 export function setAccessToken(token) {
   accessToken = token;
   for (const cb of accessListeners) cb(token);
 }
 
-export function getAccessToken() {
-  return accessToken;
-}
+export function getAccessToken() { return accessToken; }
 
 export function onAccessTokenChange(cb) {
   accessListeners.add(cb);
   return () => accessListeners.delete(cb);
 }
 
+export function setImpersonatingFlag(val) {
+  impersonating = val;
+}
+
 export const api = axios.create({
   baseURL: API_BASE_URL,
-  withCredentials: true, // send/receive httpOnly refresh cookie
+  withCredentials: true,
 });
 
 // ─── Request: attach Bearer ────────────────────────────────────────────────
@@ -35,7 +40,7 @@ api.interceptors.request.use((cfg) => {
   return cfg;
 });
 
-// ─── Response: on 401 try a single refresh + retry, otherwise pass-through ─
+// ─── Response: on 401 try ONE refresh+retry — but never while impersonating ─
 let refreshInFlight = null;
 
 async function performRefresh() {
@@ -50,9 +55,7 @@ async function performRefresh() {
       setAccessToken(null);
       throw err;
     })
-    .finally(() => {
-      refreshInFlight = null;
-    });
+    .finally(() => { refreshInFlight = null; });
   return refreshInFlight;
 }
 
@@ -61,12 +64,10 @@ api.interceptors.response.use(
   async (err) => {
     const original = err.config;
     if (!original || original._retried) return Promise.reject(err);
-
     const url = original.url || '';
     const status = err.response?.status;
 
-    // Avoid loops: don't refresh on auth endpoints themselves.
-    if (status === 401 && !url.includes('/auth/')) {
+    if (status === 401 && !url.includes('/auth/') && !impersonating) {
       try {
         const newToken = await performRefresh();
         original._retried = true;

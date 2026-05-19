@@ -12,6 +12,9 @@ export interface AuthenticatedRequestUser {
   email: string;
   roleCode: string;
   permissions: string[];
+  isSuperAdmin: boolean;
+  /** Set when this token was issued via impersonation (stores the admin's userId). */
+  impersonatedBy?: string;
 }
 
 @Injectable()
@@ -36,6 +39,8 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       email: payload.email,
       roleCode: payload.role,
       permissions: payload.perms ?? [],
+      isSuperAdmin: payload.isa === true,
+      impersonatedBy: payload.imp,
     };
   }
 }

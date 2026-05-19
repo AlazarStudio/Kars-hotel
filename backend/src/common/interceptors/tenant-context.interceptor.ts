@@ -29,6 +29,7 @@ export class TenantContextInterceptor implements NestInterceptor {
         userId: user.userId,
         roleCode: user.roleCode,
         permissions: user.permissions,
+        isSuperAdmin: user.isSuperAdmin,
       },
       () => {
         out = next.handle();

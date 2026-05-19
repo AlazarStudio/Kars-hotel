@@ -12,6 +12,7 @@ export interface RequestContext {
   userId: string;
   roleCode: string;
   permissions: string[];
+  isSuperAdmin?: boolean;
 }
 
 class TenantContextHolder {

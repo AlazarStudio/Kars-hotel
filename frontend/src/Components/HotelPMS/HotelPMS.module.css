@@ -5,6 +5,13 @@
   background: #F5F7FA;
 }
 
+.body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 .content {
   flex: 1;
   overflow: hidden;

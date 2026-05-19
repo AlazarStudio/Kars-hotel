@@ -84,6 +84,7 @@ enum RoleCode {
   ACCOUNTANT
   CHANNEL_MANAGER
   READ_ONLY
+  SUPER_ADMIN
 }
 
 /// Per-tenant role. Seven default roles are seeded at tenant registration.
