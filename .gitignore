@@ -22,6 +22,7 @@ frontend-dev.log
 !frontend/.env.example
 
 # OS / Editor
+*.bak
 .DS_Store
 Thumbs.db
 .idea/
