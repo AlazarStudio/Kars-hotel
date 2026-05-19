@@ -7,6 +7,7 @@ const EMPTY = {
   roomTypeId: '',
   number: '',
   floor: 1,
+  capacity: 1,
   bedType: 'DOUBLE',
   view: 'NONE',
   status: 'CLEAN',
@@ -38,6 +39,7 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
               roomTypeId: editing.roomTypeId,
               number: editing.number,
               floor: editing.floor,
+              capacity: editing.capacity ?? 1,
               bedType: editing.bedType,
               view: editing.view,
               status: editing.status,
@@ -74,6 +76,7 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
         roomTypeId: values.roomTypeId,
         number: values.number.trim(),
         floor: Number(values.floor),
+        capacity: Number(values.capacity) || 1,
         bedType: values.bedType,
         view: values.view,
         status: values.status,
@@ -149,6 +152,17 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
             />
           </div>
           <div className={formClasses.field}>
+            <label className={formClasses.label}>Мест</label>
+            <input
+              className={formClasses.input}
+              type="number"
+              min={1}
+              max={10}
+              value={values.capacity}
+              onChange={(e) => set('capacity', e.target.value)}
+            />
+          </div>
+          <div className={formClasses.field}>
             <label className={formClasses.label}>Кровать</label>
             <select
               className={formClasses.select}
@@ -160,6 +174,9 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
               ))}
             </select>
           </div>
+        </div>
+
+        <div className={formClasses.row}>
           <div className={formClasses.field}>
             <label className={formClasses.label}>Вид</label>
             <select

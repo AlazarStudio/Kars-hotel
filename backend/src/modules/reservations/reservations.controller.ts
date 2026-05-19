@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ReservationsService } from './reservations.service';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
+import { SwapReservationsDto } from './dto/swap-reservations.dto';
 
 @ApiBearerAuth()
 @ApiTags('Reservations')
@@ -36,5 +37,15 @@ export class ReservationsController {
   })
   update(@Param('id') id: string, @Body() dto: UpdateReservationDto) {
     return this.reservationsService.update(id, dto);
+  }
+
+  @Post('swap')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Swap place numbers between two reservations',
+    description: 'Atomically swaps place_number of two reservations in the same room.',
+  })
+  swap(@Body() dto: SwapReservationsDto) {
+    return this.reservationsService.swap(dto);
   }
 }

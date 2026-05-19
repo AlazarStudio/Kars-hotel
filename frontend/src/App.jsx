@@ -4,7 +4,7 @@ import Login from './Components/Auth/Login';
 import Register from './Components/Auth/Register';
 import ProtectedRoute from './auth/ProtectedRoute';
 
-const SECTIONS = ['dashboard', 'timeline', 'bookings', 'rooms', 'housekeeping', 'tariffs', 'reports'];
+const SECTIONS = ['dashboard', 'timeline', 'bookings', 'rooms', 'housekeeping', 'tariffs', 'revenue', 'reports', 'settings'];
 
 const ProtectedPMS = () => (
   <ProtectedRoute>

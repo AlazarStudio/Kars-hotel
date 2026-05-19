@@ -8,12 +8,12 @@ import classes from './Timeline.module.css';
 import { DAY_WIDTH, LEFT_PANEL_WIDTH, BOOKING_STATUS, HK_STATUS } from '../../constants';
 import BookingForm from './BookingForm';
 import { useTimeline } from '../../../../hooks/useTimeline';
-import { createReservation, updateReservation } from '../../../../api/reservations';
+import { createReservation, updateReservation, swapReservations } from '../../../../api/reservations';
 
 const TODAY = new Date();
 TODAY.setHours(0, 0, 0, 0);
 
-function Timeline() {
+function Timeline({ multiPlaceEnabled = true }) {
   const [viewStart, setViewStart] = useState(subDays(TODAY, 7));
   const [daysCount, setDaysCount] = useState(30);
 
@@ -26,7 +26,25 @@ function Timeline() {
 
   useEffect(() => {
     if (apiData?.bookings) setBookings(apiData.bookings);
-  }, [apiData]);
+    if (apiData?.rooms && !initialExpandDone.current) {
+      initialExpandDone.current = true;
+      if (multiPlaceEnabled) {
+        const multiIds = apiData.rooms.filter(r => (r.capacity ?? 1) > 1).map(r => r.id);
+        if (multiIds.length > 0) setExpandedRooms(new Set(multiIds));
+      }
+    }
+  }, [apiData, multiPlaceEnabled]);
+
+  const [expandedRooms, setExpandedRooms] = useState(new Set());
+  const initialExpandDone = useRef(false);
+  const toggleExpand = useCallback((roomId) => {
+    setExpandedRooms(prev => {
+      const next = new Set(prev);
+      if (next.has(roomId)) next.delete(roomId); else next.add(roomId);
+      return next;
+    });
+  }, []);
+
 
   const [search, setSearch] = useState('');
   const [tooltip, setTooltip] = useState(null);
@@ -53,6 +71,8 @@ function Timeline() {
 
   const containerRef = useRef(null);
   const hoveredRoomRef = useRef(null);
+  // Tracks { roomId, placeNumber } when cursor is over an expanded place sub-row, else null
+  const hoveredPlaceRef = useRef(null);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -80,17 +100,23 @@ function Timeline() {
 
   const availByDay = useMemo(() => {
     return days.map(day => {
-      const occ = new Set(
-        bookings.filter(b => {
-          if (b.status === 'cancelled' || b.status === 'no_show') return false;
-          const ci = parseISO(b.checkIn);
-          const co = parseISO(b.checkOut);
-          return day >= ci && day < co;
-        }).map(b => b.roomId)
-      );
-      return rooms.length - occ.size;
+      let free = 0;
+      for (const room of rooms) {
+        const effectiveCap = multiPlaceEnabled ? (room.capacity ?? 1) : 1;
+        const occupiedPlaces = new Set(
+          bookings.filter(b => {
+            if (b.roomId !== room.id) return false;
+            if (b.status === 'cancelled' || b.status === 'no_show') return false;
+            const ci = parseISO(b.checkIn);
+            const co = parseISO(b.checkOut);
+            return day >= ci && day < co;
+          }).map(b => multiPlaceEnabled ? b.placeNumber : 1)
+        );
+        free += effectiveCap - occupiedPlaces.size;
+      }
+      return free;
     });
-  }, [days, bookings, rooms]);
+  }, [days, bookings, rooms, multiPlaceEnabled]);
 
   const visibleBookings = useMemo(() => {
     const end = addDays(viewStart, daysCount);
@@ -177,7 +203,12 @@ function Timeline() {
 
     if (drag.type === 'move') {
       const delta = curDayIndex - drag.startDayIndex;
-      if (delta !== 0 || (targetRoomId && targetRoomId !== drag.origRoomId)) {
+      const hoveredPlace = hoveredPlaceRef.current;
+      const targetPlace = hoveredPlace?.roomId === (targetRoomId || drag.origRoomId)
+        ? hoveredPlace.placeNumber
+        : drag.booking.placeNumber;
+
+      if (delta !== 0 || (targetRoomId && targetRoomId !== drag.origRoomId) || targetPlace !== drag.booking.placeNumber) {
         dragMovedRef.current = true;
       }
       const newCI = format(addDays(parseISO(drag.origCheckIn), delta), 'yyyy-MM-dd');
@@ -187,6 +218,7 @@ function Timeline() {
         checkIn: newCI,
         checkOut: newCO,
         roomId: targetRoomId || drag.origRoomId,
+        placeNumber: targetPlace,
       }));
       return;
     }
@@ -245,21 +277,65 @@ function Timeline() {
     const newCheckIn  = drag.type === 'resize-right' ? drag.origCheckIn : ghost.checkIn;
     const newCheckOut = drag.type === 'resize-left'  ? drag.origCheckOut : ghost.checkOut;
     const newRoomId   = drag.type === 'move' ? targetRoomId : drag.origRoomId;
+    const newPlaceNumber = drag.type === 'move' ? (ghost.placeNumber ?? drag.booking.placeNumber) : drag.booking.placeNumber;
 
-    // If nothing actually changed — no confirmation needed
+    // Check if the target place is occupied by another booking
+    let effectivePlaceNumber = newPlaceNumber;
+    let swapBooking = null;
+
+    if (drag.type === 'move') {
+      const targetRoom = rooms.find(r => r.id === newRoomId);
+      const capacity   = targetRoom?.capacity ?? 1;
+
+      // Bookings that occupy any place in the target room for the dragged date range
+      const overlapping = bookings.filter(b => {
+        if (b.id === drag.booking.id) return false;
+        if (b.roomId !== newRoomId) return false;
+        if (b.status === 'cancelled' || b.status === 'no_show') return false;
+        return b.checkIn < newCheckOut && b.checkOut > newCheckIn;
+      });
+
+      const targetOccupant = overlapping.find(b => b.placeNumber === newPlaceNumber) ?? null;
+
+      if (targetOccupant) {
+        // Target place is taken — look for a free place in this room.
+        // When staying in the same room, skip the booking's own current place
+        // (it's vacating it, so redirecting back would be a no-op).
+        const takenPlaces = new Set(overlapping.map(b => b.placeNumber));
+        let freePlace = null;
+        for (let p = 1; p <= capacity; p++) {
+          const isOwnPlace = newRoomId === drag.origRoomId && p === drag.booking.placeNumber;
+          if (!takenPlaces.has(p) && !isOwnPlace) { freePlace = p; break; }
+        }
+
+        if (freePlace !== null) {
+          // Silently redirect to the free place — no swap needed
+          effectivePlaceNumber = freePlace;
+        } else if (newRoomId === drag.origRoomId && newPlaceNumber !== drag.booking.placeNumber) {
+          // Same room, all places occupied — offer a swap
+          swapBooking = targetOccupant;
+        }
+        // else: different room, all places occupied → backend will reject with 409
+      }
+    }
+
+    // If nothing actually changed after place-conflict resolution — skip dialog
     const unchanged =
-      newCheckIn  === drag.origCheckIn &&
-      newCheckOut === drag.origCheckOut &&
-      newRoomId   === drag.origRoomId;
+      newCheckIn           === drag.origCheckIn  &&
+      newCheckOut          === drag.origCheckOut &&
+      newRoomId            === drag.origRoomId   &&
+      effectivePlaceNumber === drag.booking.placeNumber;
 
     if (unchanged) return;
 
-    // Show confirmation dialog (booking stays at original position)
+    // Show confirmation dialog (booking stays at original position until confirmed)
     setPendingDrag({
       booking: drag.booking,
       newCheckIn,
       newCheckOut,
       newRoomId,
+      newPlaceNumber: effectivePlaceNumber,
+      swapBooking,
       type: drag.type,
     });
   }, [ghostBooking, dayToDate]);
@@ -281,12 +357,20 @@ function Timeline() {
     setDragSaving(true);
     setDragError(null);
     try {
-      await updateReservation(pendingDrag.booking.id, {
-        version:  pendingDrag.booking.version,
-        roomId:   pendingDrag.newRoomId   !== pendingDrag.booking.roomId   ? pendingDrag.newRoomId   : undefined,
-        checkIn:  pendingDrag.newCheckIn  !== pendingDrag.booking.checkIn  ? pendingDrag.newCheckIn  : undefined,
-        checkOut: pendingDrag.newCheckOut !== pendingDrag.booking.checkOut ? pendingDrag.newCheckOut : undefined,
-      });
+      const { booking, newRoomId, newCheckIn, newCheckOut, newPlaceNumber, swapBooking } = pendingDrag;
+
+      if (swapBooking) {
+        // Atomic place swap
+        await swapReservations(booking.id, booking.version, swapBooking.id, swapBooking.version);
+      } else {
+        await updateReservation(booking.id, {
+          version:     booking.version,
+          roomId:      newRoomId      !== booking.roomId      ? newRoomId      : undefined,
+          checkIn:     newCheckIn     !== booking.checkIn     ? newCheckIn     : undefined,
+          checkOut:    newCheckOut    !== booking.checkOut    ? newCheckOut    : undefined,
+          placeNumber: newPlaceNumber !== booking.placeNumber ? newPlaceNumber : undefined,
+        });
+      }
       await reload();
       setPendingDrag(null);
     } catch (err) {
@@ -385,7 +469,7 @@ function Timeline() {
   const isToday   = (date) => isSameDay(date, TODAY);
 
   // ── Render booking block ──────────────────────────────────────
-  const renderBooking = useCallback((b, isGhost = false) => {
+  const renderBooking = useCallback((b, isGhost = false, topOverride = null, heightOverride = null, hideText = false) => {
     const dw = dayWidthRef.current;
     const rawLeft  = differenceInDays(parseISO(b.checkIn),  viewStart) * dw;
     const rawRight = differenceInDays(parseISO(b.checkOut), viewStart) * dw;
@@ -406,7 +490,11 @@ function Timeline() {
       <div
         key={isGhost ? `ghost-${b.id}` : b.id}
         className={`${classes.bookingBlock} ${isBeingDragged ? classes.isDragging : ''} ${isGhost ? classes.isGhost : ''}`}
-        style={{ left, width, background: cfg.color }}
+        style={{
+          left, width, background: cfg.color,
+          ...(topOverride !== null ? { top: topOverride } : {}),
+          ...(heightOverride !== null ? { height: heightOverride } : {}),
+        }}
         onMouseDown={!isGhost ? (e) => handleBookingMouseDown(e, b, 'move') : undefined}
         onClick={!isGhost ? (e) => { e.stopPropagation(); openEditForm(b); } : undefined}
         onMouseEnter={!isGhost ? (e) => {
@@ -423,12 +511,14 @@ function Timeline() {
           className={`${classes.resizeHandle} ${classes.resizeHandleLeft}`}
           onMouseDown={(e) => { e.stopPropagation(); handleBookingMouseDown(e, b, 'resize-left'); }}
         />
-        <div className={classes.bookingInner}>
-          <div className={classes.bookingText}>
-            <div className={classes.bookingGuestName}>{b.guestName.split(' ')[0]} {b.guestName.split(' ')[1]?.[0]}.</div>
-            <div className={classes.bookingNights}>{nights} н.</div>
+        {!hideText && (
+          <div className={classes.bookingInner}>
+            <div className={classes.bookingText}>
+              <div className={classes.bookingGuestName}>{b.guestName.split(' ')[0]} {b.guestName.split(' ')[1]?.[0]}.</div>
+              <div className={classes.bookingNights}>{nights} н.</div>
+            </div>
           </div>
-        </div>
+        )}
         <div
           className={`${classes.resizeHandle} ${classes.resizeHandleRight}`}
           onMouseDown={(e) => { e.stopPropagation(); handleBookingMouseDown(e, b, 'resize-right'); }}
@@ -567,7 +657,8 @@ function Timeline() {
 
           {/* Category groups */}
           {categories.map(cat => {
-            const catRooms = rooms.filter(r => r.categoryId === cat.id);
+            const catRooms = rooms.filter(r => r.categoryId === cat.id)
+              .slice().sort((a, b) => (a.capacity ?? 1) - (b.capacity ?? 1));
             return (
               <div key={cat.id} className={classes.categoryGroup}>
                 <div className={classes.categoryHeader} style={{ width: gridWidth }}>
@@ -585,49 +676,112 @@ function Timeline() {
                 {catRooms.map(room => {
                   const roomBookings = visibleBookings.filter(b => b.roomId === room.id);
                   const hkCfg = HK_STATUS[room.hk] || HK_STATUS.clean;
+                  const cap = room.capacity ?? 1;
+                  const isMulti = multiPlaceEnabled && cap > 1;
+                  const isExpanded = isMulti && expandedRooms.has(room.id);
+
+                  // Collapsed multi-place: stack bookings vertically by place number
+                  const placeH = Math.floor((46 - (cap - 1) * 2) / cap);
+                  const topForPlace = (placeN) => 3 + (placeN - 1) * (placeH + 2);
+
+                  const renderCells = (targetRoomId) => days.map((day, di) => (
+                    <div
+                      key={di}
+                      className={`${classes.gridCell} ${isWeekend(day) ? classes.isWeekend : ''} ${isToday(day) ? classes.isToday : ''}`}
+                      style={{ width: dayWidth }}
+                      onMouseDown={(e) => handleGridMouseDown(e, targetRoomId, di)}
+                    />
+                  ));
 
                   return (
-                    <div
-                      key={room.id}
-                      className={classes.roomRow}
-                      style={{ width: gridWidth }}
-                      onMouseEnter={() => { hoveredRoomRef.current = room.id; }}
-                    >
-                      <div className={classes.roomLabel}>
-                        <div className={classes.roomNumber}>№{room.number}</div>
-                        <div className={classes.roomCategory}>{cat.name}</div>
-                        <div
-                          className={classes.hkBadge}
-                          style={{ background: hkCfg.bg, color: hkCfg.color }}
-                        >
-                          {hkCfg.label}
+                    <React.Fragment key={room.id}>
+                      {/* ── Main room row ── */}
+                      <div
+                        className={`${classes.roomRow} ${isExpanded ? classes.roomRowExpanded : ''}`}
+                        style={{ width: gridWidth }}
+                        onMouseEnter={() => { hoveredRoomRef.current = room.id; hoveredPlaceRef.current = null; }}
+                      >
+                        <div className={classes.roomLabel}>
+                          {isMulti && (
+                            <button
+                              className={classes.expandBtn}
+                              onClick={() => toggleExpand(room.id)}
+                              title={isExpanded ? 'Свернуть' : 'Развернуть места'}
+                            >
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                {isExpanded
+                                  ? <polyline points="18 15 12 9 6 15" />
+                                  : <polyline points="6 9 12 15 18 9" />}
+                              </svg>
+                            </button>
+                          )}
+                          <div className={classes.roomNumber}>№{room.number}</div>
+                          <div className={classes.roomCategory}>{cat.name}</div>
+                          {isMulti && (
+                            <span className={classes.capacityBadge}>{cap}м</span>
+                          )}
+                          <div className={classes.hkDotWrap}>
+                            <div className={classes.hkDot} style={{ background: hkCfg.color }} />
+                            <div className={classes.hkDotTooltip}>{hkCfg.label}</div>
+                          </div>
                         </div>
-                      </div>
 
-                      <div className={classes.roomCells}>
-                        {days.map((day, di) => (
-                          <div
-                            key={di}
-                            className={`${classes.gridCell} ${isWeekend(day) ? classes.isWeekend : ''} ${isToday(day) ? classes.isToday : ''}`}
-                            style={{ width: dayWidth }}
-                            onMouseDown={(e) => handleGridMouseDown(e, room.id, di)}
-                          />
-                        ))}
+                        {!isExpanded ? (
+                          <div className={classes.roomCells}>
+                            {renderCells(room.id)}
 
-                        {roomBookings.map(b => renderBooking(b))}
+                            {roomBookings.map(b => isMulti
+                              ? renderBooking(b, false, topForPlace(b.placeNumber), placeH, true)
+                              : renderBooking(b)
+                            )}
 
-                        {ghostBooking && ghostBooking.roomId === room.id && dragBookingId &&
-                          renderBooking({ ...ghostBooking, id: ghostBooking.id }, true)
-                        }
+                            {ghostBooking && ghostBooking.roomId === room.id && dragBookingId &&
+                              renderBooking({ ...ghostBooking, id: ghostBooking.id }, true)
+                            }
 
-                        {selection && selection.roomId === room.id && (
-                          <div
-                            className={classes.selectionRect}
-                            style={{ left: selection.left, width: selection.width }}
-                          />
+                            {selection && selection.roomId === room.id && (
+                              <div className={classes.selectionRect} style={{ left: selection.left, width: selection.width }} />
+                            )}
+                          </div>
+                        ) : (
+                          /* Expanded header — just background cells, no interactions */
+                          <div className={classes.roomCells}>
+                            {days.map((_, di) => (
+                              <div key={di} className={classes.gridCellHeader} style={{ width: dayWidth }} />
+                            ))}
+                          </div>
                         )}
                       </div>
-                    </div>
+
+                      {/* ── Place sub-rows (expanded only) ── */}
+                      {isExpanded && Array.from({ length: cap }, (_, i) => i + 1).map(place => {
+                        const placeBookings = roomBookings.filter(b => b.placeNumber === place);
+                        return (
+                          <div
+                            key={place}
+                            className={classes.placeRow}
+                            style={{ width: gridWidth }}
+                            onMouseEnter={() => { hoveredRoomRef.current = room.id; hoveredPlaceRef.current = { roomId: room.id, placeNumber: place }; }}
+                          >
+                            <div className={classes.placeLabel}>Место {place}</div>
+                            <div className={classes.roomCells}>
+                              {renderCells(room.id)}
+
+                              {placeBookings.map(b => renderBooking(b))}
+
+                              {ghostBooking && ghostBooking.roomId === room.id &&
+                               ghostBooking.placeNumber === place && dragBookingId &&
+                                renderBooking({ ...ghostBooking, id: ghostBooking.id }, true)
+                              }
+
+                              {selection && selection.roomId === room.id && (
+                                <div className={classes.selectionRect} style={{ left: selection.left, width: selection.width }} />
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </React.Fragment>
                   );
                 })}
               </div>
@@ -638,7 +792,7 @@ function Timeline() {
 
       {/* Tooltip */}
       {tooltip && !isDragging && (
-        <Tooltip booking={tooltip.booking} x={tooltip.x} y={tooltip.y} rooms={rooms} />
+        <Tooltip booking={tooltip.booking} x={tooltip.x} y={tooltip.y} rooms={rooms} multiPlaceEnabled={multiPlaceEnabled} />
       )}
 
       {/* Drag confirmation dialog */}
@@ -673,50 +827,91 @@ function Timeline() {
 // ── Drag confirmation dialog ──────────────────────────────────────────────────
 
 function DragConfirmDialog({ pending, rooms, saving, error, onConfirm, onCancel }) {
-  const { booking, newCheckIn, newCheckOut, newRoomId, type } = pending;
+  const { booking, newCheckIn, newCheckOut, newRoomId, newPlaceNumber, swapBooking } = pending;
 
   const oldRoom = rooms.find(r => r.id === booking.roomId);
   const newRoom = rooms.find(r => r.id === newRoomId);
 
   const fmtDate = (d) => format(parseISO(d), 'd MMM yyyy', { locale: ru });
 
-  const roomChanged  = newRoomId   !== booking.roomId;
-  const datesChanged = newCheckIn  !== booking.checkIn || newCheckOut !== booking.checkOut;
+  const roomChanged  = newRoomId      !== booking.roomId;
+  const datesChanged = newCheckIn     !== booking.checkIn || newCheckOut !== booking.checkOut;
+  const placeChanged = newPlaceNumber !== booking.placeNumber;
+
+  const room = oldRoom ?? newRoom;
+  const isMultiPlace = (room?.capacity ?? 1) > 1;
 
   return (
     <div className={classes.modalOverlay} onClick={onCancel}>
       <div className={classes.modal} style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
         <div className={classes.modalHeader}>
-          <div className={classes.modalTitle}>Подтвердить изменение</div>
+          <div className={classes.modalTitle}>
+            {swapBooking ? 'Поменять места?' : 'Подтвердить изменение'}
+          </div>
           <button className={classes.modalClose} onClick={onCancel}>×</button>
         </div>
         <div className={classes.modalBody}>
-          <p style={{ margin: '0 0 12px', color: '#374151', fontWeight: 600 }}>
-            {booking.guestName}
-          </p>
-          {datesChanged && (
-            <div style={{ display: 'flex', gap: 12, marginBottom: 8, fontSize: 14 }}>
-              <div style={{ color: '#9CA3AF' }}>
-                <div style={{ fontSize: 11, marginBottom: 2 }}>Было</div>
-                <div>{fmtDate(booking.checkIn)} — {fmtDate(booking.checkOut)}</div>
+          {swapBooking ? (
+            /* ── Swap confirmation ── */
+            <div style={{ fontSize: 14, lineHeight: 1.6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                <div style={{ flex: 1, background: '#F0F4FA', borderRadius: 8, padding: '8px 12px' }}>
+                  <div style={{ fontSize: 11, color: '#8896AB', marginBottom: 2 }}>Место {booking.placeNumber} → Место {newPlaceNumber}</div>
+                  <div style={{ fontWeight: 700, color: '#1B2A47' }}>{booking.guestName}</div>
+                </div>
+                <div style={{ fontSize: 18, color: '#8896AB' }}>⇄</div>
+                <div style={{ flex: 1, background: '#F0F4FA', borderRadius: 8, padding: '8px 12px' }}>
+                  <div style={{ fontSize: 11, color: '#8896AB', marginBottom: 2 }}>Место {swapBooking.placeNumber} → Место {booking.placeNumber}</div>
+                  <div style={{ fontWeight: 700, color: '#1B2A47' }}>{swapBooking.guestName}</div>
+                </div>
               </div>
-              <div style={{ color: '#374151', fontWeight: 500 }}>
-                <div style={{ fontSize: 11, marginBottom: 2 }}>Станет</div>
-                <div>{fmtDate(newCheckIn)} — {fmtDate(newCheckOut)}</div>
-              </div>
-            </div>
-          )}
-          {roomChanged && (
-            <div style={{ display: 'flex', gap: 12, fontSize: 14 }}>
-              <div style={{ color: '#9CA3AF' }}>
-                <div style={{ fontSize: 11, marginBottom: 2 }}>Номер (было)</div>
-                <div>№{oldRoom?.number ?? '?'}</div>
-              </div>
-              <div style={{ color: '#374151', fontWeight: 500 }}>
-                <div style={{ fontSize: 11, marginBottom: 2 }}>Номер (станет)</div>
-                <div>№{newRoom?.number ?? '?'}</div>
+              <div style={{ fontSize: 12, color: '#8896AB' }}>
+                Номер №{room?.number} · места будут обменяны
               </div>
             </div>
+          ) : (
+            /* ── Regular move/resize confirmation ── */
+            <>
+              <p style={{ margin: '0 0 12px', color: '#374151', fontWeight: 600 }}>
+                {booking.guestName}
+              </p>
+              {datesChanged && (
+                <div style={{ display: 'flex', gap: 12, marginBottom: 8, fontSize: 14 }}>
+                  <div style={{ color: '#9CA3AF' }}>
+                    <div style={{ fontSize: 11, marginBottom: 2 }}>Было</div>
+                    <div>{fmtDate(booking.checkIn)} — {fmtDate(booking.checkOut)}</div>
+                  </div>
+                  <div style={{ color: '#374151', fontWeight: 500 }}>
+                    <div style={{ fontSize: 11, marginBottom: 2 }}>Станет</div>
+                    <div>{fmtDate(newCheckIn)} — {fmtDate(newCheckOut)}</div>
+                  </div>
+                </div>
+              )}
+              {roomChanged && (
+                <div style={{ display: 'flex', gap: 12, fontSize: 14, marginBottom: 8 }}>
+                  <div style={{ color: '#9CA3AF' }}>
+                    <div style={{ fontSize: 11, marginBottom: 2 }}>Номер (было)</div>
+                    <div>№{oldRoom?.number ?? '?'}</div>
+                  </div>
+                  <div style={{ color: '#374151', fontWeight: 500 }}>
+                    <div style={{ fontSize: 11, marginBottom: 2 }}>Номер (станет)</div>
+                    <div>№{newRoom?.number ?? '?'}</div>
+                  </div>
+                </div>
+              )}
+              {placeChanged && isMultiPlace && !roomChanged && (
+                <div style={{ display: 'flex', gap: 12, fontSize: 14 }}>
+                  <div style={{ color: '#9CA3AF' }}>
+                    <div style={{ fontSize: 11, marginBottom: 2 }}>Место (было)</div>
+                    <div>Место {booking.placeNumber}</div>
+                  </div>
+                  <div style={{ color: '#374151', fontWeight: 500 }}>
+                    <div style={{ fontSize: 11, marginBottom: 2 }}>Место (станет)</div>
+                    <div>Место {newPlaceNumber}</div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
         {error && (
@@ -727,7 +922,7 @@ function DragConfirmDialog({ pending, rooms, saving, error, onConfirm, onCancel 
         <div className={classes.modalFooter}>
           <button className={classes.btnSecondary} onClick={onCancel} disabled={saving}>Отменить</button>
           <button className={classes.btnPrimary} onClick={onConfirm} disabled={saving}>
-            {saving ? 'Сохранение...' : 'Подтвердить'}
+            {saving ? 'Сохранение...' : swapBooking ? 'Поменять местами' : 'Подтвердить'}
           </button>
         </div>
       </div>
@@ -737,7 +932,7 @@ function DragConfirmDialog({ pending, rooms, saving, error, onConfirm, onCancel 
 
 // ── Tooltip ───────────────────────────────────────────────────────────────────
 
-function Tooltip({ booking, x, y, rooms }) {
+function Tooltip({ booking, x, y, rooms, multiPlaceEnabled = true }) {
   const room = rooms.find(r => r.id === booking.roomId);
   const nights = differenceInDays(parseISO(booking.checkOut), parseISO(booking.checkIn));
   const cfg = BOOKING_STATUS[booking.status] || BOOKING_STATUS.new;
@@ -757,6 +952,12 @@ function Tooltip({ booking, x, y, rooms }) {
         <span className={classes.tooltipLabel}>Номер:</span>
         <span className={classes.tooltipValue}>№{room?.number}</span>
       </div>
+      {multiPlaceEnabled && (room?.capacity ?? 1) > 1 && (
+        <div className={classes.tooltipRow}>
+          <span className={classes.tooltipLabel}>Место:</span>
+          <span className={classes.tooltipValue}>{booking.placeNumber}</span>
+        </div>
+      )}
       <div className={classes.tooltipRow}>
         <span className={classes.tooltipLabel}>Заезд:</span>
         <span className={classes.tooltipValue}>{format(parseISO(booking.checkIn), 'd MMM yyyy', { locale: ru })}</span>

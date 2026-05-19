@@ -1,0 +1,16 @@
+ALTER TABLE "tenant"
+  ADD COLUMN IF NOT EXISTS "address"             TEXT,
+  ADD COLUMN IF NOT EXISTS "city"                TEXT,
+  ADD COLUMN IF NOT EXISTS "country"             TEXT NOT NULL DEFAULT 'RU',
+  ADD COLUMN IF NOT EXISTS "phone"               TEXT,
+  ADD COLUMN IF NOT EXISTS "website"             TEXT,
+  ADD COLUMN IF NOT EXISTS "email"               TEXT,
+  ADD COLUMN IF NOT EXISTS "stars"               INTEGER CHECK ("stars" BETWEEN 1 AND 5),
+  ADD COLUMN IF NOT EXISTS "description"         TEXT,
+  ADD COLUMN IF NOT EXISTS "logo_url"            TEXT,
+  ADD COLUMN IF NOT EXISTS "vat_rate"            DOUBLE PRECISION NOT NULL DEFAULT 20,
+  ADD COLUMN IF NOT EXISTS "tourist_tax_amount"  DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS "check_in_time"       TEXT NOT NULL DEFAULT '14:00',
+  ADD COLUMN IF NOT EXISTS "check_out_time"      TEXT NOT NULL DEFAULT '12:00',
+  ADD COLUMN IF NOT EXISTS "cancellation_hours"  INTEGER NOT NULL DEFAULT 24,
+  ADD COLUMN IF NOT EXISTS "multi_place_enabled" BOOLEAN NOT NULL DEFAULT false;

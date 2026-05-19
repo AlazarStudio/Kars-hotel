@@ -26,6 +26,7 @@ export interface DemoRoomSeed {
   status: RoomStatus;
   bedType: BedType;
   view?: RoomView;
+  capacity?: number;
 }
 
 export const DEMO_CATEGORIES: DemoCategorySeed[] = [
@@ -68,14 +69,14 @@ export const DEMO_CATEGORIES: DemoCategorySeed[] = [
 ];
 
 export const DEMO_ROOMS: DemoRoomSeed[] = [
-  // Стандарты — 1 этаж
-  { number: '101', categoryCode: 'STD', floor: 1, status: 'DIRTY', bedType: 'DOUBLE' },
-  { number: '102', categoryCode: 'STD', floor: 1, status: 'CLEAN', bedType: 'DOUBLE' },
-  { number: '103', categoryCode: 'STD', floor: 1, status: 'READY', bedType: 'DOUBLE' },
-  { number: '104', categoryCode: 'STD', floor: 1, status: 'CLEANING', bedType: 'TWIN' },
-  { number: '105', categoryCode: 'STD', floor: 1, status: 'READY', bedType: 'DOUBLE' },
-  { number: '106', categoryCode: 'STD', floor: 1, status: 'DIRTY', bedType: 'DOUBLE' },
-  { number: '107', categoryCode: 'STD', floor: 1, status: 'READY', bedType: 'TWIN' },
+  // Стандарты — 1 этаж (TWIN rooms have 2 independently bookable beds)
+  { number: '101', categoryCode: 'STD', floor: 1, status: 'DIRTY',     bedType: 'DOUBLE' },
+  { number: '102', categoryCode: 'STD', floor: 1, status: 'CLEAN',     bedType: 'DOUBLE' },
+  { number: '103', categoryCode: 'STD', floor: 1, status: 'READY',     bedType: 'DOUBLE' },
+  { number: '104', categoryCode: 'STD', floor: 1, status: 'CLEANING',  bedType: 'TWIN', capacity: 2 },
+  { number: '105', categoryCode: 'STD', floor: 1, status: 'READY',     bedType: 'DOUBLE' },
+  { number: '106', categoryCode: 'STD', floor: 1, status: 'DIRTY',     bedType: 'DOUBLE' },
+  { number: '107', categoryCode: 'STD', floor: 1, status: 'READY',     bedType: 'TWIN', capacity: 2 },
   { number: '108', categoryCode: 'STD', floor: 1, status: 'INSPECTED', bedType: 'DOUBLE' },
 
   // Делюкс — 2 этаж

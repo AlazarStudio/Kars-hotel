@@ -42,6 +42,7 @@ export interface TimelineReservation {
   source: ReservationSource;
   ratePlanId: string | null;
   version: number;
+  placeNumber: number;
 }
 
 /** One room row in the timeline grid. */
@@ -50,6 +51,7 @@ export interface TimelineRoom {
   number: string;
   floor: number;
   status: RoomStatus;
+  capacity: number;
   reservations: TimelineReservation[];
 }
 

@@ -372,6 +372,46 @@
   border-right: 1px solid #E8EDF3;
 }
 
+/* ── Capacity group header ── */
+.capGroupHeader {
+  display: flex;
+  align-items: center;
+  background: #F7F9FD;
+  border-bottom: 1px solid #E4ECF5;
+  height: 32px;
+  position: sticky;
+  left: 0;
+  z-index: 7;
+}
+
+.capGroupLabel {
+  width: 210px;
+  flex-shrink: 0;
+  position: sticky;
+  left: 0;
+  z-index: 8;
+  background: #EEF3FA;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  gap: 6px;
+  border-right: 1px solid #D8E2F0;
+}
+
+.capGroupName {
+  font-size: 11px;
+  font-weight: 600;
+  color: #3D5080;
+  letter-spacing: 0.2px;
+}
+
+.capGroupCount {
+  font-size: 10px;
+  color: #8896AB;
+  font-weight: 500;
+}
+
 /* ── Room row ── */
 .roomRow {
   display: flex;
@@ -382,6 +422,87 @@
 
 .roomRow:hover .roomLabel {
   background: #F8FAFF;
+}
+
+/* Expanded header row — compact, no interaction */
+.roomRowExpanded {
+  height: 34px;
+  background: #F4F7FB;
+  border-bottom: 1px solid #DDE5F0;
+}
+.roomRowExpanded .roomLabel {
+  background: #EDF1F9;
+  height: 100%;
+}
+.roomRowExpanded:hover .roomLabel {
+  background: #E8EEF8;
+}
+
+/* ── Expand toggle button ── */
+.expandBtn {
+  width: 18px;
+  height: 18px;
+  border: 1px solid #C8D4E8;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6B7FA3;
+  flex-shrink: 0;
+  padding: 0;
+  transition: background 0.12s, border-color 0.12s;
+}
+.expandBtn:hover { background: #EBF2FF; border-color: #90BAF9; color: #1E88E5; }
+
+/* ── Capacity badge ── */
+.capacityBadge {
+  font-size: 10px;
+  font-weight: 700;
+  color: #6B7FA3;
+  background: #EDF1F9;
+  border-radius: 3px;
+  padding: 1px 4px;
+  flex-shrink: 0;
+}
+
+/* ── Place sub-row (expanded) ── */
+.placeRow {
+  display: flex;
+  height: 46px;
+  position: relative;
+  border-bottom: 1px solid #F0F5FB;
+  background: #FAFCFF;
+}
+.placeRow:last-child { border-bottom: 1px solid #DDE5F0; }
+
+.placeLabel {
+  width: 210px;
+  flex-shrink: 0;
+  position: sticky;
+  left: 0;
+  z-index: 7;
+  background: #F4F8FF;
+  border-right: 1px solid #DDE5F0;
+  display: flex;
+  align-items: center;
+  padding: 0 12px 0 30px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6B7FA3;
+  gap: 6px;
+  transition: background 0.1s;
+}
+.placeRow:hover .placeLabel { background: #EBF2FF; }
+
+/* Header grid cells (expanded room header — no pointer events) */
+.gridCellHeader {
+  flex-shrink: 0;
+  height: 34px;
+  background: #F0F4FA;
+  border-right: 1px solid #E8EDF3;
+  pointer-events: none;
 }
 
 .roomLabel {
@@ -411,12 +532,59 @@
   flex: 1;
 }
 
-.hkBadge {
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 700;
+.hkDotWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
   flex-shrink: 0;
+}
+
+.hkDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  cursor: default;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.08);
+  transition: transform 0.12s ease;
+}
+
+.hkDotWrap:hover .hkDot {
+  transform: scale(1.3);
+}
+
+.hkDotTooltip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 7px);
+  transform: translateX(-50%);
+  background: #1B2A47;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  padding: 4px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 2000;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+}
+
+.hkDotTooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #1B2A47;
+}
+
+.hkDotWrap:hover .hkDotTooltip {
+  opacity: 1;
 }
 
 /* ── Grid cells background ── */
@@ -433,6 +601,9 @@
   cursor: crosshair;
   position: relative;
 }
+
+/* Place sub-row cells are shorter */
+.placeRow .gridCell { height: 46px; }
 
 .gridCell:hover { background: rgba(30,136,229,0.04); }
 .gridCell.isWeekend { background: #FAFBFF; }
@@ -532,6 +703,10 @@
   background: rgba(255,255,255,0.5);
   border-radius: 1px;
 }
+
+/* Place rows: booking blocks adapt to shorter row height */
+.placeRow .bookingBlock { top: 3px; height: 40px; }
+.placeRow .selectionRect { top: 3px; height: 40px; }
 
 /* ── Selection rectangle (create booking) ── */
 .selectionRect {

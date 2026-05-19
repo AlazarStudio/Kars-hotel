@@ -33,3 +33,15 @@ export async function updateReservation(id, data) {
   const resp = await api.patch(`/reservations/${id}`, data);
   return resp.data;
 }
+
+/**
+ * Atomically swap place numbers of two reservations in the same room.
+ * @param {string} idA
+ * @param {number} versionA
+ * @param {string} idB
+ * @param {number} versionB
+ */
+export async function swapReservations(idA, versionA, idB, versionB) {
+  const resp = await api.post('/reservations/swap', { idA, versionA, idB, versionB });
+  return resp.data;
+}

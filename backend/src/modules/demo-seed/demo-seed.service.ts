@@ -63,6 +63,7 @@ export class DemoSeedService {
           bedType: r.bedType,
           view: r.view ?? 'NONE',
           status: r.status,
+          capacity: r.capacity ?? 1,
         })),
       });
 

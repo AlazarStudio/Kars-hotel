@@ -22,6 +22,7 @@ interface RawRoomRow {
   room_number: string;
   floor: number;
   room_status: string;
+  capacity: number;
   room_type_id: string;
   room_type_code: string;
   room_type_name: string;
@@ -45,6 +46,7 @@ interface RawReservationRow {
   source: string;
   rate_plan_id: string | null;
   version: number;
+  place_number: number;
 }
 
 @Injectable()
@@ -110,6 +112,7 @@ export class TimelineService {
             r.number        AS room_number,
             r.floor,
             r.status        AS room_status,
+            r.capacity,
             rt.id           AS room_type_id,
             rt.code         AS room_type_code,
             rt.name         AS room_type_name,
@@ -140,7 +143,8 @@ export class TimelineService {
           total_price::text  AS total_price,
           source,
           rate_plan_id,
-          version
+          version,
+          place_number
         FROM reservation
         WHERE check_in  < ${toDate}::date + INTERVAL '1 day'
           AND check_out > ${fromDate}::date
@@ -170,6 +174,7 @@ export class TimelineService {
           source: r.source as TimelineReservation['source'],
           ratePlanId: r.rate_plan_id,
           version: r.version,
+          placeNumber: r.place_number,
         });
       }
 
@@ -192,6 +197,7 @@ export class TimelineService {
           number: row.room_number,
           floor: row.floor,
           status: row.room_status as TimelineRoom['status'],
+          capacity: row.capacity,
           reservations: resByRoom.get(row.room_id) ?? [],
         };
         rt.rooms.push(room);

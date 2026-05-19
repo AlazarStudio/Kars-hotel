@@ -36,5 +36,7 @@ export const NAV_ITEMS = [
   { id: 'rooms',        label: 'Номерной фонд',  icon: 'rooms' },
   { id: 'housekeeping', label: 'Уборка',         icon: 'housekeeping' },
   { id: 'tariffs',      label: 'Тарифы',         icon: 'tariffs' },
+  { id: 'revenue',      label: 'Revenue',        icon: 'revenue' },
   { id: 'reports',      label: 'Отчёты',         icon: 'reports' },
+  { id: 'settings',    label: 'Настройки',      icon: 'settings' },
 ];

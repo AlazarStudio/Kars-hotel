@@ -35,6 +35,7 @@ function transformTimeline(data) {
         number: room.number,
         floor: room.floor,
         categoryId: rt.id,
+        capacity: room.capacity ?? 1,
         hk: hkMap[room.status] ?? 'clean',
       });
 
@@ -63,6 +64,7 @@ function transformTimeline(data) {
           totalPrice: res.totalPrice ? Number(res.totalPrice) : 0,
           source: res.source?.toLowerCase() ?? 'direct',
           version: res.version,
+          placeNumber: res.placeNumber ?? 1,
         });
       }
     }

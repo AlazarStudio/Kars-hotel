@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import classes from './HotelPMS.module.css';
 import Sidebar from './components/Sidebar/Sidebar';
@@ -8,81 +8,49 @@ import Bookings from './components/Bookings/Bookings';
 import Rooms from './components/Rooms/Rooms';
 import Housekeeping from './components/Housekeeping/Housekeeping';
 import Tariffs from './components/Tariffs/Tariffs';
+import Revenue from './components/Revenue/Revenue';
 import Reports from './components/Reports/Reports';
-import { mockBookings, mockRooms, mockCategories, mockTariffs, mockHotel } from './mockData/mock';
+import Settings from './components/Settings/Settings';
+import { useTenantSettings } from '../../hooks/api/useTenantSettings';
 
-const SECTIONS = ['dashboard', 'timeline', 'bookings', 'rooms', 'housekeeping', 'tariffs', 'reports'];
+const SECTIONS = ['dashboard', 'timeline', 'bookings', 'rooms', 'housekeeping', 'tariffs', 'revenue', 'reports', 'settings'];
 
 function HotelPMS() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Derive active section from URL pathname (e.g. '/timeline' → 'timeline')
   const pathSection = location.pathname.slice(1);
   const activeSection = SECTIONS.includes(pathSection) ? pathSection : 'dashboard';
 
-  const [bookings, setBookings] = useState(mockBookings);
-  const [rooms, setRooms] = useState(mockRooms);
-  const [tariffs, setTariffs] = useState(mockTariffs);
+  const { data: tenantSettings } = useTenantSettings();
 
-  const handleNavigate = (section) => navigate(`/${section}`);
+  const hotel = tenantSettings
+    ? {
+        name:    tenantSettings.name,
+        city:    tenantSettings.city,
+        address: tenantSettings.address,
+        stars:   tenantSettings.stars,
+      }
+    : null;
 
   const renderContent = () => {
     switch (activeSection) {
-      case 'dashboard':
-        return (
-          <Dashboard
-            bookings={bookings}
-            rooms={rooms}
-            categories={mockCategories}
-            hotel={mockHotel}
-            onNavigate={handleNavigate}
-          />
-        );
-      case 'timeline':
-        return <Timeline />;
-      case 'bookings':
-        return <Bookings />;
-      case 'rooms':
-        return (
-          <Rooms
-            rooms={rooms}
-            setRooms={setRooms}
-            categories={mockCategories}
-          />
-        );
-      case 'housekeeping':
-        return (
-          <Housekeeping
-            rooms={rooms}
-            setRooms={setRooms}
-            categories={mockCategories}
-          />
-        );
-      case 'tariffs':
-        return (
-          <Tariffs
-            tariffs={tariffs}
-            setTariffs={setTariffs}
-            categories={mockCategories}
-          />
-        );
-      case 'reports':
-        return (
-          <Reports
-            bookings={bookings}
-            rooms={rooms}
-            categories={mockCategories}
-          />
-        );
-      default:
-        return null;
+      case 'dashboard':    return <Dashboard />;
+      case 'timeline':     return <Timeline multiPlaceEnabled={tenantSettings?.multiPlaceEnabled ?? false} />;
+      case 'bookings':     return <Bookings />;
+      case 'rooms':        return <Rooms />;
+      case 'housekeeping': return <Housekeeping />;
+      case 'tariffs':      return <Tariffs />;
+      case 'revenue':      return <Revenue />;
+      case 'reports':      return <Reports />;
+      case 'settings':     return <Settings />;
+      default:             return null;
     }
   };
 
   return (
     <div className={classes.root}>
-      <Sidebar hotel={mockHotel} />
+      <Sidebar hotel={hotel} />
       <main className={classes.content}>
         {renderContent()}
       </main>

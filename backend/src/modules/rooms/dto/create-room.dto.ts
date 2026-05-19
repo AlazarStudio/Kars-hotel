@@ -47,6 +47,12 @@ export class CreateRoomDto {
   @IsBoolean()
   isActive?: boolean;
 
+  @ApiPropertyOptional({ default: 1, description: 'Number of bookable places (beds) in this room' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  capacity?: number;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

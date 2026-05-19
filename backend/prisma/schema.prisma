@@ -41,17 +41,33 @@ enum TenantPlan {
 /// Top-level isolation unit. One Tenant = one hotel property (or chain).
 /// NOT subject to tenant_id RLS — instead, access is filtered by JWT claims.
 model Tenant {
-  id         String     @id @default(uuid()) @db.Uuid
-  slug       String     @unique
-  name       String
-  timezone   String     @default("Europe/Moscow")
-  currency   String     @default("RUB")
-  vatPayer   Boolean    @default(false)
-  touristTax Boolean    @default(false)
-  plan       TenantPlan @default(LITE)
-  isActive   Boolean    @default(true)
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+  id                String     @id @default(uuid()) @db.Uuid
+  slug              String     @unique
+  name              String
+  timezone          String     @default("Europe/Moscow")
+  currency          String     @default("RUB")
+  vatPayer          Boolean    @default(false)
+  touristTax        Boolean    @default(false)
+  plan              TenantPlan @default(LITE)
+  isActive          Boolean    @default(true)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  address           String?
+  city              String?
+  country           String     @default("RU")
+  phone             String?
+  website           String?
+  email             String?
+  stars             Int?
+  description       String?
+  logoUrl           String?    @map("logo_url")
+  vatRate           Float      @default(20)     @map("vat_rate")
+  touristTaxAmount  Float?                       @map("tourist_tax_amount")
+  checkInTime       String     @default("14:00") @map("check_in_time")
+  checkOutTime      String     @default("12:00") @map("check_out_time")
+  cancellationHours Int        @default(24)      @map("cancellation_hours")
+  multiPlaceEnabled Boolean    @default(false)   @map("multi_place_enabled")
 
   users     User[]
   roles     Role[]
@@ -384,6 +400,7 @@ model Reservation {
   ratePlanId  String?           @map("rate_plan_id") @db.Uuid
   source      ReservationSource @default(DIRECT)
   notes       String?
+  placeNumber Int               @default(1) @map("place_number")
   version     Int               @default(0)
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
@@ -497,6 +514,8 @@ model RoomType {
 
 /// Physical room. `number` is unique per tenant. `status` is the live
 /// operational state used by the rack-chart UI and the Housekeeping module.
+/// `capacity` — number of independently bookable places (beds) in this room.
+/// A capacity=1 room behaves exactly like the pre-H1 model.
 model Room {
   id         String     @id @default(uuid()) @db.Uuid
   tenantId   String     @map("tenant_id") @db.Uuid
@@ -508,6 +527,7 @@ model Room {
   view       RoomView   @default(NONE)
   status     RoomStatus @default(CLEAN)
   isActive   Boolean    @default(true) @map("is_active")
+  capacity   Int        @default(1)
   notes      String?
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt

@@ -1,24 +1,27 @@
 import React, { useMemo } from 'react';
-import { parseISO, isToday, isTomorrow, format } from 'date-fns';
+import { parseISO, format, isToday } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import classes from './Dashboard.module.css';
 import { BOOKING_STATUS, HK_STATUS } from '../../constants';
+import { useDashboard } from '../../../../hooks/useDashboard';
 
-const TODAY = '2026-04-23';
+const TODAY_STR = format(new Date(), 'yyyy-MM-dd');
 
-function Dashboard({ bookings, rooms, categories }) {
-  const today = parseISO(TODAY);
+function Dashboard() {
+  const { data, loading, error } = useDashboard();
+
+  const bookings   = data?.bookings   ?? [];
+  const rooms      = data?.rooms      ?? [];
+  const categories = data?.categories ?? [];
 
   const stats = useMemo(() => {
     const arrivalsToday = bookings.filter(b =>
-      b.checkIn === TODAY && b.status !== 'cancelled' && b.status !== 'no_show'
+      b.checkIn === TODAY_STR && b.status !== 'cancelled' && b.status !== 'no_show'
     );
     const departuresToday = bookings.filter(b =>
-      b.checkOut === TODAY && b.status !== 'cancelled'
+      b.checkOut === TODAY_STR && b.status !== 'cancelled' && b.status !== 'no_show'
     );
-    const currentlyIn = bookings.filter(b =>
-      b.status === 'checked_in'
-    );
+    const currentlyIn = bookings.filter(b => b.status === 'checked_in');
     const occupied = new Set(currentlyIn.map(b => b.roomId)).size;
     const total = rooms.length;
     const available = total - occupied;
@@ -50,32 +53,49 @@ function Dashboard({ bookings, rooms, categories }) {
   }, [categories, rooms, bookings]);
 
   const formatDate = (d) => format(parseISO(d), 'd MMM', { locale: ru });
-
-  const getInitials = (name) => {
-    const parts = name.split(' ');
-    return parts.slice(0, 2).map(p => p[0]).join('');
-  };
-
+  const getInitials = (name) => name.split(' ').slice(0, 2).map(p => p[0]).join('');
   const getRoomNumber = (roomId) => rooms.find(r => r.id === roomId)?.number || '?';
+
+  if (loading && !data) {
+    return (
+      <div className={classes.root}>
+        <div className={classes.pageHeader}>
+          <div className={classes.pageTitle}>Дашборд</div>
+        </div>
+        <div style={{ padding: 40, color: '#8896AB', fontSize: 14 }}>Загрузка...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className={classes.root}>
+        <div className={classes.pageHeader}>
+          <div className={classes.pageTitle}>Дашборд</div>
+        </div>
+        <div style={{ padding: 40, color: '#EF4444', fontSize: 14 }}>Ошибка загрузки: {error}</div>
+      </div>
+    );
+  }
+
+  const occupancyPct = stats.total > 0 ? Math.round((stats.occupied / stats.total) * 100) : 0;
 
   return (
     <div className={classes.root}>
       <div className={classes.pageHeader}>
         <div className={classes.pageTitle}>Дашборд</div>
         <div className={classes.pageSubtitle}>
-          {format(today, 'EEEE, d MMMM yyyy', { locale: ru })}
+          {format(new Date(), 'EEEE, d MMMM yyyy', { locale: ru })}
         </div>
       </div>
 
       <div className={classes.statsGrid}>
         <div className={classes.statCard}>
           <div className={classes.statLabel}>Загрузка</div>
-          <div className={`${classes.statValue} ${classes.statAccent}`}>
-            {Math.round((stats.occupied / stats.total) * 100)}%
-          </div>
+          <div className={`${classes.statValue} ${classes.statAccent}`}>{occupancyPct}%</div>
           <div className={classes.statSub}>{stats.occupied} из {stats.total} номеров</div>
           <div className={classes.statBar}>
-            <div className={classes.statBarFill} style={{ width: `${(stats.occupied / stats.total) * 100}%` }} />
+            <div className={classes.statBarFill} style={{ width: `${occupancyPct}%` }} />
           </div>
         </div>
         <div className={classes.statCard}>
@@ -168,6 +188,9 @@ function Dashboard({ bookings, rooms, categories }) {
             <div className={classes.cardTitle}>Загрузка по категориям</div>
           </div>
           <div style={{ padding: '16px 20px' }}>
+            {occupancyByCategory.length === 0 && (
+              <div className={classes.empty}>Нет данных</div>
+            )}
             <div className={classes.occBars}>
               {occupancyByCategory.map(cat => (
                 <div key={cat.id} className={classes.occBar}>
@@ -199,7 +222,9 @@ function Dashboard({ bookings, rooms, categories }) {
               </div>
               <div className={classes.guestInfo}>
                 <div className={classes.guestName}>{b.guestName}</div>
-                <div className={classes.guestMeta}>{b.adults} взр{b.children > 0 ? `, ${b.children} дет` : ''} · выезд {formatDate(b.checkOut)}</div>
+                <div className={classes.guestMeta}>
+                  {b.adults} взр{b.children > 0 ? `, ${b.children} дет` : ''} · выезд {formatDate(b.checkOut)}
+                </div>
               </div>
               <div className={classes.guestRoom}>№{getRoomNumber(b.roomId)}</div>
             </div>

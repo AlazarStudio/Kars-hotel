@@ -4,17 +4,22 @@ import classes from './Timeline.module.css';
 import { BOOKING_STATUS, BOOKING_SOURCE } from '../../constants';
 
 /**
- * Check if a room is occupied during [checkIn, checkOut) excluding the current booking.
- * Returns the conflicting booking, or null if room is free.
+ * Check if ALL places in a room are occupied during [checkIn, checkOut).
+ * For multi-place rooms: returns a conflict only if no free place exists.
+ * For single-place rooms: original behaviour.
  */
-function getConflict(bookings, roomId, checkIn, checkOut, excludeId) {
+function getConflict(bookings, roomId, checkIn, checkOut, excludeId, roomCapacity = 1) {
   if (!roomId || !checkIn || !checkOut || checkOut <= checkIn) return null;
-  return bookings.find(b => {
+  const overlapping = bookings.filter(b => {
     if (b.roomId !== roomId) return false;
     if (b.id === excludeId) return false;
     if (b.status === 'cancelled' || b.status === 'no_show') return false;
     return b.checkIn < checkOut && b.checkOut > checkIn;
-  }) ?? null;
+  });
+  // If the number of occupied places is less than capacity, there's a free place
+  const occupiedPlaces = new Set(overlapping.map(b => b.placeNumber ?? 1));
+  if (occupiedPlaces.size < roomCapacity) return null;
+  return overlapping[0] ?? null;
 }
 
 function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDelete, onClose, savingError }) {
@@ -47,15 +52,16 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
 
   // Availability check for the selected room
   const conflict = useMemo(() => {
-    return getConflict(bookings, form.roomId, form.checkIn, form.checkOut, booking.id);
-  }, [bookings, form.roomId, form.checkIn, form.checkOut, booking.id]);
+    const cap = rooms.find(r => r.id === form.roomId)?.capacity ?? 1;
+    return getConflict(bookings, form.roomId, form.checkIn, form.checkOut, booking.id, cap);
+  }, [bookings, form.roomId, form.checkIn, form.checkOut, booking.id, rooms]);
 
   // Per-room availability for the dropdown
   const roomAvailability = useMemo(() => {
     if (!form.checkIn || !form.checkOut || form.checkOut <= form.checkIn) return {};
     const result = {};
     for (const r of rooms) {
-      result[r.id] = !getConflict(bookings, r.id, form.checkIn, form.checkOut, booking.id);
+      result[r.id] = !getConflict(bookings, r.id, form.checkIn, form.checkOut, booking.id, r.capacity ?? 1);
     }
     return result;
   }, [bookings, rooms, form.checkIn, form.checkOut, booking.id]);
