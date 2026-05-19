@@ -1,0 +1,289 @@
+.root {
+  padding: 24px 28px;
+  background: #F5F7FA;
+  min-height: 100%;
+  overflow-y: auto;
+}
+
+.pageHeader {
+  margin-bottom: 24px;
+}
+
+.pageTitle {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1B2A47;
+}
+
+.pageSubtitle {
+  font-size: 13px;
+  color: #8896AB;
+  margin-top: 2px;
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.statCard {
+  background: #fff;
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.statLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: #8896AB;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.statValue {
+  font-size: 32px;
+  font-weight: 700;
+  color: #1B2A47;
+  line-height: 1;
+}
+
+.statSub {
+  font-size: 12px;
+  color: #8896AB;
+}
+
+.statAccent {
+  color: #1E88E5;
+}
+
+.statAccentGreen { color: #43A047; }
+.statAccentOrange { color: #FB8C00; }
+.statAccentRed { color: #E53935; }
+
+.statBar {
+  height: 4px;
+  background: #EDF2F7;
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.statBarFill {
+  height: 100%;
+  border-radius: 2px;
+  background: #1E88E5;
+  transition: width 0.4s;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.card {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  overflow: hidden;
+}
+
+.cardHeader {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid #F0F4F9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cardTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1B2A47;
+}
+
+.cardBadge {
+  font-size: 11px;
+  font-weight: 600;
+  background: #EBF5FF;
+  color: #1E88E5;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.cardBody {
+  padding: 0;
+}
+
+.guestRow {
+  display: flex;
+  align-items: center;
+  padding: 11px 20px;
+  border-bottom: 1px solid #F7F9FB;
+  gap: 12px;
+}
+
+.guestRow:last-child { border-bottom: none; }
+
+.guestAvatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #EBF5FF;
+  color: #1E88E5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.guestInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.guestName {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1B2A47;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.guestMeta {
+  font-size: 11px;
+  color: #8896AB;
+  margin-top: 1px;
+}
+
+.guestRoom {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: #1E88E5;
+  padding: 3px 8px;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+
+.hkGrid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0;
+}
+
+.hkCell {
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  border-right: 1px solid #F0F4F9;
+}
+
+.hkCell:last-child { border-right: none; }
+
+.hkDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.hkCount {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1B2A47;
+  line-height: 1;
+}
+
+.hkLabel {
+  font-size: 10px;
+  font-weight: 600;
+  color: #8896AB;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  text-align: center;
+}
+
+.occupancyCard {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.occTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1B2A47;
+  margin-bottom: 14px;
+}
+
+.occBars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.occBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.occBarLabel {
+  width: 80px;
+  font-size: 12px;
+  color: #8896AB;
+  flex-shrink: 0;
+}
+
+.occBarTrack {
+  flex: 1;
+  height: 8px;
+  background: #EDF2F7;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.occBarFill {
+  height: 100%;
+  border-radius: 4px;
+  background: #1E88E5;
+}
+
+.occBarValue {
+  width: 36px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1B2A47;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.empty {
+  padding: 20px;
+  text-align: center;
+  color: #8896AB;
+  font-size: 13px;
+}

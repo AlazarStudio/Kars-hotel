@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build output
+dist/
+build/
+**/dist/
+**/build/
+
+# Logs
+logs/
+*.log
+frontend-dev.log
+
+# Environment — никогда не коммитим секреты
+.env
+.env.local
+.env.*.local
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+*.suo *.ntvs* *.njsproj *.sln *.sw?
+
+# Cache / artifacts
+.eslintcache
+*.tsbuildinfo
+coverage/
+.nyc_output/
+.turbo/
+
+# Claude Code
+.claude/worktrees/
+
+# Prisma lock backup
+prisma/migrations/migration_lock.toml.bak

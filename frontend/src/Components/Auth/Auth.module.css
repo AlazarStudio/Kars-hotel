@@ -1,0 +1,196 @@
+.page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1B2A47 0%, #2C3E5E 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.card {
+  background: #fff;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 460px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.header {
+  padding: 32px 32px 20px;
+  border-bottom: 1px solid #F1F5F9;
+}
+
+.brand {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1E88E5;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #0F1F3F;
+  margin: 0;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: #6B7280;
+  margin-top: 6px;
+}
+
+.body {
+  padding: 24px 32px 28px;
+}
+
+.field {
+  margin-bottom: 16px;
+}
+
+.label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 6px;
+  letter-spacing: 0.3px;
+}
+
+.input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid #D1D5DB;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #111827;
+  background: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  font-family: inherit;
+}
+
+.input:focus {
+  outline: none;
+  border-color: #1E88E5;
+  box-shadow: 0 0 0 3px rgba(30, 136, 229, 0.12);
+}
+
+.input[aria-invalid='true'] {
+  border-color: #EF4444;
+}
+
+.fieldError {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #DC2626;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.submitRow {
+  margin-top: 22px;
+}
+
+.submit {
+  width: 100%;
+  padding: 12px 16px;
+  background: #1E88E5;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  font-family: inherit;
+}
+
+.submit:hover:not(:disabled) {
+  background: #1976D2;
+}
+
+.submit:disabled {
+  background: #94B8D9;
+  cursor: not-allowed;
+}
+
+.alert {
+  background: #FEE2E2;
+  color: #991B1B;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  margin-bottom: 14px;
+  line-height: 1.4;
+}
+
+.footer {
+  padding: 16px 32px;
+  background: #F8FAFC;
+  border-top: 1px solid #F1F5F9;
+  text-align: center;
+  font-size: 13px;
+  color: #6B7280;
+}
+
+.footerLink {
+  color: #1E88E5;
+  text-decoration: none;
+  font-weight: 500;
+  margin-left: 4px;
+}
+
+.footerLink:hover {
+  text-decoration: underline;
+}
+
+.hint {
+  font-size: 11.5px;
+  color: #9CA3AF;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+/* ─── Password input with reveal toggle ─────────────────────────────────── */
+
+.passwordWrapper {
+  position: relative;
+}
+
+.passwordInput {
+  /* leave room for the eye button on the right */
+  padding-right: 40px;
+}
+
+.eyeBtn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: #9CA3AF;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.eyeBtn:hover {
+  color: #1E88E5;
+  background: rgba(30, 136, 229, 0.08);
+}
+
+.eyeBtn:active {
+  background: rgba(30, 136, 229, 0.16);
+}

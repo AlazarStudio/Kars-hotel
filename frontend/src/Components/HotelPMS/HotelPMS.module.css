@@ -1,0 +1,13 @@
+.root {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background: #F5F7FA;
+}
+
+.content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}

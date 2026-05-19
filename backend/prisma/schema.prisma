@@ -1,0 +1,522 @@
+// KarsHotel PMS — Prisma schema.
+//
+// Phase B.1 — Auth + Multi-tenancy + RBAC core models.
+// Phase B.2 will add a raw SQL migration that:
+//   - creates DB roles `app_user` (no BYPASSRLS) and `app_migrator` (BYPASSRLS).
+//   - enables ROW LEVEL SECURITY + FORCE ROW LEVEL SECURITY on every tenant-scoped
+//     table below and adds a `tenant_isolation` policy:
+//       USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
+//
+// All tenant-scoped tables MUST carry `tenantId` as the first composite-index key
+// to allow Postgres to use it efficiently under the RLS predicate.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "windows", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL_MIGRATIONS")
+}
+
+// ─── Smoke-test table from Phase A.5 ─────────────────────────────────────────
+/// Schema metadata — key/value table maintained by migrations and read by /health.
+model SchemaInfo {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("_schema_info")
+}
+
+// ─── Auth + Multi-tenancy + RBAC ─────────────────────────────────────────────
+
+enum TenantPlan {
+  LITE
+  STANDART
+  PREMIUM
+}
+
+/// Top-level isolation unit. One Tenant = one hotel property (or chain).
+/// NOT subject to tenant_id RLS — instead, access is filtered by JWT claims.
+model Tenant {
+  id         String     @id @default(uuid()) @db.Uuid
+  slug       String     @unique
+  name       String
+  timezone   String     @default("Europe/Moscow")
+  currency   String     @default("RUB")
+  vatPayer   Boolean    @default(false)
+  touristTax Boolean    @default(false)
+  plan       TenantPlan @default(LITE)
+  isActive   Boolean    @default(true)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  users     User[]
+  roles     Role[]
+  auditLogs AuditLog[]
+
+  @@map("tenant")
+}
+
+enum RoleCode {
+  OWNER
+  MANAGER
+  FRONT_DESK
+  HOUSEKEEPING
+  ACCOUNTANT
+  CHANNEL_MANAGER
+  READ_ONLY
+}
+
+/// Per-tenant role. Seven default roles are seeded at tenant registration.
+/// Custom (non-system) roles may be added by OWNER/MANAGER.
+model Role {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  code      RoleCode
+  name      String
+  isSystem  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users           User[]
+  rolePermissions RolePermission[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("role")
+}
+
+/// System-wide catalog of permission codes (e.g. "reservation.create",
+/// "reservation.update", "report.view.finance"). NOT tenant-scoped.
+model Permission {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+
+  rolePermissions RolePermission[]
+
+  @@map("permission")
+}
+
+/// Many-to-many: Role × Permission.
+model RolePermission {
+  roleId       String     @map("role_id") @db.Uuid
+  permissionId String     @map("permission_id") @db.Uuid
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+  @@map("role_permission")
+}
+
+/// User account scoped to a Tenant. Email is unique GLOBALLY — one person
+/// can only belong to one hotel. Allows simple email+password login without
+/// asking the user which tenant they are in (Bnovo / Notion / Slack-style UX).
+/// If a person ever needs to work in two hotels, they need a second email.
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  fullName     String    @map("full_name")
+  roleId       String    @map("role_id") @db.Uuid
+  role         Role      @relation(fields: [roleId], references: [id])
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+
+  @@index([tenantId])
+  @@index([roleId])
+  @@map("app_user")
+}
+
+/// Refresh tokens (hashed). One token per session; rotated on /auth/refresh.
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  ip        String?
+  userAgent String?   @map("user_agent")
+  createdAt DateTime  @default(now())
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_token")
+}
+
+/// Append-only audit trail for all mutations. tenantId nullable for system events
+/// (e.g. failed login before tenant context is known).
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String?  @map("tenant_id") @db.Uuid
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  userId    String?  @map("user_id") @db.Uuid
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  entity    String
+  entityId  String?  @map("entity_id")
+  action    String
+  diff      Json?    @db.JsonB
+  ip        String?
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([entity, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_log")
+}
+
+// ─── Phase E — Тарифы, цены, ограничения ─────────────────────────────────────
+
+/// Meal plan attached to a RatePlan. Influences pricing (and later — F&B charges
+/// auto-generated in Phase L). Standard hotel industry codes.
+enum MealPlan {
+  NONE
+  BB     // Bed & Breakfast
+  HB     // Half Board (breakfast + dinner)
+  FB     // Full Board (breakfast + lunch + dinner)
+  AI     // All Inclusive
+}
+
+enum PriceModifierType {
+  /// Add/subtract a fixed amount from the parent rate.
+  ABSOLUTE
+  /// Multiply the parent rate by (1 + percent/100). Use negative percent for discounts.
+  PERCENT
+}
+
+/// Cancellation rules attached to a RatePlan. Simplified per Bnovo/TL MVP:
+///   - free until `freeCancelHoursBefore` hours before arrival
+///   - after that, penalty = `penaltyPercent` % of total OR `penaltyNights` first nights
+///   - if `nonRefundable`, the whole booking is forfeited on cancel
+model CancellationPolicy {
+  id                     String   @id @default(uuid()) @db.Uuid
+  tenantId               String   @map("tenant_id") @db.Uuid
+  code                   String
+  name                   String
+  freeCancelHoursBefore  Int      @default(24) @map("free_cancel_hours_before")
+  penaltyPercent         Decimal  @default(0) @map("penalty_percent") @db.Decimal(5, 2)
+  penaltyNights          Int      @default(0) @map("penalty_nights")
+  nonRefundable          Boolean  @default(false) @map("non_refundable")
+  isActive               Boolean  @default(true) @map("is_active")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  ratePlans RatePlan[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("cancellation_policy")
+}
+
+/// Payment / prepayment rules attached to a RatePlan.
+model PaymentPolicy {
+  id                       String   @id @default(uuid()) @db.Uuid
+  tenantId                 String   @map("tenant_id") @db.Uuid
+  code                     String
+  name                     String
+  prepaymentPercent        Decimal  @default(0) @map("prepayment_percent") @db.Decimal(5, 2)
+  prepaymentAmount         Decimal  @default(0) @map("prepayment_amount") @db.Decimal(12, 2)
+  prepaymentDeadlineHours  Int      @default(0) @map("prepayment_deadline_hours")
+  paymentOnArrival         Boolean  @default(true) @map("payment_on_arrival")
+  isActive                 Boolean  @default(true) @map("is_active")
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  ratePlans RatePlan[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("payment_policy")
+}
+
+/// A pricing plan ("Стандарт", "Раннее бронирование −20%", "Last Minute", "BB").
+/// May inherit from a parent plan — in that case Rates are computed dynamically
+/// as parent.rate × modifier; child has no own Rate rows. (Phase E.3 PricingService.)
+model RatePlan {
+  id                   String             @id @default(uuid()) @db.Uuid
+  tenantId             String             @map("tenant_id") @db.Uuid
+  code                 String
+  name                 String
+  description          String?
+  mealPlan             MealPlan           @default(NONE) @map("meal_plan")
+  occupancyPricing     Boolean            @default(false) @map("occupancy_pricing")
+  parentRatePlanId     String?            @map("parent_rate_plan_id") @db.Uuid
+  parentRatePlan       RatePlan?          @relation("RatePlanInheritance", fields: [parentRatePlanId], references: [id], onDelete: SetNull)
+  children             RatePlan[]         @relation("RatePlanInheritance")
+  priceModifierType    PriceModifierType  @default(PERCENT) @map("price_modifier_type")
+  priceModifierValue   Decimal            @default(0) @map("price_modifier_value") @db.Decimal(10, 2)
+  cancellationPolicyId String?            @map("cancellation_policy_id") @db.Uuid
+  cancellationPolicy   CancellationPolicy? @relation(fields: [cancellationPolicyId], references: [id], onDelete: SetNull)
+  paymentPolicyId      String?            @map("payment_policy_id") @db.Uuid
+  paymentPolicy        PaymentPolicy?     @relation(fields: [paymentPolicyId], references: [id], onDelete: SetNull)
+  sortOrder            Int                @default(0) @map("sort_order")
+  isActive             Boolean            @default(true) @map("is_active")
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  rates        Rate[]
+  restrictions Restriction[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([parentRatePlanId])
+  @@map("rate_plan")
+}
+
+/// One price for one (date × roomType × ratePlan × occupancy) combination.
+/// If `occupancyPricing` on the RatePlan is false, only `occupancy = roomType.baseOccupancy`
+/// rows are consulted; pricing for other occupancy values falls back to that base.
+model Rate {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  ratePlanId  String   @map("rate_plan_id") @db.Uuid
+  ratePlan    RatePlan @relation(fields: [ratePlanId], references: [id], onDelete: Cascade)
+  roomTypeId  String   @map("room_type_id") @db.Uuid
+  date        DateTime @db.Date
+  occupancy   Int      @default(2)
+  price       Decimal  @db.Decimal(12, 2)
+  currency    String   @default("RUB")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, ratePlanId, roomTypeId, date, occupancy])
+  @@index([tenantId])
+  @@index([ratePlanId, roomTypeId, date])
+  @@map("rate")
+}
+
+/// Availability/booking restrictions per (date × roomType [× ratePlan]).
+/// A row with `ratePlanId = null` applies to the room type at large; a row
+/// with a specific ratePlanId overrides for that plan only.
+model Restriction {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  ratePlanId      String?  @map("rate_plan_id") @db.Uuid
+  ratePlan        RatePlan? @relation(fields: [ratePlanId], references: [id], onDelete: Cascade)
+  roomTypeId      String   @map("room_type_id") @db.Uuid
+  date            DateTime @db.Date
+  closed          Boolean  @default(false)
+  /// Closed To Arrival — guests may stay over but may not start a stay on this date.
+  cta             Boolean  @default(false)
+  /// Closed To Departure — guests may not check out on this date.
+  ctd             Boolean  @default(false)
+  /// StopSell from this date forward via Channel Manager (we don't have CM, but the field is kept).
+  stopSell        Boolean  @default(false) @map("stop_sell")
+  /// Length-of-stay floor (minimum number of nights to allow a booking that touches this date).
+  minLos          Int?     @map("min_los")
+  /// Length-of-stay ceiling.
+  maxLos          Int?     @map("max_los")
+  /// Minimum nights only when the booking ARRIVES on this date.
+  minLosArrival   Int?     @map("min_los_arrival")
+  maxLosArrival   Int?     @map("max_los_arrival")
+  /// Minimum days in advance (booking lead time) measured to this date.
+  minAdvance      Int?     @map("min_advance")
+  maxAdvance      Int?     @map("max_advance")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([tenantId, ratePlanId, roomTypeId, date])
+  @@index([tenantId])
+  @@index([roomTypeId, date])
+  @@map("restriction")
+}
+
+// ─── Phase G — Reservations (core model for Timeline) ────────────────────────
+
+enum ReservationStatus {
+  NEW
+  CONFIRMED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+  NO_SHOW
+}
+
+enum ReservationSource {
+  DIRECT
+  PHONE
+  ONLINE
+  OTA
+  CORPORATE
+}
+
+/// Core reservation entity. Full CRUD business logic arrives in Phase H;
+/// here we define the schema so the Timeline (Phase G) can display real data.
+///
+/// `version` — optimistic-locking counter. Increment on every update;
+///   callers compare against the version they last read.
+/// `roomTypeId` — denormalized from room.roomTypeId for CTE query performance.
+model Reservation {
+  id          String            @id @default(uuid()) @db.Uuid
+  tenantId    String            @map("tenant_id") @db.Uuid
+  roomId      String            @map("room_id") @db.Uuid
+  room        Room              @relation(fields: [roomId], references: [id])
+  roomTypeId  String            @map("room_type_id") @db.Uuid
+  guestName   String            @map("guest_name")
+  phone       String?
+  email       String?
+  checkIn     DateTime          @map("check_in") @db.Date
+  checkOut    DateTime          @map("check_out") @db.Date
+  status      ReservationStatus @default(NEW)
+  adults      Int               @default(1)
+  children    Int               @default(0)
+  totalPrice  Decimal?          @map("total_price") @db.Decimal(12, 2)
+  ratePlanId  String?           @map("rate_plan_id") @db.Uuid
+  source      ReservationSource @default(DIRECT)
+  notes       String?
+  version     Int               @default(0)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, roomId, checkIn, checkOut])
+  @@index([tenantId, checkIn, checkOut])
+  @@index([tenantId, status])
+  @@map("reservation")
+}
+
+// ─── Phase F — Inventory + Availability ──────────────────────────────────────
+
+/// Per-date inventory snapshot for a room type.
+/// `totalRooms`   = physical rooms available to sell on this date.
+/// `bookedRooms`  = rooms currently held by confirmed/checked-in reservations.
+/// `blockedRooms` = rooms manually blocked (OOO, maintenance, etc.).
+/// `available`    = computed: totalRooms - bookedRooms - blockedRooms
+///                  (enforced at application layer; no DB computed column for Prisma compat).
+/// `stopSell`     = Channel Manager override — no new bookings accepted regardless of available.
+///
+/// Rows are created lazily on first reservation attempt (InventoryService.ensure).
+/// If no row exists for a date, availability = rooms.count(isActive=true, roomTypeId).
+model Inventory {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  roomTypeId   String   @map("room_type_id") @db.Uuid
+  roomType     RoomType @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
+  date         DateTime @db.Date
+  /// Physical rooms available to sell (≤ count of active Room rows for this RoomType).
+  totalRooms   Int      @map("total_rooms")
+  /// Rooms held by active reservations (status: confirmed | checked_in).
+  bookedRooms  Int      @default(0) @map("booked_rooms")
+  /// Rooms manually blocked out (OOO, channel blocks, etc.).
+  blockedRooms Int      @default(0) @map("blocked_rooms")
+  /// Channel-manager stop-sell flag — disables all new bookings even if available > 0.
+  stopSell     Boolean  @default(false) @map("stop_sell")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([tenantId, roomTypeId, date])
+  @@index([tenantId])
+  @@index([roomTypeId, date])
+  @@map("inventory")
+}
+
+// ─── Phase D — Номерной фонд (RoomType + Room) ───────────────────────────────
+
+enum BedType {
+  SINGLE
+  DOUBLE
+  TWIN
+  KING
+  QUEEN
+  SOFA
+}
+
+enum RoomView {
+  NONE
+  CITY
+  GARDEN
+  POOL
+  SEA
+  MOUNTAIN
+  COURTYARD
+}
+
+/// Operational status of a physical room (housekeeping + maintenance).
+/// READY  = checked clean and prepared for the next guest.
+/// DIRTY  = guest has departed, awaiting cleaning.
+/// OOO    = out-of-order (short-term blockage, e.g. plumbing repair).
+/// OOS    = out-of-service (long-term blockage, e.g. renovation).
+enum RoomStatus {
+  DIRTY
+  CLEANING
+  INSPECTED
+  CLEAN
+  READY
+  OUT_OF_ORDER
+  OUT_OF_SERVICE
+}
+
+/// Room category (e.g. "Standart", "Deluxe", "Suite"). Holds the marketing
+/// description, base capacity and default price. Real per-night pricing comes
+/// in Phase E (RatePlan + Rate). Photos are an ordered JSON array of
+/// `{ key: string; sortOrder: number }` referencing MinIO/S3 keys; presigned
+/// URLs are minted on read.
+model RoomType {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  code          String
+  name          String
+  description   String?
+  baseOccupancy Int      @default(2) @map("base_occupancy")
+  maxOccupancy  Int      @default(2) @map("max_occupancy")
+  extraBeds     Int      @default(0) @map("extra_beds")
+  basePrice     Decimal  @default(0) @map("base_price") @db.Decimal(12, 2)
+  photos        Json?    @db.JsonB
+  sortOrder     Int      @default(0) @map("sort_order")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  rooms      Room[]
+  inventories Inventory[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("room_type")
+}
+
+/// Physical room. `number` is unique per tenant. `status` is the live
+/// operational state used by the rack-chart UI and the Housekeeping module.
+model Room {
+  id         String     @id @default(uuid()) @db.Uuid
+  tenantId   String     @map("tenant_id") @db.Uuid
+  roomTypeId String     @map("room_type_id") @db.Uuid
+  roomType   RoomType   @relation(fields: [roomTypeId], references: [id], onDelete: Restrict)
+  number     String
+  floor      Int        @default(1)
+  bedType    BedType    @default(DOUBLE) @map("bed_type")
+  view       RoomView   @default(NONE)
+  status     RoomStatus @default(CLEAN)
+  isActive   Boolean    @default(true) @map("is_active")
+  notes      String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  reservations Reservation[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId])
+  @@index([roomTypeId])
+  @@index([status])
+  @@map("room")
+}

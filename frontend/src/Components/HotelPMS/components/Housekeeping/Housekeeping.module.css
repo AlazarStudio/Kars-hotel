@@ -1,0 +1,103 @@
+.root {
+  padding: 24px 28px;
+  background: #F5F7FA;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.pageHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.pageTitle { font-size: 22px; font-weight: 700; color: #1B2A47; }
+
+.statsRow {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.statChip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+  border: 2px solid transparent;
+}
+
+.statChip.active { border-color: currentColor; }
+.statChip:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+
+.statDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.statLabel { font-size: 12px; font-weight: 600; color: #4A5568; }
+.statCount { font-size: 18px; font-weight: 700; color: #1B2A47; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.card {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  padding: 16px;
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+  border: 2px solid transparent;
+}
+
+.card:hover { box-shadow: 0 3px 10px rgba(0,0,0,0.1); }
+
+.cardTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.roomNum { font-size: 22px; font-weight: 800; color: #1B2A47; }
+.roomCat { font-size: 11px; color: #8896AB; font-weight: 500; }
+
+.hkBadge {
+  padding: 4px 10px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.cardActions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.actionBtn {
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 1px solid #E0E7F0;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  background: #fff;
+  color: #4A5568;
+  transition: all 0.1s;
+  white-space: nowrap;
+}
+.actionBtn:hover { background: #F0F4F9; }
+.actionBtn.primary { background: #1E88E5; color: #fff; border-color: #1E88E5; }
+.actionBtn.primary:hover { background: #1565C0; }
