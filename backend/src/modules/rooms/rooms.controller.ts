@@ -16,6 +16,7 @@ import { RoomsService } from './rooms.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 import { UpdateRoomStatusDto } from './dto/update-room-status.dto';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 
 @ApiTags('rooms')
 @ApiBearerAuth()
@@ -24,6 +25,7 @@ export class RoomsController {
   constructor(private readonly service: RoomsService) {}
 
   @Get()
+  @RequirePermissions('room.read')
   @ApiOperation({ summary: 'List all rooms for the current tenant' })
   @ApiQuery({ name: 'roomTypeId', required: false })
   @ApiQuery({ name: 'floor', required: false, type: Number })
@@ -47,24 +49,28 @@ export class RoomsController {
   }
 
   @Get(':id')
+  @RequirePermissions('room.read')
   @ApiOperation({ summary: 'Get one room by id' })
   get(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.service.get(id);
   }
 
   @Post()
+  @RequirePermissions('room.update')
   @ApiOperation({ summary: 'Create a new room' })
   create(@Body() dto: CreateRoomDto) {
     return this.service.create(dto);
   }
 
   @Patch(':id')
+  @RequirePermissions('room.update')
   @ApiOperation({ summary: 'Update an existing room' })
   update(@Param('id', new ParseUUIDPipe()) id: string, @Body() dto: UpdateRoomDto) {
     return this.service.update(id, dto);
   }
 
   @Patch(':id/status')
+  @RequirePermissions('room.update')
   @ApiOperation({ summary: 'Change just the room status (housekeeping shortcut)' })
   setStatus(
     @Param('id', new ParseUUIDPipe()) id: string,
@@ -74,6 +80,7 @@ export class RoomsController {
   }
 
   @Delete(':id')
+  @RequirePermissions('room.update')
   @ApiOperation({ summary: 'Delete a room' })
   remove(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.service.remove(id);
