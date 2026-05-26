@@ -8,6 +8,7 @@ import { TenantContextInterceptor } from './common/interceptors/tenant-context.i
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
+import { PermissionsGuard } from './common/guards/permissions.guard';
 import { RoomTypesModule } from './modules/room-types/room-types.module';
 import { RoomsModule } from './modules/rooms/rooms.module';
 import { DemoSeedModule } from './modules/demo-seed/demo-seed.module';
@@ -63,6 +64,8 @@ import { SuperAdminModule } from './modules/super-admin/super-admin.module';
   providers: [
     // Global guard — every controller is protected unless explicitly marked @Public().
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    // Global guard — checks permissions on routes decorated with @RequirePermissions().
+    { provide: APP_GUARD, useClass: PermissionsGuard },
     // Global interceptor — pulls tenantId from req.user into AsyncLocalStorage.
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
   ],
