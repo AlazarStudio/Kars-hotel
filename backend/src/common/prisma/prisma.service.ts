@@ -91,4 +91,40 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       return callback(tx);
     });
   }
+
+  /**
+   * Write an AuditLog entry. Always uses the admin (BYPASSRLS) client
+   * so audit writes succeed even when called inside an RLS-scoped transaction.
+   *
+   * Call this AFTER the main mutation has succeeded (outside forTenant tx,
+   * or fire-and-forget — audit failure must never roll back business logic).
+   */
+  async writeAuditLog(params: {
+    tenantId: string;
+    userId?: string;
+    entity: string;
+    entityId?: string;
+    action: string;
+    diff?: { before: Record<string, unknown>; after: Record<string, unknown> };
+    ip?: string;
+    userAgent?: string;
+  }): Promise<void> {
+    try {
+      await this.admin.auditLog.create({
+        data: {
+          tenantId: params.tenantId,
+          userId: params.userId ?? null,
+          entity: params.entity,
+          entityId: params.entityId ?? null,
+          action: params.action,
+          diff: params.diff ? (params.diff as object) : Prisma.DbNull,
+          ip: params.ip ?? null,
+          userAgent: params.userAgent ?? null,
+        },
+      });
+    } catch (err) {
+      // Audit failures are logged but must NOT propagate — never break business flow
+      this.logger.error(`AuditLog write failed: ${(err as Error).message}`);
+    }
+  }
 }
