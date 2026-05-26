@@ -3,6 +3,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/context/tenant-context';
 import { TimelineService } from '../timeline/timeline.service';
 import { TimelineGateway } from '../timeline/timeline.gateway';
+import { FolioService } from '../folio/folio.service';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
 import { SwapReservationsDto } from './dto/swap-reservations.dto';
@@ -19,6 +20,7 @@ export class ReservationsService {
     private readonly prisma: PrismaService,
     private readonly timelineService: TimelineService,
     private readonly timelineGateway: TimelineGateway,
+    private readonly folioService: FolioService,
   ) {}
 
   async create(dto: CreateReservationDto) {
@@ -523,6 +525,8 @@ export class ReservationsService {
   // ─── Check-out ────────────────────────────────────────────────────────────────
 
   async checkOut(id: string, userId: string) {
+    await this.folioService.assertZeroBalance(id);
+
     const tenantId = TenantContext.getTenantIdOrThrow();
 
     type TxResult =
