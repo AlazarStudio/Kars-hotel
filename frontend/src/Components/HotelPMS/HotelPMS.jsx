@@ -11,10 +11,11 @@ import Tariffs from './components/Tariffs/Tariffs';
 import Revenue from './components/Revenue/Revenue';
 import Reports from './components/Reports/Reports';
 import Settings from './components/Settings/Settings';
+import Team from './components/Team/Team';
 import { useTenantSettings } from '../../hooks/api/useTenantSettings';
 import ImpersonationBanner from '../AdminPanel/ImpersonationBanner';
 
-const SECTIONS = ['dashboard', 'timeline', 'bookings', 'rooms', 'housekeeping', 'tariffs', 'revenue', 'reports', 'settings'];
+const SECTIONS = ['dashboard', 'timeline', 'bookings', 'rooms', 'housekeeping', 'tariffs', 'revenue', 'reports', 'team', 'settings'];
 
 function HotelPMS() {
   const location = useLocation();
@@ -44,6 +45,7 @@ function HotelPMS() {
       case 'tariffs':      return <Tariffs />;
       case 'revenue':      return <Revenue />;
       case 'reports':      return <Reports />;
+      case 'team':         return <Team />;
       case 'settings':     return <Settings />;
       default:             return null;
     }

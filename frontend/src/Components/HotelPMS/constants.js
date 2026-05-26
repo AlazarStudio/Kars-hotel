@@ -38,5 +38,6 @@ export const NAV_ITEMS = [
   { id: 'tariffs',      label: 'Тарифы',         icon: 'tariffs' },
   { id: 'revenue',      label: 'Revenue',        icon: 'revenue' },
   { id: 'reports',      label: 'Отчёты',         icon: 'reports' },
+  { id: 'team',         label: 'Команда',        icon: 'team' },
   { id: 'settings',    label: 'Настройки',      icon: 'settings' },
 ];
