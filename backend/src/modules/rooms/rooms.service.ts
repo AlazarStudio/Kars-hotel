@@ -50,11 +50,14 @@ export class RoomsService {
     );
     if (!rt) throw new NotFoundException('Категория номера не найдена');
 
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let room: any;
     try {
-      return await this.prisma.forTenant((tx) =>
+      room = await this.prisma.forTenant((tx) =>
         tx.room.create({
           data: {
-            tenantId: TenantContext.getTenantIdOrThrow(),
+            tenantId,
             roomTypeId: dto.roomTypeId,
             number: dto.number,
             floor: dto.floor ?? 1,
@@ -71,17 +74,27 @@ export class RoomsService {
     } catch (e) {
       throw this.translatePrismaError(e, dto.number);
     }
+    await this.prisma.writeAuditLog({
+      tenantId,
+      entity: 'room',
+      entityId: room.id,
+      action: 'create',
+      diff: { before: {}, after: { number: dto.number, roomTypeId: dto.roomTypeId } },
+    });
+    return room;
   }
 
   async update(id: string, dto: UpdateRoomDto) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
     if (dto.roomTypeId) {
       const rt = await this.prisma.forTenant((tx) =>
         tx.roomType.findUnique({ where: { id: dto.roomTypeId }, select: { id: true } }),
       );
       if (!rt) throw new NotFoundException('Категория номера не найдена');
     }
+    let updated: unknown;
     try {
-      return await this.prisma.forTenant((tx) =>
+      updated = await this.prisma.forTenant((tx) =>
         tx.room.update({
           where: { id },
           data: {
@@ -101,25 +114,51 @@ export class RoomsService {
     } catch (e) {
       throw this.translatePrismaError(e, dto.number);
     }
+    await this.prisma.writeAuditLog({
+      tenantId,
+      entity: 'room',
+      entityId: id,
+      action: 'update',
+      diff: { before: {}, after: { ...dto } },
+    });
+    return updated;
   }
 
   async setStatus(id: string, status: RoomStatus) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    let result: unknown;
     try {
-      return await this.prisma.forTenant((tx) =>
+      result = await this.prisma.forTenant((tx) =>
         tx.room.update({ where: { id }, data: { status } }),
       );
     } catch (e) {
       throw this.translatePrismaError(e);
     }
+    await this.prisma.writeAuditLog({
+      tenantId,
+      entity: 'room',
+      entityId: id,
+      action: 'status_change',
+      diff: { before: {}, after: { status } },
+    });
+    return result;
   }
 
   async remove(id: string) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
     try {
       await this.prisma.forTenant((tx) => tx.room.delete({ where: { id } }));
-      return { ok: true };
     } catch (e) {
       throw this.translatePrismaError(e);
     }
+    await this.prisma.writeAuditLog({
+      tenantId,
+      entity: 'room',
+      entityId: id,
+      action: 'delete',
+      diff: { before: { id }, after: {} },
+    });
+    return { ok: true };
   }
 
   private translatePrismaError(e: unknown, contextValue?: string): Error {

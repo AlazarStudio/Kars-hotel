@@ -38,7 +38,7 @@ export class RatesService {
 
   async bulkUpsert(dto: BulkUpsertRatesDto) {
     const tenantId = TenantContext.getTenantIdOrThrow();
-    return this.prisma.forTenant(async (tx) => {
+    const result = await this.prisma.forTenant(async (tx) => {
       let written = 0;
       for (const it of dto.items) {
         await tx.rate.upsert({
@@ -69,6 +69,21 @@ export class RatesService {
       }
       return { written };
     });
+    const firstItem = dto.items[0];
+    await this.prisma.writeAuditLog({
+      tenantId,
+      entity: 'rate',
+      action: 'bulk_upsert',
+      diff: {
+        before: {},
+        after: {
+          count: result.written,
+          ratePlanId: firstItem?.ratePlanId,
+          roomTypeId: firstItem?.roomTypeId,
+        },
+      },
+    });
+    return result;
   }
 
   async fillRange(dto: FillRatesDto) {
