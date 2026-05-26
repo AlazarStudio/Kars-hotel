@@ -4,6 +4,7 @@ import { ReservationsService } from './reservations.service';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
 import { SwapReservationsDto } from './dto/swap-reservations.dto';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 
 @ApiBearerAuth()
 @ApiTags('Reservations')
@@ -12,6 +13,7 @@ export class ReservationsController {
   constructor(private readonly reservationsService: ReservationsService) {}
 
   @Post()
+  @RequirePermissions('reservation.create')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Create a new reservation',
@@ -26,6 +28,7 @@ export class ReservationsController {
   }
 
   @Patch(':id')
+  @RequirePermissions('reservation.update')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Update an existing reservation',
@@ -40,6 +43,7 @@ export class ReservationsController {
   }
 
   @Post('swap')
+  @RequirePermissions('reservation.update')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Swap place numbers between two reservations',
