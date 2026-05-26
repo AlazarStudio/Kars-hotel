@@ -152,8 +152,9 @@ model User {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  refreshTokens RefreshToken[]
-  auditLogs     AuditLog[]
+  refreshTokens      RefreshToken[]
+  auditLogs           AuditLog[]
+  housekeepingTasks   HousekeepingTask[]
 
   @@index([tenantId])
   @@index([roleId])
@@ -533,7 +534,8 @@ model Room {
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 
-  reservations Reservation[]
+  reservations        Reservation[]
+  housekeepingTasks   HousekeepingTask[]
 
   @@unique([tenantId, number])
   @@index([tenantId])
@@ -623,4 +625,43 @@ model Payment {
   @@index([tenantId])
   @@index([folioId])
   @@map("payment")
+}
+
+// ─── Phase E — Housekeeping Tasks ────────────────────────────────────────────
+
+enum HkTaskStatus {
+  PENDING
+  IN_PROGRESS
+  DONE
+  INSPECTED
+}
+
+enum HkTaskType {
+  CLEANING
+  TURNDOWN
+  INSPECTION
+  MAINTENANCE
+  DEEP_CLEAN
+}
+
+model HousekeepingTask {
+  id                       String       @id @default(uuid()) @db.Uuid
+  tenantId                 String       @map("tenant_id") @db.Uuid
+  roomId                   String       @map("room_id") @db.Uuid
+  room                     Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  type                     HkTaskType   @default(CLEANING)
+  status                   HkTaskStatus @default(PENDING)
+  assigneeId               String?      @map("assignee_id") @db.Uuid
+  assignee                 User?        @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdFromReservationId String?      @map("created_from_reservation_id") @db.Uuid
+  notes                    String?
+  completedAt              DateTime?    @map("completed_at")
+  createdAt                DateTime     @default(now())
+  updatedAt                DateTime     @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([roomId])
+  @@index([assigneeId])
+  @@map("housekeeping_task")
 }
