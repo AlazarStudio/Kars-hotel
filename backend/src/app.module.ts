@@ -22,6 +22,7 @@ import { ReservationsModule } from './modules/reservations/reservations.module';
 import { TenantModule } from './modules/tenant/tenant.module';
 import { SuperAdminModule } from './modules/super-admin/super-admin.module';
 import { FolioModule } from './modules/folio/folio.module';
+import { HousekeepingModule } from './modules/housekeeping/housekeeping.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { FolioModule } from './modules/folio/folio.module';
     TenantModule,
     SuperAdminModule,
     FolioModule,
+    HousekeepingModule,
   ],
   providers: [
     // Global guard — every controller is protected unless explicitly marked @Public().
