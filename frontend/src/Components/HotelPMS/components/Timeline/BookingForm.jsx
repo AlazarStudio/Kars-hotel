@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { differenceInDays, parseISO } from 'date-fns';
 import classes from './Timeline.module.css';
 import { BOOKING_STATUS, BOOKING_SOURCE } from '../../constants';
+import { cancelReservation } from '../../../../api/reservations';
 
 /**
  * Check if ALL places in a room are occupied during [checkIn, checkOut).
@@ -83,6 +84,18 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!window.confirm('Отменить бронь?')) return;
+    const reason = window.prompt('Причина отмены (необязательно):') ?? undefined;
+    try {
+      await cancelReservation(booking.id, reason);
+      onClose?.();
+      if (typeof onDelete === 'function') onDelete(booking.id);
+    } catch (err) {
+      console.error('Cancel failed:', err);
     }
   };
 
@@ -229,8 +242,8 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
         )}
 
         <div className={classes.modalFooter}>
-          {!isNew && onDelete && (
-            <button className={classes.btnDanger} onClick={() => onDelete(booking.id)}>
+          {!isNew && ['new', 'confirmed'].includes(booking?.status) && (
+            <button className={classes.btnDanger} onClick={handleCancel}>
               Отменить бронь
             </button>
           )}
