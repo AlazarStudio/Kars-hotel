@@ -3,6 +3,81 @@ import { differenceInDays, parseISO } from 'date-fns';
 import classes from './Timeline.module.css';
 import { BOOKING_STATUS, BOOKING_SOURCE } from '../../constants';
 import { cancelReservation } from '../../../../api/reservations';
+import { useFolio, useAddPayment } from '../../../../hooks/api/useFolio';
+
+function FolioTab({ reservationId }) {
+  const { data: folio, isLoading } = useFolio(reservationId);
+  const addPaymentMutation = useAddPayment(reservationId);
+
+  if (isLoading) return <div className="p-4 text-sm text-gray-500">Загрузка счёта...</div>;
+  if (!folio) return null;
+
+  return (
+    <div className="space-y-4 p-1">
+      {/* Charges */}
+      <div>
+        <h3 className="font-medium text-sm mb-2">Начисления</h3>
+        {folio.charges?.length === 0 && (
+          <p className="text-sm text-gray-400">Начислений нет</p>
+        )}
+        <table className="w-full text-xs">
+          <tbody>
+            {folio.charges?.map((c) => (
+              <tr key={c.id} className="border-b">
+                <td className="py-1">{c.description}</td>
+                <td className="py-1 text-right">{c.quantity} × {Number(c.unitPrice).toLocaleString('ru-RU')} ₽</td>
+                <td className="py-1 text-right font-medium">{Number(c.total).toLocaleString('ru-RU')} ₽</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Payments */}
+      <div>
+        <h3 className="font-medium text-sm mb-2">Оплаты</h3>
+        {folio.payments?.length === 0 && (
+          <p className="text-sm text-gray-400">Оплат нет</p>
+        )}
+        {folio.payments?.map((p) => (
+          <div key={p.id} className="flex justify-between text-xs py-1 border-b">
+            <span>{p.method === 'CASH' ? 'Наличные' : p.method} ({p.type})</span>
+            <span className="font-medium">{Number(p.amount).toLocaleString('ru-RU')} ₽</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Balance */}
+      <div className="border-t pt-2 space-y-1 text-sm">
+        <div className="flex justify-between text-gray-600">
+          <span>Начислено:</span>
+          <span>{Number(folio.totalCharged ?? 0).toLocaleString('ru-RU')} ₽</span>
+        </div>
+        <div className="flex justify-between text-gray-600">
+          <span>Оплачено:</span>
+          <span>{Number(folio.totalPaid ?? 0).toLocaleString('ru-RU')} ₽</span>
+        </div>
+        <div className={`flex justify-between font-bold ${Number(folio.balance) > 0 ? 'text-red-600' : 'text-green-600'}`}>
+          <span>Остаток:</span>
+          <span>{Number(folio.balance ?? 0).toLocaleString('ru-RU')} ₽</span>
+        </div>
+      </div>
+
+      {/* Quick pay button */}
+      {Number(folio.balance) > 0 && (
+        <button
+          onClick={() => addPaymentMutation.mutate({ method: 'CASH', amount: Number(folio.balance) })}
+          disabled={addPaymentMutation.isPending}
+          className="w-full py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50"
+        >
+          {addPaymentMutation.isPending
+            ? 'Обработка...'
+            : `Принять ${Number(folio.balance).toLocaleString('ru-RU')} ₽ (наличные)`}
+        </button>
+      )}
+    </div>
+  );
+}
 
 /**
  * Check if ALL places in a room are occupied during [checkIn, checkOut).
@@ -41,6 +116,7 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
   });
 
   const [saving, setSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState('booking'); // 'booking' | 'folio'
 
   const nights = form.checkIn && form.checkOut
     ? Math.max(0, differenceInDays(parseISO(form.checkOut), parseISO(form.checkIn)))
@@ -114,6 +190,44 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
         </div>
 
         <div className={classes.modalBody}>
+          {!isNew && (
+            <div style={{ display: 'flex', borderBottom: '1px solid #E5E7EB', marginBottom: 16 }}>
+              <button
+                onClick={() => setActiveTab('booking')}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: activeTab === 'booking' ? '2px solid #2563EB' : '2px solid transparent',
+                  color: activeTab === 'booking' ? '#2563EB' : '#6B7280',
+                  cursor: 'pointer',
+                }}
+              >
+                Бронь
+              </button>
+              <button
+                onClick={() => setActiveTab('folio')}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: activeTab === 'folio' ? '2px solid #2563EB' : '2px solid transparent',
+                  color: activeTab === 'folio' ? '#2563EB' : '#6B7280',
+                  cursor: 'pointer',
+                }}
+              >
+                Счёт
+              </button>
+            </div>
+          )}
+
+          {activeTab === 'folio' && !isNew ? (
+            <FolioTab reservationId={booking.id} />
+          ) : (
           <div className={classes.formGrid}>
             <div className={`${classes.formGroup} ${classes.formFull}`}>
               <div className={classes.formLabel}>ФИО гостя *</div>
@@ -233,6 +347,7 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
               </div>
             )}
           </div>
+          )}
         </div>
 
         {savingError && (
