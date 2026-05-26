@@ -9,8 +9,9 @@ export const SYSTEM_PERMISSIONS: ReadonlyArray<{ code: string; name: string }> =
   // ── User management ─────────────────────────────────────────────────────────
   { code: 'user.read', name: 'View users' },
   { code: 'user.create', name: 'Create users' },
-  { code: 'user.update', name: 'Update users' },
-  { code: 'user.delete', name: 'Delete users' },
+  { code: 'user.invite', name: 'Приглашение сотрудников' },
+  { code: 'user.update', name: 'Редактирование сотрудников' },
+  { code: 'user.delete', name: 'Деактивация сотрудников' },
   { code: 'role.read', name: 'View roles' },
   { code: 'role.update', name: 'Update roles' },
 
