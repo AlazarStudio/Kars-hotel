@@ -1,10 +1,14 @@
-import { Body, Controller, HttpCode, HttpStatus, Param, Patch, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+// backend/src/modules/reservations/reservations.controller.ts
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { ReservationsService } from './reservations.service';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
 import { SwapReservationsDto } from './dto/swap-reservations.dto';
+import { CancelReservationDto, CheckInDto } from './dto/action-reservation.dto';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { AuthenticatedRequestUser } from '../auth/strategies/jwt.strategy';
 
 @ApiBearerAuth()
 @ApiTags('Reservations')
@@ -12,44 +16,91 @@ import { RequirePermissions } from '../../common/decorators/require-permissions.
 export class ReservationsController {
   constructor(private readonly reservationsService: ReservationsService) {}
 
+  @Get('arrivals')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('reservation.read')
+  @ApiOperation({ summary: 'List arrivals for a given date' })
+  @ApiQuery({ name: 'date', required: true, example: '2026-06-01' })
+  getArrivals(@Query('date') date: string) {
+    return this.reservationsService.getArrivals(date);
+  }
+
+  @Get('departures')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('reservation.read')
+  @ApiOperation({ summary: 'List departures for a given date' })
+  @ApiQuery({ name: 'date', required: true, example: '2026-06-01' })
+  getDepartures(@Query('date') date: string) {
+    return this.reservationsService.getDepartures(date);
+  }
+
   @Post()
-  @RequirePermissions('reservation.create')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({
-    summary: 'Create a new reservation',
-    description:
-      'Creates a reservation for the specified room and date range. ' +
-      'Checks for overlapping bookings and returns 409 if the room is taken. ' +
-      'Automatically invalidates the timeline Redis cache and broadcasts ' +
-      'a timeline:update WebSocket event to all connected clients.',
-  })
+  @RequirePermissions('reservation.create')
+  @ApiOperation({ summary: 'Create a new reservation' })
   create(@Body() dto: CreateReservationDto) {
     return this.reservationsService.create(dto);
   }
 
   @Patch(':id')
-  @RequirePermissions('reservation.update')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Update an existing reservation',
-    description:
-      'Partial update of room, dates, guest info, status, or source. ' +
-      'Requires the current `version` field for optimistic-locking. ' +
-      'Returns 409 if room is already booked or version mismatch. ' +
-      'Invalidates Redis cache and broadcasts timeline:update event.',
-  })
+  @RequirePermissions('reservation.update')
+  @ApiOperation({ summary: 'Update an existing reservation (partial)' })
   update(@Param('id') id: string, @Body() dto: UpdateReservationDto) {
     return this.reservationsService.update(id, dto);
   }
 
   @Post('swap')
-  @RequirePermissions('reservation.update')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Swap place numbers between two reservations',
-    description: 'Atomically swaps place_number of two reservations in the same room.',
-  })
+  @RequirePermissions('reservation.update')
+  @ApiOperation({ summary: 'Swap place numbers between two reservations' })
   swap(@Body() dto: SwapReservationsDto) {
     return this.reservationsService.swap(dto);
+  }
+
+  @Post(':id/check-in')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('reservation.checkin')
+  @ApiOperation({ summary: 'Check in a guest — moves reservation to CHECKED_IN' })
+  checkIn(
+    @Param('id') id: string,
+    @Body() dto: CheckInDto,
+    @CurrentUser() user: AuthenticatedRequestUser,
+  ) {
+    return this.reservationsService.checkIn(id, user.userId, dto.actualCheckInTime);
+  }
+
+  @Post(':id/check-out')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('reservation.checkout')
+  @ApiOperation({ summary: 'Check out a guest — moves to CHECKED_OUT, marks room DIRTY' })
+  checkOut(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedRequestUser,
+  ) {
+    return this.reservationsService.checkOut(id, user.userId);
+  }
+
+  @Post(':id/no-show')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('reservation.update')
+  @ApiOperation({ summary: 'Mark reservation as no-show' })
+  noShow(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedRequestUser,
+  ) {
+    return this.reservationsService.noShow(id, user.userId);
+  }
+
+  @Post(':id/cancel')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('reservation.cancel')
+  @ApiOperation({ summary: 'Cancel a reservation with optional reason' })
+  cancel(
+    @Param('id') id: string,
+    @Body() dto: CancelReservationDto,
+    @CurrentUser() user: AuthenticatedRequestUser,
+  ) {
+    return this.reservationsService.cancel(id, user.userId, dto.reason);
   }
 }
