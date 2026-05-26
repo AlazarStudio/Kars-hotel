@@ -97,7 +97,7 @@ export class RatesService {
     const days = Math.round((to.getTime() - from.getTime()) / 86_400_000) + 1;
     if (days > 366) throw new BadRequestException('Range too large (max 366 days)');
 
-    return this.prisma.forTenant(async (tx) => {
+    const result = await this.prisma.forTenant(async (tx) => {
       let written = 0;
       for (let i = 0; i < days; i++) {
         const d = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate() + i));
@@ -129,6 +129,23 @@ export class RatesService {
       }
       return { written, daysCovered: days };
     });
+    await this.prisma.writeAuditLog({
+      tenantId,
+      entity: 'rate',
+      action: 'fill_range',
+      diff: {
+        before: {},
+        after: {
+          ratePlanId: dto.ratePlanId,
+          roomTypeId: dto.roomTypeId,
+          from: dto.fromDate,
+          to: dto.toDate,
+          price: dto.price,
+          written: result.written,
+        },
+      },
+    });
+    return result;
   }
 
   async remove(id: string) {
