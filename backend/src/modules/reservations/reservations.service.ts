@@ -4,6 +4,7 @@ import { TenantContext } from '../../common/context/tenant-context';
 import { TimelineService } from '../timeline/timeline.service';
 import { TimelineGateway } from '../timeline/timeline.gateway';
 import { FolioService } from '../folio/folio.service';
+import { HousekeepingService } from '../housekeeping/housekeeping.service';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
 import { SwapReservationsDto } from './dto/swap-reservations.dto';
@@ -21,6 +22,7 @@ export class ReservationsService {
     private readonly timelineService: TimelineService,
     private readonly timelineGateway: TimelineGateway,
     private readonly folioService: FolioService,
+    private readonly hkService: HousekeepingService,
   ) {}
 
   async create(dto: CreateReservationDto) {
@@ -530,7 +532,7 @@ export class ReservationsService {
     const tenantId = TenantContext.getTenantIdOrThrow();
 
     type TxResult =
-      | { ok: true; id: string; version: number; before: string }
+      | { ok: true; id: string; version: number; before: string; roomId: string }
       | { ok: false; reason: 'NOT_FOUND' | 'WRONG_STATUS' };
 
     const result = await this.prisma.forTenant(async (tx): Promise<TxResult> => {
@@ -556,7 +558,7 @@ export class ReservationsService {
         WHERE id = ${cur.room_id}::uuid
       `;
 
-      return { ok: true, id: res.id, version: res.version, before: cur.status };
+      return { ok: true, id: res.id, version: res.version, before: cur.status, roomId: cur.room_id };
     });
 
     if (!result.ok) {
@@ -571,6 +573,12 @@ export class ReservationsService {
       entityId: id,
       action: 'check_out',
       diff: { before: { status: result.before }, after: { status: 'CHECKED_OUT' } },
+    });
+
+    // Auto-create housekeeping cleaning task for the vacated room
+    this.hkService.autoCreateOnCheckout(tenantId, result.roomId, id).catch((e) => {
+      // Non-critical — log but don't fail checkout
+      console.warn(`Failed to auto-create HK task: ${(e as Error).message}`);
     });
 
     await this.timelineService.invalidate(tenantId);
