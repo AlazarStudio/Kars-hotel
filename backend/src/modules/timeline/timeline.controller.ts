@@ -2,6 +2,7 @@ import { Controller, Get, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { TimelineService } from './timeline.service';
 import { GetTimelineDto } from './dto/get-timeline.dto';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 
 @ApiBearerAuth()
 @ApiTags('Timeline')
@@ -10,6 +11,7 @@ export class TimelineController {
   constructor(private readonly timelineService: TimelineService) {}
 
   @Get()
+  @RequirePermissions('reservation.read')
   @ApiOperation({
     summary: 'Get timeline (rack-chart data)',
     description:

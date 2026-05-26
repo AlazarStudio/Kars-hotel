@@ -2,6 +2,7 @@ import { Controller, Get, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AvailabilityService } from './availability.service';
 import { CheckAvailabilityDto } from './dto/check-availability.dto';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 
 @ApiBearerAuth()
 @ApiTags('Availability')
@@ -10,6 +11,7 @@ export class AvailabilityController {
   constructor(private readonly availabilityService: AvailabilityService) {}
 
   @Get()
+  @RequirePermissions('room.read')
   @ApiOperation({
     summary: 'Check availability',
     description:

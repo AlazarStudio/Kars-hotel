@@ -2,6 +2,7 @@ import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PricingService } from './pricing.service';
 import { QuotePricingDto } from './dto/quote-pricing.dto';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 
 @ApiTags('pricing')
 @ApiBearerAuth()
@@ -10,6 +11,7 @@ export class PricingController {
   constructor(private readonly service: PricingService) {}
 
   @Post('quote')
+  @RequirePermissions('rate.read')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Compute the full pricing breakdown for a hypothetical reservation',

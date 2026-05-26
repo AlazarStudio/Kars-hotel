@@ -11,6 +11,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { InventoryService } from './inventory.service';
 import { GetInventoryDto } from './dto/get-inventory.dto';
 import { BulkUpdateInventoryDto } from './dto/bulk-update-inventory.dto';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 
 @ApiBearerAuth()
 @ApiTags('Inventory')
@@ -19,6 +20,7 @@ export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
   @Get()
+  @RequirePermissions('room.read')
   @ApiOperation({
     summary: 'Get inventory grid',
     description:
@@ -30,6 +32,7 @@ export class InventoryController {
   }
 
   @Put(':roomTypeId')
+  @RequirePermissions('room.update')
   @ApiOperation({
     summary: 'Bulk-update inventory',
     description:
