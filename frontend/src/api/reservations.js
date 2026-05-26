@@ -45,3 +45,49 @@ export async function swapReservations(idA, versionA, idB, versionB) {
   const resp = await api.post('/reservations/swap', { idA, versionA, idB, versionB });
   return resp.data;
 }
+
+/**
+ * Get reservations arriving on a given date.
+ * @param {string} date – 'YYYY-MM-DD'
+ */
+export async function getArrivals(date) {
+  const resp = await api.get(`/reservations/arrivals?date=${date}`);
+  return resp.data;
+}
+
+/**
+ * Get reservations departing on a given date.
+ * @param {string} date – 'YYYY-MM-DD'
+ */
+export async function getDepartures(date) {
+  const resp = await api.get(`/reservations/departures?date=${date}`);
+  return resp.data;
+}
+
+/** Check in a reservation. */
+export async function checkIn(id) {
+  const resp = await api.post(`/reservations/${id}/check-in`);
+  return resp.data;
+}
+
+/** Check out a reservation. */
+export async function checkOut(id) {
+  const resp = await api.post(`/reservations/${id}/check-out`);
+  return resp.data;
+}
+
+/** Mark a reservation as no-show. */
+export async function noShow(id) {
+  const resp = await api.post(`/reservations/${id}/no-show`);
+  return resp.data;
+}
+
+/**
+ * Cancel a reservation with an optional reason.
+ * @param {string} id
+ * @param {string} [reason]
+ */
+export async function cancelReservation(id, reason) {
+  const resp = await api.post(`/reservations/${id}/cancel`, { reason });
+  return resp.data;
+}
