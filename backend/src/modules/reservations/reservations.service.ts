@@ -124,6 +124,14 @@ export class ReservationsService {
     await this.timelineService.invalidate(tenantId);
     this.timelineGateway.notifyUpdate(tenantId, { action: 'created' });
 
+    await this.prisma.writeAuditLog({
+      tenantId,
+      entity: 'reservation',
+      entityId: result.id,
+      action: 'create',
+      diff: { before: {}, after: { status: result.status, roomId: dto.roomId, guestName: dto.guestName } },
+    });
+
     return { id: result.id, status: result.status, version: result.version, placeNumber: result.placeNumber };
   }
 
@@ -339,6 +347,14 @@ export class ReservationsService {
     await this.timelineService.invalidate(tenantId);
     this.timelineGateway.notifyUpdate(tenantId, { action: 'updated' });
 
+    await this.prisma.writeAuditLog({
+      tenantId,
+      entity: 'reservation',
+      entityId: result.id,
+      action: 'update',
+      diff: { before: {}, after: { status: result.status, version: result.version } },
+    });
+
     return { id: result.id, status: result.status, version: result.version };
   }
 
@@ -405,5 +421,265 @@ export class ReservationsService {
     this.timelineGateway.notifyUpdate(tenantId, { action: 'updated' });
 
     return { a: result.a, b: result.b };
+  }
+
+  // ─── Arrivals ─────────────────────────────────────────────────────────────────
+
+  async getArrivals(date: string) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    return this.prisma.forTenant(async (tx) => {
+      return tx.$queryRaw<{
+        id: string; guest_name: string; phone: string | null; email: string | null;
+        room_id: string; room_type_id: string; check_in: Date; check_out: Date;
+        status: string; adults: number; children: number; notes: string | null;
+        total_price: string | null; rate_plan_id: string | null; source: string;
+      }[]>`
+        SELECT id, guest_name, phone, email, room_id, room_type_id,
+               check_in, check_out, status, adults, children, notes,
+               total_price::text, rate_plan_id, source
+        FROM reservation
+        WHERE check_in = ${date}::date
+          AND status IN ('NEW', 'CONFIRMED')
+        ORDER BY created_at ASC
+      `;
+    });
+  }
+
+  // ─── Departures ───────────────────────────────────────────────────────────────
+
+  async getDepartures(date: string) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    return this.prisma.forTenant(async (tx) => {
+      return tx.$queryRaw<{
+        id: string; guest_name: string; phone: string | null; email: string | null;
+        room_id: string; room_type_id: string; check_in: Date; check_out: Date;
+        status: string; adults: number; children: number; notes: string | null;
+        total_price: string | null; rate_plan_id: string | null; source: string;
+      }[]>`
+        SELECT id, guest_name, phone, email, room_id, room_type_id,
+               check_in, check_out, status, adults, children, notes,
+               total_price::text, rate_plan_id, source
+        FROM reservation
+        WHERE check_out = ${date}::date
+          AND status = 'CHECKED_IN'
+        ORDER BY created_at ASC
+      `;
+    });
+  }
+
+  // ─── Check-in ─────────────────────────────────────────────────────────────────
+
+  async checkIn(id: string, userId: string, actualCheckInTime?: string) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+
+    type TxResult =
+      | { ok: true; id: string; version: number; before: string }
+      | { ok: false; reason: 'NOT_FOUND' | 'WRONG_STATUS' };
+
+    const result = await this.prisma.forTenant(async (tx): Promise<TxResult> => {
+      const rows = await tx.$queryRaw<{ id: string; status: string; version: number }[]>`
+        SELECT id, status, version FROM reservation WHERE id = ${id}::uuid LIMIT 1
+      `;
+      if (!rows.length) return { ok: false, reason: 'NOT_FOUND' };
+      const cur = rows[0];
+      if (!['NEW', 'CONFIRMED'].includes(cur.status)) {
+        return { ok: false, reason: 'WRONG_STATUS' };
+      }
+
+      const checkInTime = actualCheckInTime ? new Date(actualCheckInTime) : new Date();
+
+      const [res] = await tx.$queryRaw<{ id: string; version: number }[]>`
+        UPDATE reservation
+        SET status = 'CHECKED_IN'::"ReservationStatus",
+            version = version + 1,
+            updated_at = now()
+        WHERE id = ${id}::uuid
+        RETURNING id, version
+      `;
+
+      return { ok: true, id: res.id, version: res.version, before: cur.status };
+    });
+
+    if (!result.ok) {
+      if (result.reason === 'NOT_FOUND') throw new NotFoundException('Reservation not found');
+      throw new ConflictException(`Cannot check in: current status must be NEW or CONFIRMED`);
+    }
+
+    await this.prisma.writeAuditLog({
+      tenantId,
+      userId,
+      entity: 'reservation',
+      entityId: id,
+      action: 'check_in',
+      diff: { before: { status: result.before }, after: { status: 'CHECKED_IN' } },
+    });
+
+    await this.timelineService.invalidate(tenantId);
+    this.timelineGateway.notifyUpdate(tenantId, { action: 'updated' });
+
+    return { id: result.id, status: 'CHECKED_IN', version: result.version };
+  }
+
+  // ─── Check-out ────────────────────────────────────────────────────────────────
+
+  async checkOut(id: string, userId: string) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+
+    type TxResult =
+      | { ok: true; id: string; version: number; before: string }
+      | { ok: false; reason: 'NOT_FOUND' | 'WRONG_STATUS' };
+
+    const result = await this.prisma.forTenant(async (tx): Promise<TxResult> => {
+      const rows = await tx.$queryRaw<{ id: string; status: string; version: number; room_id: string }[]>`
+        SELECT id, status, version, room_id FROM reservation WHERE id = ${id}::uuid LIMIT 1
+      `;
+      if (!rows.length) return { ok: false, reason: 'NOT_FOUND' };
+      const cur = rows[0];
+      if (cur.status !== 'CHECKED_IN') return { ok: false, reason: 'WRONG_STATUS' };
+
+      const [res] = await tx.$queryRaw<{ id: string; version: number }[]>`
+        UPDATE reservation
+        SET status = 'CHECKED_OUT'::"ReservationStatus",
+            version = version + 1,
+            updated_at = now()
+        WHERE id = ${id}::uuid
+        RETURNING id, version
+      `;
+
+      await tx.$executeRaw`
+        UPDATE room
+        SET status = 'DIRTY'::"RoomStatus", updated_at = now()
+        WHERE id = ${cur.room_id}::uuid
+      `;
+
+      return { ok: true, id: res.id, version: res.version, before: cur.status };
+    });
+
+    if (!result.ok) {
+      if (result.reason === 'NOT_FOUND') throw new NotFoundException('Reservation not found');
+      throw new ConflictException(`Cannot check out: reservation must be in CHECKED_IN status`);
+    }
+
+    await this.prisma.writeAuditLog({
+      tenantId,
+      userId,
+      entity: 'reservation',
+      entityId: id,
+      action: 'check_out',
+      diff: { before: { status: result.before }, after: { status: 'CHECKED_OUT' } },
+    });
+
+    await this.timelineService.invalidate(tenantId);
+    this.timelineGateway.notifyUpdate(tenantId, { action: 'updated' });
+
+    return { id: result.id, status: 'CHECKED_OUT', version: result.version };
+  }
+
+  // ─── No-show ──────────────────────────────────────────────────────────────────
+
+  async noShow(id: string, userId: string) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+
+    type TxResult =
+      | { ok: true; id: string; version: number; before: string }
+      | { ok: false; reason: 'NOT_FOUND' | 'WRONG_STATUS' };
+
+    const result = await this.prisma.forTenant(async (tx): Promise<TxResult> => {
+      const rows = await tx.$queryRaw<{ id: string; status: string; version: number }[]>`
+        SELECT id, status, version FROM reservation WHERE id = ${id}::uuid LIMIT 1
+      `;
+      if (!rows.length) return { ok: false, reason: 'NOT_FOUND' };
+      const cur = rows[0];
+      if (!['NEW', 'CONFIRMED'].includes(cur.status)) {
+        return { ok: false, reason: 'WRONG_STATUS' };
+      }
+
+      const [res] = await tx.$queryRaw<{ id: string; version: number }[]>`
+        UPDATE reservation
+        SET status = 'NO_SHOW'::"ReservationStatus",
+            version = version + 1,
+            updated_at = now()
+        WHERE id = ${id}::uuid
+        RETURNING id, version
+      `;
+
+      return { ok: true, id: res.id, version: res.version, before: cur.status };
+    });
+
+    if (!result.ok) {
+      if (result.reason === 'NOT_FOUND') throw new NotFoundException('Reservation not found');
+      throw new ConflictException(`Cannot mark as no-show: current status must be NEW or CONFIRMED`);
+    }
+
+    await this.prisma.writeAuditLog({
+      tenantId,
+      userId,
+      entity: 'reservation',
+      entityId: id,
+      action: 'no_show',
+      diff: { before: { status: result.before }, after: { status: 'NO_SHOW' } },
+    });
+
+    await this.timelineService.invalidate(tenantId);
+    this.timelineGateway.notifyUpdate(tenantId, { action: 'updated' });
+
+    return { id: result.id, status: 'NO_SHOW', version: result.version };
+  }
+
+  // ─── Cancel ───────────────────────────────────────────────────────────────────
+
+  async cancel(id: string, userId: string, reason?: string) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+
+    type TxResult =
+      | { ok: true; id: string; version: number; before: string }
+      | { ok: false; reason: 'NOT_FOUND' | 'WRONG_STATUS' };
+
+    const result = await this.prisma.forTenant(async (tx): Promise<TxResult> => {
+      const rows = await tx.$queryRaw<{ id: string; status: string; version: number }[]>`
+        SELECT id, status, version FROM reservation WHERE id = ${id}::uuid LIMIT 1
+      `;
+      if (!rows.length) return { ok: false, reason: 'NOT_FOUND' };
+      const cur = rows[0];
+      if (['CANCELLED', 'CHECKED_OUT'].includes(cur.status)) {
+        return { ok: false, reason: 'WRONG_STATUS' };
+      }
+
+      const notesSuffix = reason ? `\n[Cancelled: ${reason}]` : '';
+
+      const [res] = await tx.$queryRaw<{ id: string; version: number }[]>`
+        UPDATE reservation
+        SET status = 'CANCELLED'::"ReservationStatus",
+            notes  = COALESCE(notes, '') || ${notesSuffix},
+            version = version + 1,
+            updated_at = now()
+        WHERE id = ${id}::uuid
+        RETURNING id, version
+      `;
+
+      return { ok: true, id: res.id, version: res.version, before: cur.status };
+    });
+
+    if (!result.ok) {
+      if (result.reason === 'NOT_FOUND') throw new NotFoundException('Reservation not found');
+      throw new ConflictException(`Cannot cancel: reservation is already cancelled or checked out`);
+    }
+
+    await this.prisma.writeAuditLog({
+      tenantId,
+      userId,
+      entity: 'reservation',
+      entityId: id,
+      action: 'cancel',
+      diff: {
+        before: { status: result.before },
+        after: { status: 'CANCELLED', reason: reason ?? null },
+      },
+    });
+
+    await this.timelineService.invalidate(tenantId);
+    this.timelineGateway.notifyUpdate(tenantId, { action: 'updated' });
+
+    return { id: result.id, status: 'CANCELLED', version: result.version, cancelled: true };
   }
 }
