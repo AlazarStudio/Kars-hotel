@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { RatesService } from './rates.service';
 import { BulkUpsertRatesDto } from './dto/bulk-upsert-rates.dto';
 import { FillRatesDto } from './dto/fill-rates.dto';
+import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 
 @ApiTags('rates')
 @ApiBearerAuth()
@@ -11,6 +12,7 @@ export class RatesController {
   constructor(private readonly service: RatesService) {}
 
   @Get()
+  @RequirePermissions('rate.read')
   @ApiOperation({ summary: 'List rates (filter by plan/roomType/date range/occupancy)' })
   @ApiQuery({ name: 'ratePlanId', required: false })
   @ApiQuery({ name: 'roomTypeId', required: false })
@@ -34,6 +36,7 @@ export class RatesController {
   }
 
   @Put('bulk')
+  @RequirePermissions('rate.update')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Upsert many rate rows in one call' })
   bulk(@Body() dto: BulkUpsertRatesDto) {
@@ -41,6 +44,7 @@ export class RatesController {
   }
 
   @Post('fill')
+  @RequirePermissions('rate.update')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Set the same price for every date in [fromDate, toDate]',
@@ -51,6 +55,7 @@ export class RatesController {
   }
 
   @Delete(':id')
+  @RequirePermissions('rate.update')
   remove(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.service.remove(id);
   }
