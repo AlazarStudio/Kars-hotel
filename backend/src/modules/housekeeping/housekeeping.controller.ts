@@ -21,7 +21,7 @@ export class HousekeepingController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @RequirePermissions('hk.task.read')
+  @RequirePermissions('hk.task.update')
   createTask(@Body() dto: CreateTaskDto, @CurrentUser() user: AuthenticatedRequestUser) {
     return this.hkService.createTask(dto, user.userId);
   }
