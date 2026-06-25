@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import s from './Settings.module.css';
 import f from '../../shared/Form.module.css';
 import { useTenantSettings, useUpdateTenantSettings } from '../../../../hooks/api/useTenantSettings';
+import { uploadTenantLogo, removeTenantLogo } from '../../../../api/tenant';
 
 // ─── Nav sections ─────────────────────────────────────────────────────────────
 
@@ -124,11 +126,15 @@ function Skeleton() {
 export default function Settings() {
   const { data: settings, isLoading } = useTenantSettings();
   const updateMutation = useUpdateTenantSettings();
+  const qc = useQueryClient();
 
   const [activeSection, setActiveSection] = useState('general');
   const [form, setForm] = useState(null);
   const [savedSection, setSavedSection] = useState(null);
   const [saveError, setSaveError] = useState(null);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [logoError, setLogoError] = useState(null);
+  const logoRef = useRef(null);
 
   // Populate form from loaded settings
   useEffect(() => {
@@ -161,6 +167,42 @@ export default function Settings() {
   const set = useCallback((field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
   }, []);
+
+  // The logo is uploaded straight to our object storage and saved immediately
+  // (it doesn't wait for the "Сохранить" button), so the URL we store is always
+  // one we host ourselves — never an external link.
+  const handleLogoPick = useCallback(async (ev) => {
+    const file = ev.target.files?.[0];
+    if (logoRef.current) logoRef.current.value = ''; // allow re-picking same file
+    if (!file) return;
+    setLogoBusy(true);
+    setLogoError(null);
+    try {
+      const tenant = await uploadTenantLogo(file);
+      set('logoUrl', tenant.logoUrl ?? '');
+      qc.setQueryData(['tenantSettings'], tenant);
+    } catch (e) {
+      const msg = e?.response?.data?.message || e?.message || 'Не удалось загрузить логотип';
+      setLogoError(Array.isArray(msg) ? msg.join(', ') : msg);
+    } finally {
+      setLogoBusy(false);
+    }
+  }, [qc, set]);
+
+  const handleLogoRemove = useCallback(async () => {
+    setLogoBusy(true);
+    setLogoError(null);
+    try {
+      const tenant = await removeTenantLogo();
+      set('logoUrl', '');
+      qc.setQueryData(['tenantSettings'], tenant);
+    } catch (e) {
+      const msg = e?.response?.data?.message || e?.message || 'Не удалось удалить логотип';
+      setLogoError(Array.isArray(msg) ? msg.join(', ') : msg);
+    } finally {
+      setLogoBusy(false);
+    }
+  }, [qc, set]);
 
   const handleSave = useCallback(async () => {
     if (!form) return;
@@ -394,14 +436,45 @@ export default function Settings() {
                   />
                 </div>
                 <div className={f.field}>
-                  <label className={f.label}>URL логотипа</label>
+                  <label className={f.label}>Логотип</label>
+                  <div style={logoRowStyle}>
+                    <div style={logoThumbStyle}>
+                      {form.logoUrl ? (
+                        <img src={form.logoUrl} alt="Логотип" style={logoImgStyle} />
+                      ) : (
+                        <span style={logoPlaceholderStyle}>Нет логотипа</span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <button
+                        type="button"
+                        className={f.btnSecondary}
+                        onClick={() => logoRef.current?.click()}
+                        disabled={logoBusy}
+                      >
+                        {logoBusy ? 'Загрузка…' : form.logoUrl ? 'Заменить' : 'Загрузить'}
+                      </button>
+                      {form.logoUrl && (
+                        <button
+                          type="button"
+                          className={f.btnSecondary}
+                          onClick={handleLogoRemove}
+                          disabled={logoBusy}
+                        >
+                          Удалить
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   <input
-                    className={f.input}
-                    value={form.logoUrl}
-                    onChange={e => set('logoUrl', e.target.value)}
-                    placeholder="https://cdn.hotel.ru/logo.png"
+                    ref={logoRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    onChange={handleLogoPick}
+                    style={{ display: 'none' }}
                   />
-                  <div className={f.hint}>Прямая ссылка на изображение логотипа</div>
+                  <div className={f.hint}>JPEG, PNG, WebP или GIF, до 5 МБ. Хранится на нашем сервере.</div>
+                  {logoError && <div className={f.fieldError}>{logoError}</div>}
                 </div>
               </div>
             </div>
@@ -574,3 +647,23 @@ export default function Settings() {
     </div>
   );
 }
+
+const logoRowStyle = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: 16,
+};
+const logoThumbStyle = {
+  width: 120,
+  height: 120,
+  borderRadius: 12,
+  overflow: 'hidden',
+  border: '1px solid var(--border, #d0d5dd)',
+  background: 'var(--surface-2, #f5f6f8)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  flexShrink: 0,
+};
+const logoImgStyle = { width: '100%', height: '100%', objectFit: 'cover', display: 'block' };
+const logoPlaceholderStyle = { fontSize: 12, color: 'var(--text-muted, #667085)' };

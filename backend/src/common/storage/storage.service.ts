@@ -81,6 +81,67 @@ export class StorageService implements OnModuleInit {
     roomTypeId: string,
     file: UploadedFile,
   ): Promise<string> {
+    return this.putImage(`room-type-photos/${tenantId}/${roomTypeId}`, file);
+  }
+
+  /**
+   * Upload a hotel logo and return its public URL.
+   * Key layout: tenant-logos/{tenantId}/{uuid}.{ext}
+   */
+  async uploadTenantLogo(tenantId: string, file: UploadedFile): Promise<string> {
+    return this.putImage(`tenant-logos/${tenantId}`, file);
+  }
+
+  /** True when a URL already points at an object in our own bucket. */
+  isOwnUrl(url: string): boolean {
+    return this.keyFromUrl(url) != null;
+  }
+
+  /**
+   * Download a remote image and store it in our bucket, returning the new
+   * public URL. Used to "internalise" external images (e.g. legacy Unsplash
+   * seed links) so every image we serve is hosted by us. Idempotent: a URL that
+   * already lives in our bucket is returned unchanged.
+   */
+  async ingestFromUrl(keyPrefix: string, sourceUrl: string): Promise<string> {
+    if (this.isOwnUrl(sourceUrl)) return sourceUrl;
+
+    let res: globalThis.Response;
+    try {
+      res = await fetch(sourceUrl);
+    } catch (err) {
+      throw new BadRequestException(
+        `Не удалось скачать изображение (${sourceUrl}): ${(err as Error).message}`,
+      );
+    }
+    if (!res.ok) {
+      throw new BadRequestException(
+        `Источник вернул ${res.status} при загрузке ${sourceUrl}`,
+      );
+    }
+
+    const buffer = Buffer.from(await res.arrayBuffer());
+    let mimetype = (res.headers.get('content-type') ?? '')
+      .split(';')[0]
+      .trim()
+      .toLowerCase();
+    // Some hosts omit or mislabel the content-type — fall back to sniffing the
+    // magic bytes so a valid image still gets stored with the right extension.
+    if (!ALLOWED_MIME[mimetype]) {
+      mimetype = sniffImageMime(buffer) ?? mimetype;
+    }
+    return this.putImage(keyPrefix, {
+      buffer,
+      mimetype,
+      size: buffer.length,
+    });
+  }
+
+  /** Validate an image file and store it under `{keyPrefix}/{uuid}.{ext}`. */
+  private async putImage(
+    keyPrefix: string,
+    file: UploadedFile,
+  ): Promise<string> {
     const ext = ALLOWED_MIME[file.mimetype];
     if (!ext) {
       throw new BadRequestException(
@@ -93,7 +154,7 @@ export class StorageService implements OnModuleInit {
       );
     }
 
-    const key = `room-type-photos/${tenantId}/${roomTypeId}/${randomUUID()}.${ext}`;
+    const key = `${keyPrefix}/${randomUUID()}.${ext}`;
     await this.client.putObject(this.bucket, key, file.buffer, file.size, {
       'Content-Type': file.mimetype,
       'Cache-Control': 'public, max-age=31536000, immutable',
@@ -147,4 +208,24 @@ export class StorageService implements OnModuleInit {
     };
     await this.client.setBucketPolicy(this.bucket, JSON.stringify(policy));
   }
+}
+
+/** Detect an image MIME type from its leading magic bytes, or null. */
+function sniffImageMime(buf: Buffer): string | null {
+  if (buf.length < 12) return null;
+  // JPEG: FF D8 FF
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  // PNG: 89 50 4E 47
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47)
+    return 'image/png';
+  // GIF: "GIF8"
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38)
+    return 'image/gif';
+  // WEBP: "RIFF"...."WEBP"
+  if (
+    buf.toString('ascii', 0, 4) === 'RIFF' &&
+    buf.toString('ascii', 8, 12) === 'WEBP'
+  )
+    return 'image/webp';
+  return null;
 }

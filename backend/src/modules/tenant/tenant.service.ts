@@ -3,12 +3,16 @@ import * as crypto from 'node:crypto';
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/context/tenant-context';
+import { StorageService, UploadedFile } from '../../common/storage/storage.service';
 import { UpdateTenantSettingsDto } from './dto/update-tenant-settings.dto';
 import { CreateTenantUserDto, UpdateTenantUserDto } from './dto/manage-user.dto';
 
 @Injectable()
 export class TenantService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
+  ) {}
 
   async getSettings() {
     const tenantId = TenantContext.getTenantIdOrThrow();
@@ -26,6 +30,43 @@ export class TenantService {
       where: { id: tenantId },
       data,
     });
+  }
+
+  /**
+   * Upload a hotel logo to our own storage (MinIO) and point the tenant at it.
+   * The previous logo, if it was one of ours, is removed best-effort. Written
+   * via the admin client because the tenant table is RLS-restricted for app_user.
+   */
+  async uploadLogo(file: UploadedFile) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    const current = await this.prisma.admin.tenant.findUniqueOrThrow({
+      where: { id: tenantId },
+      select: { logoUrl: true },
+    });
+    const logoUrl = await this.storage.uploadTenantLogo(tenantId, file);
+    const updated = await this.prisma.admin.tenant.update({
+      where: { id: tenantId },
+      data: { logoUrl },
+    });
+    if (current.logoUrl && current.logoUrl !== logoUrl) {
+      await this.storage.deleteByUrl(current.logoUrl); // ignores foreign URLs
+    }
+    return updated;
+  }
+
+  /** Clear the hotel logo and delete the stored object (best-effort). */
+  async removeLogo() {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    const current = await this.prisma.admin.tenant.findUniqueOrThrow({
+      where: { id: tenantId },
+      select: { logoUrl: true },
+    });
+    const updated = await this.prisma.admin.tenant.update({
+      where: { id: tenantId },
+      data: { logoUrl: null },
+    });
+    if (current.logoUrl) await this.storage.deleteByUrl(current.logoUrl);
+    return updated;
   }
 
   async listUsers(tenantId: string) {

@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/context/tenant-context';
+import { StorageService } from '../../common/storage/storage.service';
 import { DEMO_CATEGORIES, DEMO_PROFILE, DEMO_ROOMS } from './demo-data';
 
 export interface DemoSeedResult {
@@ -12,7 +13,35 @@ export interface DemoSeedResult {
 export class DemoSeedService {
   private readonly logger = new Logger(DemoSeedService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
+  ) {}
+
+  /**
+   * Download the seed dataset's source images into our own storage so the demo
+   * hotel only ever references images we host (never an external CDN). Returns
+   * the demo profile with an internalised logo and a code→photo-URLs map.
+   */
+  private async internaliseDemoMedia(tenantId: string): Promise<{
+    profile: typeof DEMO_PROFILE;
+    photosByCode: Map<string, string[]>;
+  }> {
+    const logoUrl = await this.storage.ingestFromUrl(
+      `tenant-logos/${tenantId}`,
+      DEMO_PROFILE.logoUrl,
+    );
+    const photosByCode = new Map<string, string[]>();
+    for (const cat of DEMO_CATEGORIES) {
+      const urls = await Promise.all(
+        (cat.photos ?? []).map((src) =>
+          this.storage.ingestFromUrl(`room-type-photos/${tenantId}/${cat.code}`, src),
+        ),
+      );
+      photosByCode.set(cat.code, urls);
+    }
+    return { profile: { ...DEMO_PROFILE, logoUrl }, photosByCode };
+  }
 
   /**
    * Populate the current tenant with the legacy mock dataset (4 categories,
@@ -22,6 +51,10 @@ export class DemoSeedService {
    */
   async seed(): Promise<DemoSeedResult> {
     const tenantId = TenantContext.getTenantIdOrThrow();
+
+    // Host all seed images ourselves (download from source → MinIO) before the
+    // transaction so the DB only ever stores our own URLs.
+    const { profile, photosByCode } = await this.internaliseDemoMedia(tenantId);
 
     return this.prisma.forTenantExplicit(tenantId, async (tx) => {
       const [existingRoomTypes, existingRooms] = await Promise.all([
@@ -48,7 +81,7 @@ export class DemoSeedService {
             maxOccupancy: cat.maxOccupancy,
             basePrice: cat.basePrice,
             sortOrder: cat.sortOrder,
-            photos: cat.photos ?? [],
+            photos: photosByCode.get(cat.code) ?? [],
           },
         });
         typeIdByCode.set(cat.code, rt.id);
@@ -62,7 +95,7 @@ export class DemoSeedService {
       // is intentionally restricted on `tenant` (see B.2 RLS migration).
       await this.prisma.admin.tenant.update({
         where: { id: tenantId },
-        data: DEMO_PROFILE,
+        data: profile,
       });
 
       // 2. Create rooms.
@@ -128,10 +161,14 @@ export class DemoSeedService {
     }
     const tenantId = tenant.id;
 
+    // Host all seed images ourselves (download from source → MinIO) so the demo
+    // hotel only ever references our own URLs.
+    const { profile, photosByCode } = await this.internaliseDemoMedia(tenantId);
+
     // 1. Hotel profile (admin — tenant table is RLS-restricted for app_user).
     await this.prisma.admin.tenant.update({
       where: { id: tenantId },
-      data: DEMO_PROFILE,
+      data: profile,
     });
 
     // 2. Category photos, matched by code (RLS-scoped).
@@ -140,7 +177,7 @@ export class DemoSeedService {
       for (const cat of DEMO_CATEGORIES) {
         const res = await tx.roomType.updateMany({
           where: { code: cat.code },
-          data: { photos: cat.photos ?? [] },
+          data: { photos: photosByCode.get(cat.code) ?? [] },
         });
         n += res.count;
       }

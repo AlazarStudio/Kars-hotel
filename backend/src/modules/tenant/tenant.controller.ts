@@ -1,11 +1,13 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { TenantService } from './tenant.service';
 import { UpdateTenantSettingsDto } from './dto/update-tenant-settings.dto';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedRequestUser } from '../auth/strategies/jwt.strategy';
 import { CreateTenantUserDto, UpdateTenantUserDto } from './dto/manage-user.dto';
+import { MAX_PHOTO_BYTES, UploadedFile as MediaFile } from '../../common/storage/storage.service';
 
 @ApiTags('Tenant')
 @ApiBearerAuth()
@@ -25,6 +27,28 @@ export class TenantController {
   @ApiOperation({ summary: 'Update current tenant settings' })
   updateSettings(@Body() dto: UpdateTenantSettingsDto) {
     return this.service.updateSettings(dto);
+  }
+
+  @Post('logo')
+  @RequirePermissions('user.update')
+  @ApiOperation({ summary: 'Upload the hotel logo (stored in our object storage)' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } },
+  })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_PHOTO_BYTES } }))
+  uploadLogo(@UploadedFile() file?: MediaFile) {
+    if (!file) {
+      throw new BadRequestException('Файл не передан (ожидается поле "file")');
+    }
+    return this.service.uploadLogo(file);
+  }
+
+  @Delete('logo')
+  @RequirePermissions('user.update')
+  @ApiOperation({ summary: 'Remove the hotel logo' })
+  removeLogo() {
+    return this.service.removeLogo();
   }
 
   @Get('users')
