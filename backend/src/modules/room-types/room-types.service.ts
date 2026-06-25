@@ -1,12 +1,16 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { StorageService, UploadedFile } from '../../common/storage/storage.service';
 import { CreateRoomTypeDto } from './dto/create-room-type.dto';
 import { UpdateRoomTypeDto } from './dto/update-room-type.dto';
 
 @Injectable()
 export class RoomTypesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
+  ) {}
 
   async list() {
     return this.prisma.forTenant((tx) =>
@@ -95,6 +99,58 @@ export class RoomTypesService {
     }
     await this.prisma.forTenant((tx) => tx.roomType.delete({ where: { id } }));
     return { ok: true };
+  }
+
+  // ── photos ───────────────────────────────────────────────────────────────
+
+  /** Upload one image, append its public URL to the category's photo list. */
+  async addPhoto(id: string, file: UploadedFile): Promise<{ photos: string[] }> {
+    const existing = await this.get(id);
+    const url = await this.storage.uploadRoomTypePhoto(
+      this.currentTenantId(),
+      id,
+      file,
+    );
+    const photos = [...this.readPhotos(existing.photos), url];
+    await this.persistPhotos(id, photos);
+    return { photos };
+  }
+
+  /** Remove one photo by URL (also deletes the stored object, best-effort). */
+  async removePhoto(id: string, url: string): Promise<{ photos: string[] }> {
+    const existing = await this.get(id);
+    const current = this.readPhotos(existing.photos);
+    if (!current.includes(url)) {
+      throw new NotFoundException('Это фото не найдено у категории');
+    }
+    const photos = current.filter((p) => p !== url);
+    await this.persistPhotos(id, photos);
+    await this.storage.deleteByUrl(url);
+    return { photos };
+  }
+
+  /**
+   * Replace the full ordered photo list (used for reorder / bulk remove).
+   * Objects dropped from the list are deleted from storage, best-effort.
+   */
+  async setPhotos(id: string, photos: string[]): Promise<{ photos: string[] }> {
+    const existing = await this.get(id);
+    const before = this.readPhotos(existing.photos);
+    const clean = photos.map((p) => String(p).trim()).filter(Boolean);
+    await this.persistPhotos(id, clean);
+    const removed = before.filter((p) => !clean.includes(p));
+    await Promise.all(removed.map((url) => this.storage.deleteByUrl(url)));
+    return { photos: clean };
+  }
+
+  private readPhotos(value: unknown): string[] {
+    return Array.isArray(value) ? value.filter((p): p is string => typeof p === 'string') : [];
+  }
+
+  private async persistPhotos(id: string, photos: string[]): Promise<void> {
+    await this.prisma.forTenant((tx) =>
+      tx.roomType.update({ where: { id }, data: { photos } }),
+    );
   }
 
   // ── helpers ────────────────────────────────────────────────────────────────

@@ -1,6 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import Modal from '../../shared/Modal';
 import formClasses from '../../shared/Form.module.css';
+import {
+  uploadRoomTypePhoto,
+  deleteRoomTypePhoto,
+} from '../../../../api/roomTypes';
 
 const EMPTY = {
   code: '',
@@ -11,6 +16,8 @@ const EMPTY = {
   extraBeds: 0,
   basePrice: 0,
 };
+
+const readPhotos = (rt) => (Array.isArray(rt?.photos) ? rt.photos.filter((p) => typeof p === 'string') : []);
 
 /**
  * Modal for create/edit RoomType.
@@ -26,6 +33,11 @@ export default function RoomTypeFormModal({ open, editing, onClose, onSubmit }) 
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [photos, setPhotos] = useState([]);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState(null);
+  const fileRef = useRef(null);
+  const qc = useQueryClient();
 
   useEffect(() => {
     if (open) {
@@ -42,12 +54,48 @@ export default function RoomTypeFormModal({ open, editing, onClose, onSubmit }) 
             }
           : EMPTY,
       );
+      setPhotos(readPhotos(editing));
       setErrors({});
       setServerError(null);
+      setPhotoError(null);
     }
   }, [open, editing]);
 
   const set = (k, v) => setValues((p) => ({ ...p, [k]: v }));
+
+  const handlePickFile = async (ev) => {
+    const file = ev.target.files?.[0];
+    if (fileRef.current) fileRef.current.value = ''; // allow re-picking the same file
+    if (!file || !editing) return;
+    setPhotoBusy(true);
+    setPhotoError(null);
+    try {
+      const { photos: next } = await uploadRoomTypePhoto(editing.id, file);
+      setPhotos(next);
+      qc.invalidateQueries({ queryKey: ['roomTypes'] });
+    } catch (e) {
+      const msg = e?.response?.data?.message || e?.message || 'Не удалось загрузить фото';
+      setPhotoError(Array.isArray(msg) ? msg.join(', ') : msg);
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  const handleRemovePhoto = async (url) => {
+    if (!editing) return;
+    setPhotoBusy(true);
+    setPhotoError(null);
+    try {
+      const { photos: next } = await deleteRoomTypePhoto(editing.id, url);
+      setPhotos(next);
+      qc.invalidateQueries({ queryKey: ['roomTypes'] });
+    } catch (e) {
+      const msg = e?.response?.data?.message || e?.message || 'Не удалось удалить фото';
+      setPhotoError(Array.isArray(msg) ? msg.join(', ') : msg);
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
 
   const validate = () => {
     const e = {};
@@ -204,7 +252,95 @@ export default function RoomTypeFormModal({ open, editing, onClose, onSubmit }) 
           </div>
           {errors.basePrice && <div className={formClasses.fieldError}>{errors.basePrice}</div>}
         </div>
+
+        <div className={formClasses.field}>
+          <label className={formClasses.label}>Фотографии</label>
+          {!editing ? (
+            <div className={formClasses.hint}>
+              Сохраните категорию, затем откройте её снова, чтобы добавить фото.
+            </div>
+          ) : (
+            <>
+              <div style={photoGridStyle}>
+                {photos.map((url) => (
+                  <div key={url} style={photoThumbStyle}>
+                    <img src={url} alt="" style={photoImgStyle} loading="lazy" />
+                    <button
+                      type="button"
+                      title="Удалить фото"
+                      onClick={() => handleRemovePhoto(url)}
+                      disabled={photoBusy}
+                      style={photoRemoveStyle}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={photoBusy}
+                  style={photoAddStyle}
+                >
+                  {photoBusy ? '…' : '＋'}
+                </button>
+              </div>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                onChange={handlePickFile}
+                style={{ display: 'none' }}
+              />
+              <div className={formClasses.hint}>
+                JPEG, PNG, WebP или GIF, до 5 МБ. Эти фото уходят партнёрам по API.
+              </div>
+              {photoError && <div className={formClasses.fieldError}>{photoError}</div>}
+            </>
+          )}
+        </div>
       </form>
     </Modal>
   );
 }
+
+const photoGridStyle = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 8,
+  marginBottom: 6,
+};
+const photoThumbStyle = {
+  position: 'relative',
+  width: 84,
+  height: 84,
+  borderRadius: 8,
+  overflow: 'hidden',
+  border: '1px solid var(--border, #d0d5dd)',
+};
+const photoImgStyle = { width: '100%', height: '100%', objectFit: 'cover', display: 'block' };
+const photoRemoveStyle = {
+  position: 'absolute',
+  top: 2,
+  right: 2,
+  width: 20,
+  height: 20,
+  borderRadius: '50%',
+  border: 'none',
+  background: 'rgba(0,0,0,0.6)',
+  color: '#fff',
+  fontSize: 14,
+  lineHeight: '20px',
+  cursor: 'pointer',
+  padding: 0,
+};
+const photoAddStyle = {
+  width: 84,
+  height: 84,
+  borderRadius: 8,
+  border: '1px dashed var(--border, #d0d5dd)',
+  background: 'transparent',
+  fontSize: 28,
+  color: 'var(--text-muted, #667085)',
+  cursor: 'pointer',
+};

@@ -4,6 +4,7 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
+import { StorageModule } from './common/storage/storage.module';
 import { TenantContextInterceptor } from './common/interceptors/tenant-context.interceptor';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -49,6 +50,7 @@ import { ConnectivityModule } from './modules/connectivity/connectivity.module';
     }),
     PrismaModule,
     RedisModule,
+    StorageModule,
     AuthModule,
     HealthModule,
     RoomTypesModule,
