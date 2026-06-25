@@ -22,13 +22,13 @@ export class HousekeepingService {
             ht.type, ht.status, ht.assignee_id,
             u.full_name AS assignee_name,
             ht.created_from_reservation_id, ht.notes,
-            ht.completed_at, ht.created_at
+            ht.completed_at, ht."createdAt" AS created_at
           FROM housekeeping_task ht
           JOIN room r ON r.id = ht.room_id
           JOIN room_type rt ON rt.id = r.room_type_id
           LEFT JOIN app_user u ON u.id = ht.assignee_id
           WHERE ht.status = ${status}::"HkTaskStatus"
-          ORDER BY ht.created_at DESC
+          ORDER BY ht."createdAt" DESC
         `;
       }
       return tx.$queryRaw<{
@@ -42,12 +42,12 @@ export class HousekeepingService {
           ht.type, ht.status, ht.assignee_id,
           u.full_name AS assignee_name,
           ht.created_from_reservation_id, ht.notes,
-          ht.completed_at, ht.created_at
+          ht.completed_at, ht."createdAt" AS created_at
         FROM housekeeping_task ht
         JOIN room r ON r.id = ht.room_id
         JOIN room_type rt ON rt.id = r.room_type_id
         LEFT JOIN app_user u ON u.id = ht.assignee_id
-        ORDER BY ht.created_at DESC
+        ORDER BY ht."createdAt" DESC
       `;
     });
   }
@@ -108,7 +108,7 @@ export class HousekeepingService {
             status = CASE WHEN status = 'PENDING'::"HkTaskStatus"
                           THEN 'IN_PROGRESS'::"HkTaskStatus"
                           ELSE status END,
-            updated_at = now()
+            "updatedAt" = now()
         WHERE id = ${taskId}::uuid
         RETURNING id
       `;
@@ -124,7 +124,7 @@ export class HousekeepingService {
         UPDATE housekeeping_task
         SET status = 'DONE'::"HkTaskStatus",
             completed_at = now(),
-            updated_at = now()
+            "updatedAt" = now()
         WHERE id = ${taskId}::uuid
         RETURNING id, room_id
       `;
@@ -132,7 +132,7 @@ export class HousekeepingService {
 
       await tx.$executeRaw`
         UPDATE room
-        SET status = 'CLEAN'::"RoomStatus", updated_at = now()
+        SET status = 'CLEAN'::"RoomStatus", "updatedAt" = now()
         WHERE id = ${rows[0].room_id}::uuid
       `;
 

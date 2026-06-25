@@ -165,7 +165,7 @@ export class InventoryService {
     await tx.$executeRaw`
       UPDATE inventory
       SET booked_rooms = booked_rooms + ${delta},
-          updated_at   = now()
+          "updatedAt"  = now()
       WHERE tenant_id   = ${tenantId}::uuid
         AND room_type_id = ${roomTypeId}::uuid
         AND date = ANY(${dates}::date[])
@@ -189,7 +189,7 @@ export class InventoryService {
     await tx.$executeRaw`
       UPDATE inventory
       SET booked_rooms = GREATEST(0, booked_rooms - ${delta}),
-          updated_at   = now()
+          "updatedAt"  = now()
       WHERE tenant_id   = ${tenantId}::uuid
         AND room_type_id = ${roomTypeId}::uuid
         AND date = ANY(${dates}::date[])
@@ -314,7 +314,7 @@ export class InventoryService {
             SET total_rooms   = EXCLUDED.total_rooms,
                 blocked_rooms = EXCLUDED.blocked_rooms,
                 stop_sell     = EXCLUDED.stop_sell,
-                updated_at    = now()
+                "updatedAt"   = now()
         `;
         updated++;
       }
