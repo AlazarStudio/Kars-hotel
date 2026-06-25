@@ -43,7 +43,20 @@ export class ConnectivityService {
       where: { isActive: true, slug: { not: ConnectivityService.PLATFORM_SLUG } },
       orderBy: { name: 'asc' },
     });
-    return tenants.map((t) => this.mapHotel(t));
+    // The directory omits the full room-category list (it's only on the detail
+    // endpoint), but partners need the per-hotel category count for their hotel
+    // list. Aggregate it in one cross-tenant query (admin/BYPASSRLS) rather than
+    // making the partner open every hotel just to count its categories.
+    const counts = await this.prisma.admin.roomType.groupBy({
+      by: ['tenantId'],
+      where: { isActive: true, tenantId: { in: tenants.map((t) => t.id) } },
+      _count: { _all: true },
+    });
+    const countByTenant = new Map(counts.map((c) => [c.tenantId, c._count._all]));
+    return tenants.map((t) => ({
+      ...this.mapHotel(t),
+      categoryCount: countByTenant.get(t.id) ?? 0,
+    }));
   }
 
   async getHotel(slug: string) {
@@ -57,6 +70,7 @@ export class ConnectivityService {
     );
     return {
       ...this.mapHotel(tenant),
+      categoryCount: roomTypes.length,
       roomTypes: roomTypes.map((rt) => this.mapRoomType(rt)),
     };
   }
