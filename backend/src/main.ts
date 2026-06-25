@@ -32,6 +32,7 @@ async function bootstrap() {
     .setDescription('Multi-tenant Hotel Property Management System')
     .setVersion('0.0.1')
     .addBearerAuth()
+    .addApiKey({ type: 'apiKey', name: 'X-Api-Key', in: 'header' }, 'partner-api-key')
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);

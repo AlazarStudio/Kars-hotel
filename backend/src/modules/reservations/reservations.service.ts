@@ -444,7 +444,7 @@ export class ReservationsService {
         FROM reservation
         WHERE check_in = ${date}::date
           AND status IN ('NEW', 'CONFIRMED')
-        ORDER BY created_at ASC
+        ORDER BY "createdAt" ASC
       `;
     });
   }
@@ -466,7 +466,7 @@ export class ReservationsService {
         FROM reservation
         WHERE check_out = ${date}::date
           AND status = 'CHECKED_IN'
-        ORDER BY created_at ASC
+        ORDER BY "createdAt" ASC
       `;
     });
   }
@@ -496,7 +496,7 @@ export class ReservationsService {
         UPDATE reservation
         SET status = 'CHECKED_IN'::"ReservationStatus",
             version = version + 1,
-            updated_at = now()
+            "updatedAt" = now()
         WHERE id = ${id}::uuid
         RETURNING id, version
       `;
@@ -547,14 +547,14 @@ export class ReservationsService {
         UPDATE reservation
         SET status = 'CHECKED_OUT'::"ReservationStatus",
             version = version + 1,
-            updated_at = now()
+            "updatedAt" = now()
         WHERE id = ${id}::uuid
         RETURNING id, version
       `;
 
       await tx.$executeRaw`
         UPDATE room
-        SET status = 'DIRTY'::"RoomStatus", updated_at = now()
+        SET status = 'DIRTY'::"RoomStatus", "updatedAt" = now()
         WHERE id = ${cur.room_id}::uuid
       `;
 
@@ -610,7 +610,7 @@ export class ReservationsService {
         UPDATE reservation
         SET status = 'NO_SHOW'::"ReservationStatus",
             version = version + 1,
-            updated_at = now()
+            "updatedAt" = now()
         WHERE id = ${id}::uuid
         RETURNING id, version
       `;
@@ -664,7 +664,7 @@ export class ReservationsService {
         SET status = 'CANCELLED'::"ReservationStatus",
             notes  = COALESCE(notes, '') || ${notesSuffix},
             version = version + 1,
-            updated_at = now()
+            "updatedAt" = now()
         WHERE id = ${id}::uuid
         RETURNING id, version
       `;

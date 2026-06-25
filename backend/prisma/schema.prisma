@@ -203,6 +203,44 @@ model AuditLog {
   @@map("audit_log")
 }
 
+// ─── Connectivity — Partner API keys (channel-manager / OTA integration) ─────
+
+/// API credential for external partner systems (e.g. the Kars Avia dispatcher
+/// platform) to call the cross-tenant connectivity API at `/api/connect/v1`.
+///
+/// Modeled on TravelLine / Stripe connectivity keys:
+///   - only a SHA-256 HASH of the key is stored; the plaintext is shown exactly
+///     once at creation and is never recoverable;
+///   - `keyPrefix` is the visible, indexed lookup handle (e.g. "klh_live_AbCd…");
+///   - `scopes` gate which operations the key may perform;
+///   - keys can be revoked (`isActive=false`/`revokedAt`) and optionally expire.
+///
+/// NOT tenant-scoped — a partner key spans all hotels (tenants), exactly like a
+/// channel-manager connection. RLS is intentionally NOT applied: the table is
+/// accessed EXCLUSIVELY through the admin (BYPASSRLS) client and is made
+/// unreadable by the runtime `app_user` role in the accompanying migration, so
+/// a compromised app-tier connection cannot exfiltrate key hashes.
+model PartnerApiKey {
+  id         String    @id @default(uuid()) @db.Uuid
+  /// Human-readable label, e.g. "Kars Avia (prod)".
+  name       String
+  /// Visible, indexed lookup handle — the first chars of the full key.
+  keyPrefix  String    @unique @map("key_prefix")
+  /// SHA-256 hex digest of the full plaintext key.
+  keyHash    String    @map("key_hash")
+  /// Granted operation scopes, e.g. ["hotels:read","availability:read","reservations:write"].
+  scopes     String[]  @default([])
+  isActive   Boolean   @default(true) @map("is_active")
+  lastUsedAt DateTime? @map("last_used_at")
+  expiresAt  DateTime? @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@index([keyPrefix])
+  @@map("partner_api_key")
+}
+
 // ─── Phase E — Тарифы, цены, ограничения ─────────────────────────────────────
 
 /// Meal plan attached to a RatePlan. Influences pricing (and later — F&B charges
