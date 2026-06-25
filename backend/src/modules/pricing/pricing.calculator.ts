@@ -41,6 +41,7 @@ export function calculatePricing(args: CalculateArgs): PricingBreakdown {
     roomTypeId,
     currency,
     rates,
+    fallback,
   } = args;
 
   // ── Validate dates ──────────────────────────────────────────────────────────
@@ -71,6 +72,7 @@ export function calculatePricing(args: CalculateArgs): PricingBreakdown {
       occupancy,
       baseOccupancy,
       rates,
+      fallback,
     });
     if (!night.hasRate) {
       warnings.push(
@@ -108,10 +110,13 @@ function priceNight(args: {
   occupancy: number;
   baseOccupancy: number;
   rates: RateLookup;
+  fallback?: (ratePlanId: string, date: Date) => Decimal | null;
 }): PricingNight {
-  const { chain, date, roomTypeId, occupancy, baseOccupancy, rates } = args;
+  const { chain, date, roomTypeId, occupancy, baseOccupancy, rates, fallback } = args;
 
-  // Find the first plan in the chain (closest to leaf) that has a Rate for this night.
+  // Find the first plan in the chain (closest to leaf) that has a price for this
+  // night. Per plan we consult: exact per-day Rate row → (occupancy fallback) →
+  // baseline (season/standard) resolver. The first plan with any of these wins.
   let foundIndex = -1;
   let basePrice: Decimal | null = null;
   let occupancyFallback = false;
@@ -137,6 +142,11 @@ function priceNight(args: {
         occupancy: baseOccupancy,
       });
       if (found) occupancyFallback = true;
+    }
+
+    // No per-day override on this plan → try its baseline (season then standard).
+    if (!found && fallback) {
+      found = fallback(plan.id, date);
     }
 
     if (found) {

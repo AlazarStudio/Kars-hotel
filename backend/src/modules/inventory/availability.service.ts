@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/context/tenant-context';
 import { RedisService } from '../../common/redis/redis.service';
 import { InventoryService } from './inventory.service';
+import { BaselineResolver, isoDay } from '../pricing/rate-resolution';
 import { eachDayOfInterval, parseISO, format, differenceInCalendarDays } from 'date-fns';
 
 /** Per-day availability result. */
@@ -154,26 +156,89 @@ export class AvailabilityService {
               AND rate_plan_id IS NULL
           `;
 
-      // 4. Min prices (cheapest rate per stay date)
-      type PriceRow = { date: Date; min_price: string };
-      const priceRows: PriceRow[] = ratePlanId
-        ? await tx.$queryRaw<PriceRow[]>`
-            SELECT date, MIN(price)::text AS min_price
+      // 4. Effective min price per stay date.
+      //
+      // The price for a (ratePlan × date) resolves as:
+      //   per-day Rate row  →  covering season  →  standard price.
+      // We then take the cheapest across all (optionally one) rate plans.
+      // When no standard/season is configured this reduces to the previous
+      // behaviour (MIN over the per-day Rate rows), so the partner contract is
+      // unchanged for hotels that haven't set baseline prices yet.
+      type DailyRow = { rate_plan_id: string; date: Date; price: string };
+      const dailyRows: DailyRow[] = ratePlanId
+        ? await tx.$queryRaw<DailyRow[]>`
+            SELECT rate_plan_id, date, MIN(price)::text AS price
             FROM rate
             WHERE tenant_id   = ${tenantId}::uuid
               AND room_type_id = ${roomTypeId}::uuid
               AND date BETWEEN ${checkInDate}::date AND ${checkOutDate}::date
               AND rate_plan_id = ${ratePlanId}::uuid
-            GROUP BY date
+            GROUP BY rate_plan_id, date
           `
-        : await tx.$queryRaw<PriceRow[]>`
-            SELECT date, MIN(price)::text AS min_price
+        : await tx.$queryRaw<DailyRow[]>`
+            SELECT rate_plan_id, date, MIN(price)::text AS price
             FROM rate
             WHERE tenant_id   = ${tenantId}::uuid
               AND room_type_id = ${roomTypeId}::uuid
               AND date BETWEEN ${checkInDate}::date AND ${checkOutDate}::date
-            GROUP BY date
+            GROUP BY rate_plan_id, date
           `;
+
+      const [seasonRows, standardRows] = await Promise.all([
+        tx.rateSeason.findMany({
+          where: {
+            roomTypeId,
+            ratePlanId: ratePlanId || undefined,
+            dateFrom: { lte: checkOutDate },
+            dateTo: { gte: checkInDate },
+          },
+          select: { ratePlanId: true, roomTypeId: true, dateFrom: true, dateTo: true, price: true, sortOrder: true },
+        }),
+        tx.standardRate.findMany({
+          where: { roomTypeId, ratePlanId: ratePlanId || undefined },
+          select: { ratePlanId: true, roomTypeId: true, price: true },
+        }),
+      ]);
+
+      const baseline = new BaselineResolver(
+        seasonRows.map((s) => ({
+          ratePlanId: s.ratePlanId,
+          roomTypeId: s.roomTypeId,
+          dateFrom: isoDay(s.dateFrom),
+          dateTo: isoDay(s.dateTo),
+          price: s.price as unknown as Prisma.Decimal,
+          sortOrder: s.sortOrder,
+        })),
+        standardRows.map((s) => ({
+          ratePlanId: s.ratePlanId,
+          roomTypeId: s.roomTypeId,
+          price: s.price as unknown as Prisma.Decimal,
+        })),
+      );
+
+      // Per-(plan, day) daily override lookup + the set of candidate plans.
+      const dailyByPlanDay = new Map<string, string>();
+      const planIds = new Set<string>();
+      for (const r of dailyRows) {
+        dailyByPlanDay.set(`${r.rate_plan_id}|${format(r.date, 'yyyy-MM-dd')}`, r.price);
+        planIds.add(r.rate_plan_id);
+      }
+      for (const s of seasonRows) planIds.add(s.ratePlanId);
+      for (const s of standardRows) planIds.add(s.ratePlanId);
+
+      const priceRows: Array<{ date: Date; min_price: string }> = [];
+      for (const date of stayDates) {
+        const day = format(date, 'yyyy-MM-dd');
+        let min: Prisma.Decimal | null = null;
+        for (const planId of planIds) {
+          const daily = dailyByPlanDay.get(`${planId}|${day}`);
+          const eff = daily != null
+            ? new Prisma.Decimal(daily)
+            : baseline.resolve(planId, roomTypeId, day);
+          if (eff != null && (min === null || eff.lessThan(min))) min = eff;
+        }
+        if (min !== null) priceRows.push({ date, min_price: min.toFixed(2) });
+      }
 
       // Build lookup maps
       const invByDate = new Map(

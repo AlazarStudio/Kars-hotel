@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { calculatePricing, makeMapLookup } from './pricing.calculator';
+import { BaselineResolver, isoDay } from './rate-resolution';
 import { PricingBreakdown, RatePlanLike } from './pricing.types';
 
 export interface QuoteInput {
@@ -108,8 +109,44 @@ export class PricingService {
         })),
       );
 
+      // ── Baseline (season → standard) fallback for nights without a Rate row ─
+      const [seasonRows, standardRows] = await Promise.all([
+        tx.rateSeason.findMany({
+          where: { ratePlanId: { in: planIds }, roomTypeId: input.roomTypeId },
+          select: {
+            ratePlanId: true,
+            roomTypeId: true,
+            dateFrom: true,
+            dateTo: true,
+            price: true,
+            sortOrder: true,
+          },
+        }),
+        tx.standardRate.findMany({
+          where: { ratePlanId: { in: planIds }, roomTypeId: input.roomTypeId },
+          select: { ratePlanId: true, roomTypeId: true, price: true },
+        }),
+      ]);
+
+      const resolver = new BaselineResolver(
+        seasonRows.map((s) => ({
+          ratePlanId: s.ratePlanId,
+          roomTypeId: s.roomTypeId,
+          dateFrom: isoDay(s.dateFrom),
+          dateTo: isoDay(s.dateTo),
+          price: s.price as unknown as Prisma.Decimal,
+          sortOrder: s.sortOrder,
+        })),
+        standardRows.map((s) => ({
+          ratePlanId: s.ratePlanId,
+          roomTypeId: s.roomTypeId,
+          price: s.price as unknown as Prisma.Decimal,
+        })),
+      );
+
       // ── Calculate ─────────────────────────────────────────────────────────
       return calculatePricing({
+        fallback: (planId, date) => resolver.resolve(planId, input.roomTypeId, isoDay(date)),
         ratePlan: {
           id: ratePlan.id,
           parentRatePlanId: ratePlan.parentRatePlanId,

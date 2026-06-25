@@ -249,6 +249,210 @@
   line-height: 1.6;
 }
 
+/* ─── Sub-tabs (Базовые цены / Сезоны / Календарь) ──────────────────────── */
+
+.subTabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 14px 0;
+  border-bottom: 1px solid #E5E7EB;
+  background: #fff;
+}
+
+.subTab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 9px 14px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #6B7280;
+  cursor: pointer;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: -1px;
+}
+.subTab:hover { color: #111827; }
+.subTabActive {
+  color: #1E88E5;
+  border-bottom-color: #1E88E5;
+}
+.subTabBadge {
+  font-size: 11px;
+  font-weight: 700;
+  background: #E5E7EB;
+  color: #6B7280;
+  border-radius: 10px;
+  padding: 1px 7px;
+}
+.subTabActive .subTabBadge { background: #DBEAFE; color: #1D4ED8; }
+
+.sectionHint {
+  padding: 14px 22px 0;
+  font-size: 13px;
+  color: #6B7280;
+  line-height: 1.55;
+}
+
+.sectionActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 22px 20px;
+}
+
+/* ─── Standard prices table ─────────────────────────────────────────────── */
+
+.stdTable {
+  padding: 14px 22px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stdRow {
+  display: grid;
+  grid-template-columns: 1fr 180px;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid #F1F5F9;
+}
+
+.stdName {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0F1F3F;
+}
+.stdMeta {
+  font-size: 11.5px;
+  color: #9CA3AF;
+  margin-top: 2px;
+}
+
+.priceInputWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.priceInputWrap .input { padding-right: 26px; text-align: right; }
+.priceCurrency {
+  position: absolute;
+  right: 10px;
+  color: #9CA3AF;
+  font-size: 13px;
+  pointer-events: none;
+}
+
+/* ─── Seasons ───────────────────────────────────────────────────────────── */
+
+.seasonList {
+  padding: 14px 22px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.seasonCard {
+  border: 1px solid #E5E7EB;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.seasonCardHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: #F8FAFC;
+  border-bottom: 1px solid #E5E7EB;
+  flex-wrap: wrap;
+}
+
+.seasonColorDot {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  border: 1px solid rgba(0,0,0,0.1);
+}
+
+.seasonNameInput {
+  flex: 1;
+  min-width: 160px;
+}
+
+.seasonDates {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: #6B7280;
+}
+
+.seasonPrices {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px 16px;
+  padding: 14px;
+}
+
+.seasonPriceRow {
+  display: grid;
+  grid-template-columns: 1fr 120px;
+  align-items: center;
+  gap: 10px;
+}
+.seasonPriceRow label {
+  font-size: 12.5px;
+  color: #374151;
+  font-weight: 500;
+}
+
+.seasonRemove {
+  background: transparent;
+  border: 1px solid #FECACA;
+  color: #EF4444;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.seasonRemove:hover { background: #FEF2F2; }
+
+.colorInput {
+  width: 34px;
+  height: 30px;
+  border: 1px solid #D1D5DB;
+  border-radius: 6px;
+  padding: 2px;
+  cursor: pointer;
+  background: #fff;
+}
+
+.seasonsEmpty {
+  padding: 28px;
+  text-align: center;
+  color: #6B7280;
+  font-size: 13.5px;
+}
+
+/* ─── Cell source markers ───────────────────────────────────────────────── */
+
+.cellOverride { color: #1D4ED8; font-weight: 700; }
+.cellSeason { font-weight: 600; }
+.cellStandard { color: #4B5563; }
+.cellSeasonStripe {
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  height: 3px;
+}
+.calCellRel { position: relative; }
+
 /* ─── Rate calendar ─────────────────────────────────────────────────────── */
 
 .calendarRoot {

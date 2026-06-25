@@ -79,4 +79,11 @@ export interface CalculateArgs {
   roomTypeId: string;
   currency: string;
   rates: RateLookup;
+  /**
+   * Optional baseline-price fallback consulted per (ratePlan × date) when no
+   * exact per-day Rate row exists in the chain. Returns a season or standard
+   * price, or null. When omitted the calculator behaves exactly as before
+   * (per-day Rate rows only).
+   */
+  fallback?: (ratePlanId: string, date: Date) => Decimal | null;
 }

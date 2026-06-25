@@ -3,6 +3,8 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/context/tenant-context';
 import { BulkUpsertRatesDto } from './dto/bulk-upsert-rates.dto';
 import { FillRatesDto } from './dto/fill-rates.dto';
+import { SetStandardRatesDto } from './dto/set-standard-rates.dto';
+import { ReplaceSeasonsDto } from './dto/replace-seasons.dto';
 
 export interface ListRatesFilter {
   ratePlanId?: string;
@@ -151,5 +153,117 @@ export class RatesService {
   async remove(id: string) {
     await this.prisma.forTenant((tx) => tx.rate.delete({ where: { id } }));
     return { ok: true };
+  }
+
+  // ─── Standard (baseline) prices ────────────────────────────────────────────
+
+  /** All standard prices for a rate plan (one per configured category). */
+  async listStandard(ratePlanId: string) {
+    return this.prisma.forTenant((tx) =>
+      tx.standardRate.findMany({
+        where: { ratePlanId: ratePlanId || undefined },
+        orderBy: { roomTypeId: 'asc' },
+      }),
+    );
+  }
+
+  /**
+   * Upsert the standard price per category for a plan. price = 0 deletes the
+   * row (no baseline for that category). Returns the resulting list.
+   */
+  async setStandard(dto: SetStandardRatesDto) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    const currency = dto.currency ?? 'RUB';
+    await this.prisma.forTenant(async (tx) => {
+      for (const it of dto.items) {
+        if (it.price > 0) {
+          await tx.standardRate.upsert({
+            where: {
+              tenantId_ratePlanId_roomTypeId: {
+                tenantId,
+                ratePlanId: dto.ratePlanId,
+                roomTypeId: it.roomTypeId,
+              },
+            },
+            create: {
+              tenantId,
+              ratePlanId: dto.ratePlanId,
+              roomTypeId: it.roomTypeId,
+              price: it.price,
+              currency,
+            },
+            update: { price: it.price, currency },
+          });
+        } else {
+          await tx.standardRate.deleteMany({
+            where: { ratePlanId: dto.ratePlanId, roomTypeId: it.roomTypeId },
+          });
+        }
+      }
+    });
+    await this.prisma.writeAuditLog({
+      tenantId,
+      entity: 'standard_rate',
+      action: 'set',
+      diff: { before: {}, after: { ratePlanId: dto.ratePlanId, count: dto.items.length } },
+    });
+    return this.listStandard(dto.ratePlanId);
+  }
+
+  // ─── Seasons ───────────────────────────────────────────────────────────────
+
+  /** All season rows for a rate plan, ordered for display. */
+  async listSeasons(ratePlanId: string) {
+    return this.prisma.forTenant((tx) =>
+      tx.rateSeason.findMany({
+        where: { ratePlanId: ratePlanId || undefined },
+        orderBy: [{ sortOrder: 'asc' }, { dateFrom: 'asc' }],
+      }),
+    );
+  }
+
+  /**
+   * Replace the entire set of seasons for a rate plan atomically. Each season
+   * input expands to one row per category (with its own price). Editing the
+   * season list in the UI and saving sends the full desired state here.
+   */
+  async replaceSeasons(dto: ReplaceSeasonsDto) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    const currency = dto.currency ?? 'RUB';
+
+    for (const s of dto.seasons) {
+      if (s.dateTo < s.dateFrom) {
+        throw new BadRequestException(`Сезон «${s.name}»: дата окончания раньше начала`);
+      }
+    }
+
+    await this.prisma.forTenant(async (tx) => {
+      await tx.rateSeason.deleteMany({ where: { ratePlanId: dto.ratePlanId } });
+      const rows = dto.seasons.flatMap((s, idx) =>
+        s.items
+          .filter((it) => it.price > 0)
+          .map((it) => ({
+            tenantId,
+            ratePlanId: dto.ratePlanId,
+            roomTypeId: it.roomTypeId,
+            name: s.name,
+            color: s.color ?? null,
+            dateFrom: new Date(`${s.dateFrom}T00:00:00.000Z`),
+            dateTo: new Date(`${s.dateTo}T00:00:00.000Z`),
+            price: it.price,
+            currency,
+            sortOrder: s.sortOrder ?? idx,
+          })),
+      );
+      if (rows.length) await tx.rateSeason.createMany({ data: rows });
+    });
+
+    await this.prisma.writeAuditLog({
+      tenantId,
+      entity: 'rate_season',
+      action: 'replace',
+      diff: { before: {}, after: { ratePlanId: dto.ratePlanId, seasons: dto.seasons.length } },
+    });
+    return this.listSeasons(dto.ratePlanId);
   }
 }

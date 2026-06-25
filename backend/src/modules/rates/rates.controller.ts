@@ -3,6 +3,8 @@ import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { RatesService } from './rates.service';
 import { BulkUpsertRatesDto } from './dto/bulk-upsert-rates.dto';
 import { FillRatesDto } from './dto/fill-rates.dto';
+import { SetStandardRatesDto } from './dto/set-standard-rates.dto';
+import { ReplaceSeasonsDto } from './dto/replace-seasons.dto';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 
 @ApiTags('rates')
@@ -52,6 +54,48 @@ export class RatesController {
   })
   fill(@Body() dto: FillRatesDto) {
     return this.service.fillRange(dto);
+  }
+
+  // ─── Standard (baseline) prices ────────────────────────────────────────────
+
+  @Get('standard')
+  @RequirePermissions('rate.read')
+  @ApiOperation({ summary: 'List standard (baseline) prices for a rate plan' })
+  @ApiQuery({ name: 'ratePlanId', required: true })
+  listStandard(@Query('ratePlanId') ratePlanId: string) {
+    return this.service.listStandard(ratePlanId);
+  }
+
+  @Put('standard')
+  @RequirePermissions('rate.update')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Set the standard (baseline) price per category for a rate plan',
+    description: 'price = 0 clears the baseline for that category. Returns the resulting list.',
+  })
+  setStandard(@Body() dto: SetStandardRatesDto) {
+    return this.service.setStandard(dto);
+  }
+
+  // ─── Seasons ───────────────────────────────────────────────────────────────
+
+  @Get('seasons')
+  @RequirePermissions('rate.read')
+  @ApiOperation({ summary: 'List seasons (date ranges with per-category prices) for a rate plan' })
+  @ApiQuery({ name: 'ratePlanId', required: true })
+  listSeasons(@Query('ratePlanId') ratePlanId: string) {
+    return this.service.listSeasons(ratePlanId);
+  }
+
+  @Put('seasons')
+  @RequirePermissions('rate.update')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Replace the full set of seasons for a rate plan atomically',
+    description: 'Sends the entire desired state; existing seasons are wiped and recreated.',
+  })
+  replaceSeasons(@Body() dto: ReplaceSeasonsDto) {
+    return this.service.replaceSeasons(dto);
   }
 
   @Delete(':id')

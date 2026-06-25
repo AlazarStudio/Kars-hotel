@@ -20,3 +20,27 @@ export async function fillRates(payload) {
   const { data } = await api.post('/rates/fill', payload);
   return data;
 }
+
+// ─── Standard (baseline) prices ──────────────────────────────────────────────
+
+export async function listStandardRates(ratePlanId) {
+  const { data } = await api.get('/rates/standard', { params: { ratePlanId } });
+  return data;
+}
+
+export async function setStandardRates(payload) {
+  const { data } = await api.put('/rates/standard', payload);
+  return data;
+}
+
+// ─── Seasons ─────────────────────────────────────────────────────────────────
+
+export async function listSeasons(ratePlanId) {
+  const { data } = await api.get('/rates/seasons', { params: { ratePlanId } });
+  return data;
+}
+
+export async function replaceSeasons(payload) {
+  const { data } = await api.put('/rates/seasons', payload);
+  return data;
+}
