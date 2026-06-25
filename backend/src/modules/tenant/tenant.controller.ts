@@ -3,6 +3,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { TenantService } from './tenant.service';
 import { UpdateTenantSettingsDto } from './dto/update-tenant-settings.dto';
+import { UpdateGalleryDto } from './dto/update-gallery.dto';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedRequestUser } from '../auth/strategies/jwt.strategy';
@@ -49,6 +50,28 @@ export class TenantController {
   @ApiOperation({ summary: 'Remove the hotel logo' })
   removeLogo() {
     return this.service.removeLogo();
+  }
+
+  @Post('gallery')
+  @RequirePermissions('user.update')
+  @ApiOperation({ summary: 'Add a photo to the hotel gallery (stored in our object storage)' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } },
+  })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_PHOTO_BYTES } }))
+  addGalleryPhoto(@UploadedFile() file?: MediaFile) {
+    if (!file) {
+      throw new BadRequestException('Файл не передан (ожидается поле "file")');
+    }
+    return this.service.addGalleryPhoto(file);
+  }
+
+  @Patch('gallery')
+  @RequirePermissions('user.update')
+  @ApiOperation({ summary: 'Reorder the gallery (first = cover) or remove photos' })
+  updateGallery(@Body() dto: UpdateGalleryDto) {
+    return this.service.setGallery(dto.photos);
   }
 
   @Get('users')

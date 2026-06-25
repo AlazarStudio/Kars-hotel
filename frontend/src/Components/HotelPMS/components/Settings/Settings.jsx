@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import s from './Settings.module.css';
 import f from '../../shared/Form.module.css';
 import { useTenantSettings, useUpdateTenantSettings } from '../../../../hooks/api/useTenantSettings';
-import { uploadTenantLogo, removeTenantLogo } from '../../../../api/tenant';
+import { addGalleryPhoto, updateGallery } from '../../../../api/tenant';
 
 // ─── Nav sections ─────────────────────────────────────────────────────────────
 
@@ -132,9 +132,9 @@ export default function Settings() {
   const [form, setForm] = useState(null);
   const [savedSection, setSavedSection] = useState(null);
   const [saveError, setSaveError] = useState(null);
-  const [logoBusy, setLogoBusy] = useState(false);
-  const [logoError, setLogoError] = useState(null);
-  const logoRef = useRef(null);
+  const [galleryBusy, setGalleryBusy] = useState(false);
+  const [galleryError, setGalleryError] = useState(null);
+  const galleryRef = useRef(null);
 
   // Populate form from loaded settings
   useEffect(() => {
@@ -150,6 +150,7 @@ export default function Settings() {
         stars:             settings.stars             ?? null,
         description:       settings.description       ?? '',
         logoUrl:           settings.logoUrl           ?? '',
+        galleryPhotos:     Array.isArray(settings.galleryPhotos) ? settings.galleryPhotos : [],
         timezone:          settings.timezone          ?? 'Europe/Moscow',
         currency:          settings.currency          ?? 'RUB',
         vatPayer:          settings.vatPayer          ?? false,
@@ -168,41 +169,58 @@ export default function Settings() {
     setForm(prev => ({ ...prev, [field]: value }));
   }, []);
 
-  // The logo is uploaded straight to our object storage and saved immediately
-  // (it doesn't wait for the "Сохранить" button), so the URL we store is always
-  // one we host ourselves — never an external link.
-  const handleLogoPick = useCallback(async (ev) => {
-    const file = ev.target.files?.[0];
-    if (logoRef.current) logoRef.current.value = ''; // allow re-picking same file
-    if (!file) return;
-    setLogoBusy(true);
-    setLogoError(null);
-    try {
-      const tenant = await uploadTenantLogo(file);
-      set('logoUrl', tenant.logoUrl ?? '');
-      qc.setQueryData(['tenantSettings'], tenant);
-    } catch (e) {
-      const msg = e?.response?.data?.message || e?.message || 'Не удалось загрузить логотип';
-      setLogoError(Array.isArray(msg) ? msg.join(', ') : msg);
-    } finally {
-      setLogoBusy(false);
-    }
+  // Gallery photos are uploaded straight to our object storage and saved
+  // immediately (they don't wait for the "Сохранить" button), so every URL we
+  // store is one we host ourselves — never an external link. The first photo in
+  // the list is the cover / main image shown to partners (Kars Avia slider).
+  const syncTenant = useCallback((tenant) => {
+    set('galleryPhotos', Array.isArray(tenant.galleryPhotos) ? tenant.galleryPhotos : []);
+    qc.setQueryData(['tenantSettings'], tenant);
   }, [qc, set]);
 
-  const handleLogoRemove = useCallback(async () => {
-    setLogoBusy(true);
-    setLogoError(null);
+  const handleGalleryPick = useCallback(async (ev) => {
+    const files = Array.from(ev.target.files ?? []);
+    if (galleryRef.current) galleryRef.current.value = ''; // allow re-picking
+    if (!files.length) return;
+    setGalleryBusy(true);
+    setGalleryError(null);
     try {
-      const tenant = await removeTenantLogo();
-      set('logoUrl', '');
-      qc.setQueryData(['tenantSettings'], tenant);
+      let tenant;
+      for (const file of files) {
+        tenant = await addGalleryPhoto(file); // append one at a time
+      }
+      if (tenant) syncTenant(tenant);
     } catch (e) {
-      const msg = e?.response?.data?.message || e?.message || 'Не удалось удалить логотип';
-      setLogoError(Array.isArray(msg) ? msg.join(', ') : msg);
+      const msg = e?.response?.data?.message || e?.message || 'Не удалось загрузить изображение';
+      setGalleryError(Array.isArray(msg) ? msg.join(', ') : msg);
     } finally {
-      setLogoBusy(false);
+      setGalleryBusy(false);
     }
-  }, [qc, set]);
+  }, [syncTenant]);
+
+  const mutateGallery = useCallback(async (nextPhotos, failMsg) => {
+    setGalleryBusy(true);
+    setGalleryError(null);
+    try {
+      const tenant = await updateGallery(nextPhotos);
+      syncTenant(tenant);
+    } catch (e) {
+      const msg = e?.response?.data?.message || e?.message || failMsg;
+      setGalleryError(Array.isArray(msg) ? msg.join(', ') : msg);
+    } finally {
+      setGalleryBusy(false);
+    }
+  }, [syncTenant]);
+
+  const handleGalleryRemove = useCallback((url) => {
+    const next = (form?.galleryPhotos ?? []).filter((p) => p !== url);
+    return mutateGallery(next, 'Не удалось удалить изображение');
+  }, [form, mutateGallery]);
+
+  const handleSetCover = useCallback((url) => {
+    const rest = (form?.galleryPhotos ?? []).filter((p) => p !== url);
+    return mutateGallery([url, ...rest], 'Не удалось назначить главное изображение');
+  }, [form, mutateGallery]);
 
   const handleSave = useCallback(async () => {
     if (!form) return;
@@ -422,7 +440,7 @@ export default function Settings() {
             <div className={s.section}>
               <div className={s.sectionHeader}>
                 <div className={s.sectionTitle}>Дополнительно</div>
-                <div className={s.sectionDesc}>Описание и логотип</div>
+                <div className={s.sectionDesc}>Описание и галерея фотографий</div>
               </div>
               <div className={s.sectionBody}>
                 <div className={f.field}>
@@ -436,45 +454,59 @@ export default function Settings() {
                   />
                 </div>
                 <div className={f.field}>
-                  <label className={f.label}>Логотип</label>
-                  <div style={logoRowStyle}>
-                    <div style={logoThumbStyle}>
-                      {form.logoUrl ? (
-                        <img src={form.logoUrl} alt="Логотип" style={logoImgStyle} />
-                      ) : (
-                        <span style={logoPlaceholderStyle}>Нет логотипа</span>
-                      )}
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      <button
-                        type="button"
-                        className={f.btnSecondary}
-                        onClick={() => logoRef.current?.click()}
-                        disabled={logoBusy}
-                      >
-                        {logoBusy ? 'Загрузка…' : form.logoUrl ? 'Заменить' : 'Загрузить'}
-                      </button>
-                      {form.logoUrl && (
-                        <button
-                          type="button"
-                          className={f.btnSecondary}
-                          onClick={handleLogoRemove}
-                          disabled={logoBusy}
-                        >
-                          Удалить
-                        </button>
-                      )}
-                    </div>
+                  <label className={f.label}>Галерея фотографий</label>
+                  <div style={galleryGridStyle}>
+                    {(form.galleryPhotos ?? []).map((url, i) => (
+                      <div key={url} style={galleryTileStyle}>
+                        <img src={url} alt={`Фото ${i + 1}`} style={logoImgStyle} />
+                        {i === 0 && <span style={coverBadgeStyle}>Главная</span>}
+                        <div style={tileActionsStyle}>
+                          {i !== 0 && (
+                            <button
+                              type="button"
+                              style={tileBtnStyle}
+                              title="Сделать главной"
+                              onClick={() => handleSetCover(url)}
+                              disabled={galleryBusy}
+                            >
+                              ★
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            style={tileBtnStyle}
+                            title="Удалить"
+                            onClick={() => handleGalleryRemove(url)}
+                            disabled={galleryBusy}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      style={galleryAddTileStyle}
+                      onClick={() => galleryRef.current?.click()}
+                      disabled={galleryBusy}
+                    >
+                      <span style={{ fontSize: 26, lineHeight: 1 }}>＋</span>
+                      <span style={{ fontSize: 12 }}>{galleryBusy ? 'Загрузка…' : 'Добавить'}</span>
+                    </button>
                   </div>
                   <input
-                    ref={logoRef}
+                    ref={galleryRef}
                     type="file"
                     accept="image/jpeg,image/png,image/webp,image/gif"
-                    onChange={handleLogoPick}
+                    multiple
+                    onChange={handleGalleryPick}
                     style={{ display: 'none' }}
                   />
-                  <div className={f.hint}>JPEG, PNG, WebP или GIF, до 5 МБ. Хранится на нашем сервере.</div>
-                  {logoError && <div className={f.fieldError}>{logoError}</div>}
+                  <div className={f.hint}>
+                    JPEG, PNG, WebP или GIF, до 5 МБ. Можно выбрать несколько. Первая фотография —
+                    главная (обложка), её видят партнёры в слайдере. Хранится на нашем сервере.
+                  </div>
+                  {galleryError && <div className={f.fieldError}>{galleryError}</div>}
                 </div>
               </div>
             </div>
@@ -648,22 +680,62 @@ export default function Settings() {
   );
 }
 
-const logoRowStyle = {
-  display: 'flex',
-  alignItems: 'flex-start',
-  gap: 16,
+const galleryGridStyle = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+  gap: 12,
 };
-const logoThumbStyle = {
-  width: 120,
-  height: 120,
+const galleryTileStyle = {
+  position: 'relative',
+  aspectRatio: '4 / 3',
   borderRadius: 12,
   overflow: 'hidden',
   border: '1px solid var(--border, #d0d5dd)',
   background: 'var(--surface-2, #f5f6f8)',
+};
+const logoImgStyle = { width: '100%', height: '100%', objectFit: 'cover', display: 'block' };
+const galleryAddTileStyle = {
+  aspectRatio: '4 / 3',
+  borderRadius: 12,
+  border: '1.5px dashed var(--border, #d0d5dd)',
+  background: 'var(--surface-2, #f5f6f8)',
+  color: 'var(--text-muted, #667085)',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 4,
+  cursor: 'pointer',
+};
+const coverBadgeStyle = {
+  position: 'absolute',
+  top: 8,
+  left: 8,
+  padding: '2px 8px',
+  borderRadius: 6,
+  fontSize: 11,
+  fontWeight: 600,
+  color: '#fff',
+  background: 'rgba(17, 24, 39, 0.78)',
+};
+const tileActionsStyle = {
+  position: 'absolute',
+  top: 6,
+  right: 6,
+  display: 'flex',
+  gap: 6,
+};
+const tileBtnStyle = {
+  width: 26,
+  height: 26,
+  borderRadius: 6,
+  border: 'none',
+  background: 'rgba(17, 24, 39, 0.78)',
+  color: '#fff',
+  fontSize: 13,
+  lineHeight: 1,
+  cursor: 'pointer',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  flexShrink: 0,
 };
-const logoImgStyle = { width: '100%', height: '100%', objectFit: 'cover', display: 'block' };
-const logoPlaceholderStyle = { fontSize: 12, color: 'var(--text-muted, #667085)' };

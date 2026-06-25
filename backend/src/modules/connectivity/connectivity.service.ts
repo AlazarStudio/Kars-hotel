@@ -304,6 +304,7 @@ export class ConnectivityService {
     checkInTime: string;
     checkOutTime: string;
     logoUrl: string | null;
+    galleryPhotos: unknown;
   }) {
     return {
       id: t.id,
@@ -322,6 +323,10 @@ export class ConnectivityService {
       checkInTime: t.checkInTime,
       checkOutTime: t.checkOutTime,
       logoUrl: t.logoUrl,
+      // Hotel hero gallery shown as a slider on partner sites; first = cover.
+      photos: Array.isArray(t.galleryPhotos)
+        ? (t.galleryPhotos as unknown[]).filter((p): p is string => typeof p === 'string')
+        : [],
     };
   }
 

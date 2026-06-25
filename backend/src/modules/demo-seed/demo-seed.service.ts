@@ -31,6 +31,11 @@ export class DemoSeedService {
       `tenant-logos/${tenantId}`,
       DEMO_PROFILE.logoUrl,
     );
+    const galleryPhotos = await Promise.all(
+      DEMO_PROFILE.galleryPhotos.map((src) =>
+        this.storage.ingestFromUrl(`tenant-gallery/${tenantId}`, src),
+      ),
+    );
     const photosByCode = new Map<string, string[]>();
     for (const cat of DEMO_CATEGORIES) {
       const urls = await Promise.all(
@@ -40,7 +45,7 @@ export class DemoSeedService {
       );
       photosByCode.set(cat.code, urls);
     }
-    return { profile: { ...DEMO_PROFILE, logoUrl }, photosByCode };
+    return { profile: { ...DEMO_PROFILE, logoUrl, galleryPhotos }, photosByCode };
   }
 
   /**

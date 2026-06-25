@@ -92,6 +92,14 @@ export class StorageService implements OnModuleInit {
     return this.putImage(`tenant-logos/${tenantId}`, file);
   }
 
+  /**
+   * Upload a hotel gallery photo and return its public URL.
+   * Key layout: tenant-gallery/{tenantId}/{uuid}.{ext}
+   */
+  async uploadTenantGalleryPhoto(tenantId: string, file: UploadedFile): Promise<string> {
+    return this.putImage(`tenant-gallery/${tenantId}`, file);
+  }
+
   /** True when a URL already points at an object in our own bucket. */
   isOwnUrl(url: string): boolean {
     return this.keyFromUrl(url) != null;

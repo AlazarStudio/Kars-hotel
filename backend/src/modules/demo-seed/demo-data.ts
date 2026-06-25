@@ -35,6 +35,8 @@ export interface DemoProfileSeed {
   stars: number;
   description: string;
   logoUrl: string;
+  /** Hotel hero gallery shown as a slider to partners (first = cover). */
+  galleryPhotos: string[];
   checkInTime: string;
   checkOutTime: string;
 }
@@ -53,6 +55,12 @@ export const DEMO_PROFILE: DemoProfileSeed = {
     'бесплатный Wi-Fi и парковка. Удобен для экипажей и командировок.',
   logoUrl:
     'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1200&q=80',
+  galleryPhotos: [
+    'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1600&q=80',
+    'https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=1600&q=80',
+    'https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?w=1600&q=80',
+    'https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=1600&q=80',
+  ],
   checkInTime: '14:00',
   checkOutTime: '12:00',
 };

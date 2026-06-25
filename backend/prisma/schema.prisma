@@ -62,6 +62,7 @@ model Tenant {
   stars             Int?
   description       String?
   logoUrl           String?    @map("logo_url")
+  galleryPhotos     Json       @default("[]")    @map("gallery_photos") @db.JsonB
   vatRate           Float      @default(20)     @map("vat_rate")
   touristTaxAmount  Float?                       @map("tourist_tax_amount")
   checkInTime       String     @default("14:00") @map("check_in_time")

@@ -69,6 +69,60 @@ export class TenantService {
     return updated;
   }
 
+  /**
+   * Upload one gallery photo to our storage and append it to the hotel gallery.
+   * The gallery is an ordered list (first = cover) shown as a slider on the
+   * partner-facing hotel page. Written via the admin client (tenant table is
+   * RLS-restricted for app_user).
+   */
+  async addGalleryPhoto(file: UploadedFile) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    const url = await this.storage.uploadTenantGalleryPhoto(tenantId, file);
+    const current = await this.readGallery(tenantId);
+    return this.prisma.admin.tenant.update({
+      where: { id: tenantId },
+      data: { galleryPhotos: [...current, url] },
+    });
+  }
+
+  /**
+   * Replace the gallery with an explicit ordered list. Handles reordering
+   * (e.g. promoting a photo to cover) and removal in one call: any of our own
+   * URLs no longer present is deleted from storage. Every URL must already be
+   * one we host — foreign URLs are rejected so the gallery can never reference
+   * an external CDN.
+   */
+  async setGallery(photos: string[]) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    const next = photos.filter((p, i) => photos.indexOf(p) === i); // dedupe, keep order
+    const foreign = next.filter((p) => !this.storage.isOwnUrl(p));
+    if (foreign.length) {
+      throw new ConflictException(
+        'Галерея может содержать только изображения, загруженные в наше хранилище.',
+      );
+    }
+    const current = await this.readGallery(tenantId);
+    const updated = await this.prisma.admin.tenant.update({
+      where: { id: tenantId },
+      data: { galleryPhotos: next },
+    });
+    // Delete objects dropped from the gallery (best-effort).
+    const removed = current.filter((p) => !next.includes(p));
+    await Promise.all(removed.map((url) => this.storage.deleteByUrl(url)));
+    return updated;
+  }
+
+  /** Read the current gallery as a clean string[] (tolerates legacy shapes). */
+  private async readGallery(tenantId: string): Promise<string[]> {
+    const row = await this.prisma.admin.tenant.findUniqueOrThrow({
+      where: { id: tenantId },
+      select: { galleryPhotos: true },
+    });
+    return Array.isArray(row.galleryPhotos)
+      ? (row.galleryPhotos as unknown[]).filter((p): p is string => typeof p === 'string')
+      : [];
+  }
+
   async listUsers(tenantId: string) {
     return this.prisma.admin.user.findMany({
       where: { tenantId },
