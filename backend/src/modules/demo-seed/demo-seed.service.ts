@@ -1,7 +1,7 @@
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/context/tenant-context';
-import { DEMO_CATEGORIES, DEMO_ROOMS } from './demo-data';
+import { DEMO_CATEGORIES, DEMO_PROFILE, DEMO_ROOMS } from './demo-data';
 
 export interface DemoSeedResult {
   inserted: { roomTypes: number; rooms: number };
@@ -48,10 +48,22 @@ export class DemoSeedService {
             maxOccupancy: cat.maxOccupancy,
             basePrice: cat.basePrice,
             sortOrder: cat.sortOrder,
+            photos: cat.photos ?? [],
           },
         });
         typeIdByCode.set(cat.code, rt.id);
       }
+
+      // 1b. Populate the hotel profile (name/stars/address/contacts) that
+      // partners read over the connectivity API. Without this a demo hotel
+      // shows up with no stars/address downstream (e.g. in Kars Avia).
+      // The tenant table is written via the admin (BYPASSRLS) client — same
+      // as TenantService.updateSettings — because the runtime app_user role
+      // is intentionally restricted on `tenant` (see B.2 RLS migration).
+      await this.prisma.admin.tenant.update({
+        where: { id: tenantId },
+        data: DEMO_PROFILE,
+      });
 
       // 2. Create rooms.
       await tx.room.createMany({
@@ -90,6 +102,67 @@ export class DemoSeedService {
         hadExisting: false,
       };
     });
+  }
+
+  /**
+   * Apply the demo PROFILE + category PHOTOS to a tenant that has ALREADY been
+   * seeded (seed() refuses to run on a non-empty tenant). Idempotent: re-running
+   * just re-applies the same values. Resolves the tenant by slug so it can be
+   * driven from an admin script without owner credentials.
+   *
+   * Profile is written via the admin client (tenant table is RLS-restricted for
+   * app_user). Category photos are matched by `code` and written through the
+   * RLS-scoped tx so isolation still holds for room_type writes.
+   */
+  async enrichExisting(slug: string): Promise<{
+    tenantId: string;
+    profileUpdated: boolean;
+    photosUpdated: number;
+  }> {
+    const tenant = await this.prisma.admin.tenant.findUnique({
+      where: { slug },
+      select: { id: true },
+    });
+    if (!tenant) {
+      throw new ConflictException(`No tenant with slug="${slug}"`);
+    }
+    const tenantId = tenant.id;
+
+    // 1. Hotel profile (admin — tenant table is RLS-restricted for app_user).
+    await this.prisma.admin.tenant.update({
+      where: { id: tenantId },
+      data: DEMO_PROFILE,
+    });
+
+    // 2. Category photos, matched by code (RLS-scoped).
+    const photosUpdated = await this.prisma.forTenantExplicit(tenantId, async (tx) => {
+      let n = 0;
+      for (const cat of DEMO_CATEGORIES) {
+        const res = await tx.roomType.updateMany({
+          where: { code: cat.code },
+          data: { photos: cat.photos ?? [] },
+        });
+        n += res.count;
+      }
+      return n;
+    });
+
+    await this.prisma.writeAuditLog({
+      tenantId,
+      userId: TenantContext.get()?.userId,
+      entity: 'demo-seed',
+      action: 'enrich',
+      diff: {
+        before: {},
+        after: { profile: true, photosUpdated },
+      },
+    });
+
+    this.logger.log(
+      `Demo enrich for tenant=${tenantId} (slug=${slug}): profile + ${photosUpdated} room-type photos`,
+    );
+
+    return { tenantId, profileUpdated: true, photosUpdated };
   }
 
   /**

@@ -17,7 +17,45 @@ export interface DemoCategorySeed {
   basePrice: number;
   sortOrder: number;
   description?: string;
+  photos?: string[];
 }
+
+/**
+ * Hotel-level profile for the demo tenant. These are the fields partners (e.g.
+ * Kars Avia) read over the connectivity API — name/stars/address/contacts live
+ * on the `tenant` row, so a complete demo means a fully-populated profile here.
+ */
+export interface DemoProfileSeed {
+  city: string;
+  address: string;
+  country: string;
+  phone: string;
+  email: string;
+  website: string;
+  stars: number;
+  description: string;
+  logoUrl: string;
+  checkInTime: string;
+  checkOutTime: string;
+}
+
+export const DEMO_PROFILE: DemoProfileSeed = {
+  city: 'Москва',
+  address: 'Ленинградский проспект, 37к9',
+  country: 'RU',
+  phone: '+7 495 120-45-67',
+  email: 'reception@demo-hotel.ru',
+  website: 'https://demo-hotel.ru',
+  stars: 4,
+  description:
+    'Современный бизнес-отель в 10 минутах от аэропорта. 21 номер четырёх ' +
+    'категорий, круглосуточная стойка регистрации, завтрак «шведский стол», ' +
+    'бесплатный Wi-Fi и парковка. Удобен для экипажей и командировок.',
+  logoUrl:
+    'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1200&q=80',
+  checkInTime: '14:00',
+  checkOutTime: '12:00',
+};
 
 export interface DemoRoomSeed {
   number: string;
@@ -38,6 +76,10 @@ export const DEMO_CATEGORIES: DemoCategorySeed[] = [
     basePrice: 3800,
     sortOrder: 1,
     description: 'Уютный номер с двуспальной кроватью.',
+    photos: [
+      'https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=1200&q=80',
+      'https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=1200&q=80',
+    ],
   },
   {
     code: 'DLX',
@@ -47,6 +89,10 @@ export const DEMO_CATEGORIES: DemoCategorySeed[] = [
     basePrice: 5900,
     sortOrder: 2,
     description: 'Просторный номер повышенной комфортности.',
+    photos: [
+      'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=1200&q=80',
+      'https://images.unsplash.com/photo-1590490360182-c33d57733427?w=1200&q=80',
+    ],
   },
   {
     code: 'SEMI',
@@ -56,6 +102,10 @@ export const DEMO_CATEGORIES: DemoCategorySeed[] = [
     basePrice: 8500,
     sortOrder: 3,
     description: 'Зона гостиной + отдельная спальня.',
+    photos: [
+      'https://images.unsplash.com/photo-1578683010236-d716f9a3f461?w=1200&q=80',
+      'https://images.unsplash.com/photo-1591088398332-8a7791972843?w=1200&q=80',
+    ],
   },
   {
     code: 'LUX',
@@ -65,6 +115,10 @@ export const DEMO_CATEGORIES: DemoCategorySeed[] = [
     basePrice: 13000,
     sortOrder: 4,
     description: 'Двухкомнатные апартаменты, лучший выбор отеля.',
+    photos: [
+      'https://images.unsplash.com/photo-1444201983204-c43cbd584d93?w=1200&q=80',
+      'https://images.unsplash.com/photo-1618773928121-c32242e63f39?w=1200&q=80',
+    ],
   },
 ];
 
