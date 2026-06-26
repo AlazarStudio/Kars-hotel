@@ -105,7 +105,7 @@ export class ReservationsService {
           ${dto.children ?? 0},
           ${dto.notes ?? null},
           ${dto.totalPrice != null ? dto.totalPrice : null},
-          ${dto.ratePlanId ?? null},
+          ${dto.ratePlanId ?? null}::uuid,
           ${placeNumber},
           1
         )
