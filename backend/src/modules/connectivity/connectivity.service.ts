@@ -61,18 +61,69 @@ export class ConnectivityService {
 
   async getHotel(slug: string) {
     const tenant = await this.resolveTenant(slug);
-    const roomTypes = await this.prisma.forTenantExplicit(tenant.id, (tx) =>
-      tx.roomType.findMany({
-        where: { isActive: true },
-        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-        include: { _count: { select: { rooms: true } } },
-      }),
+    const { roomTypes, ratePlans, standardRates } = await this.prisma.forTenantExplicit(
+      tenant.id,
+      async (tx) => {
+        const roomTypes = await tx.roomType.findMany({
+          where: { isActive: true },
+          orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+          include: { _count: { select: { rooms: true } } },
+        });
+        const ratePlans = await tx.ratePlan.findMany({
+          where: { isActive: true },
+          orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+        });
+        const standardRates = ratePlans.length
+          ? await tx.standardRate.findMany({
+              where: { ratePlanId: { in: ratePlans.map((p) => p.id) } },
+            })
+          : [];
+        return { roomTypes, ratePlans, standardRates };
+      },
     );
+
     return {
       ...this.mapHotel(tenant),
       categoryCount: roomTypes.length,
       roomTypes: roomTypes.map((rt) => this.mapRoomType(rt)),
+      // Published price list: one entry per active rate plan, with a baseline
+      // price per category. The price is the plan's StandardRate when set,
+      // otherwise the category base price — so partners always see a number.
+      // Seasonal/daily overrides are date-specific and surface via availability.
+      ratePlans: this.buildRatePlanPriceList(tenant.currency, roomTypes, ratePlans, standardRates),
     };
+  }
+
+  /** Flatten rate plans + standard prices into a partner-facing price list. */
+  private buildRatePlanPriceList(
+    currency: string,
+    roomTypes: Array<{ id: string; name: string; basePrice: unknown }>,
+    ratePlans: Array<{ id: string; code: string; name: string; mealPlan: string }>,
+    standardRates: Array<{ ratePlanId: string; roomTypeId: string; price: unknown }>,
+  ) {
+    const stdByKey = new Map(
+      standardRates.map((s) => [`${s.ratePlanId}|${s.roomTypeId}`, Number(s.price)]),
+    );
+    return ratePlans
+      .map((p) => ({
+        id: p.id,
+        code: p.code,
+        name: p.name,
+        mealPlan: p.mealPlan,
+        currency,
+        prices: roomTypes
+          .map((rt) => {
+            const std = stdByKey.get(`${p.id}|${rt.id}`);
+            const price = std ?? (rt.basePrice != null ? Number(rt.basePrice) : null);
+            return price != null && price > 0
+              ? { categoryId: rt.id, categoryName: rt.name, price }
+              : null;
+          })
+          .filter(
+            (x): x is { categoryId: string; categoryName: string; price: number } => x !== null,
+          ),
+      }))
+      .filter((p) => p.prices.length > 0);
   }
 
   // ─── Availability (tenant-scoped) ──────────────────────────────────────────
