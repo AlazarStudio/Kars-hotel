@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
-  format, startOfMonth, endOfMonth, eachDayOfInterval,
-  addMonths, subMonths, parseISO,
+  format, startOfMonth,
+  addDays, subDays, parseISO,
+  getMonth, getYear, setMonth, setYear,
 } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import classes from './Tariffs.module.css';
@@ -23,6 +24,12 @@ const MEAL_PLAN_LABELS = {
 
 const DOW_SHORT = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 const SEASON_COLORS = ['#F59E0B', '#10B981', '#3B82F6', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'];
+const MONTHS_RU = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+
+// Calendar geometry (mirrors the шахматка rolling-window layout).
+const CAL_LABEL_W = 168;
+const CAL_DAY_MIN = 46;
+const TODAY = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
 
 const codeFromName = (name) =>
   name.toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_-]/g, '').slice(0, 32) || 'PLAN';
@@ -438,11 +445,11 @@ function Seasons({ plan, roomTypes }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // FillModal — apply one price to a date range (per-day overrides)
 // ─────────────────────────────────────────────────────────────────────────────
-function FillModal({ roomTypes, viewMonth, onFill, onClose, saving, error }) {
+function FillModal({ roomTypes, defaultFrom, defaultTo, onFill, onClose, saving, error }) {
   const [form, setForm] = useState({
     roomTypeId: roomTypes[0]?.id ?? '',
-    from: format(startOfMonth(viewMonth), 'yyyy-MM-dd'),
-    to:   format(endOfMonth(viewMonth),   'yyyy-MM-dd'),
+    from: defaultFrom,
+    to:   defaultTo,
     price: '',
   });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -506,13 +513,36 @@ function FillModal({ roomTypes, viewMonth, onFill, onClose, saving, error }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // RateCalendar — month grid showing resolved prices (override → season → standard)
 // ─────────────────────────────────────────────────────────────────────────────
-function RateCalendar({ plan, roomTypes, viewMonth, setViewMonth }) {
-  const fromStr = format(startOfMonth(viewMonth), 'yyyy-MM-dd');
-  const toStr   = format(endOfMonth(viewMonth),   'yyyy-MM-dd');
-  const dayStrs = useMemo(
-    () => eachDayOfInterval({ start: startOfMonth(viewMonth), end: endOfMonth(viewMonth) }).map(d => format(d, 'yyyy-MM-dd')),
-    [viewMonth],
+function RateCalendar({ plan, roomTypes }) {
+  // Rolling window like the шахматка: a week before today, then forward.
+  const [viewStart, setViewStart] = useState(() => subDays(TODAY, 7));
+  const [daysCount, setDaysCount] = useState(14);
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [pickerYear, setPickerYear] = useState(() => getYear(TODAY));
+
+  // Dynamic column width so the window fills the container — no horizontal scroll.
+  const containerRef = useRef(null);
+  const [dayWidth, setDayWidth] = useState(CAL_DAY_MIN);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => {
+      const w = el.clientWidth;
+      if (w > 0) setDayWidth(Math.max(CAL_DAY_MIN, (w - CAL_LABEL_W) / Math.min(daysCount, 31)));
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [daysCount]);
+
+  const days = useMemo(
+    () => Array.from({ length: daysCount }, (_, i) => addDays(viewStart, i)),
+    [viewStart, daysCount],
   );
+  const dayStrs = useMemo(() => days.map(d => format(d, 'yyyy-MM-dd')), [days]);
+  const fromStr = dayStrs[0];
+  const toStr   = dayStrs[dayStrs.length - 1];
 
   const { data: rates = [], isFetching } = useRates({ ratePlanId: plan.id, from: fromStr, to: toStr });
   const { data: standard = [] } = useStandardRates(plan.id);
@@ -619,7 +649,24 @@ function RateCalendar({ plan, roomTypes, viewMonth, setViewMonth }) {
     }
   };
 
-  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const todayStr = format(TODAY, 'yyyy-MM-dd');
+
+  // Period navigation, mirroring the шахматка.
+  const goToday = () => setViewStart(subDays(TODAY, 7));
+  const navStep = daysCount === 14 ? 7 : 14;
+  const prevPeriod = () => setViewStart(v => subDays(v, navStep));
+  const nextPeriod = () => setViewStart(v => addDays(v, navStep));
+
+  const viewEnd = days[days.length - 1] ?? viewStart;
+  const monthLabel = (() => {
+    const startLabel = format(viewStart, 'LLLL', { locale: ru }).replace(/^\w/, c => c.toUpperCase());
+    if (getMonth(viewEnd) !== getMonth(viewStart)) {
+      return `${startLabel} – ${format(viewEnd, 'LLLL', { locale: ru })} ${format(viewEnd, 'yyyy')}`;
+    }
+    return `${startLabel} ${format(viewStart, 'yyyy')}`;
+  })();
+
+  const gridWidth = CAL_LABEL_W + daysCount * dayWidth;
 
   return (
     <div>
@@ -631,10 +678,40 @@ function RateCalendar({ plan, roomTypes, viewMonth, setViewMonth }) {
       <div className={classes.calendarRoot}>
         <div className={classes.calendarHeader}>
           <div className={classes.calMonth}>
-            <button className={classes.calNavBtn} onClick={() => setViewMonth(m => subMonths(m, 1))}>‹</button>
-            <span className={classes.calMonthLabel}>{format(viewMonth, 'LLLL yyyy', { locale: ru })}</span>
-            <button className={classes.calNavBtn} onClick={() => setViewMonth(m => addMonths(m, 1))}>›</button>
-            <button className={classes.calTodayBtn} onClick={() => setViewMonth(new Date())}>Сегодня</button>
+            <button className={classes.calNavBtn} onClick={prevPeriod}>‹</button>
+            <div className={classes.calMonthLabelWrap}>
+              <button
+                className={classes.calMonthLabelBtn}
+                onClick={() => { setPickerYear(getYear(viewStart)); setShowMonthPicker(v => !v); }}
+              >
+                {monthLabel}
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 5 }}>
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+              {showMonthPicker && (
+                <MonthPicker
+                  year={pickerYear}
+                  onYearChange={setPickerYear}
+                  onSelect={(year, month) => {
+                    setViewStart(startOfMonth(setMonth(setYear(new Date(), year), month)));
+                    setShowMonthPicker(false);
+                  }}
+                  onClose={() => setShowMonthPicker(false)}
+                />
+              )}
+            </div>
+            <button className={classes.calNavBtn} onClick={nextPeriod}>›</button>
+            <button className={classes.calTodayBtn} onClick={goToday}>Сегодня</button>
+            <div className={classes.calDaysToggle}>
+              {[14, 30].map(n => (
+                <button
+                  key={n}
+                  className={`${classes.calDaysToggleBtn} ${daysCount === n ? classes.calDaysToggleActive : ''}`}
+                  onClick={() => setDaysCount(n)}
+                >{n} дн</button>
+              ))}
+            </div>
           </div>
           <div className={classes.planPanelActions}>
             {isDirty ? (
@@ -660,8 +737,11 @@ function RateCalendar({ plan, roomTypes, viewMonth, setViewMonth }) {
         {roomTypes.length === 0 ? (
           <div className={classes.calendarEmpty}>Нет категорий номеров. Создайте категории в разделе «Номера».</div>
         ) : (
-          <div className={classes.calendarScroll}>
-            <div className={classes.calendarGrid} style={{ gridTemplateColumns: `180px repeat(${dayStrs.length}, 58px)` }}>
+          <div className={classes.calendarScroll} ref={containerRef}>
+            <div
+              className={classes.calendarGrid}
+              style={{ gridTemplateColumns: `${CAL_LABEL_W}px repeat(${daysCount}, ${dayWidth}px)`, width: gridWidth }}
+            >
               <div className={classes.calCornerCell}>Категория</div>
               {dayStrs.map(d => {
                 const dow = parseISO(d).getDay();
@@ -741,7 +821,8 @@ function RateCalendar({ plan, roomTypes, viewMonth, setViewMonth }) {
       {showFill && (
         <FillModal
           roomTypes={roomTypes}
-          viewMonth={viewMonth}
+          defaultFrom={fromStr}
+          defaultTo={toStr}
           onFill={handleFill}
           onClose={() => { setShowFill(false); setFillError(null); }}
           saving={fillMutation.isPending}
@@ -753,9 +834,38 @@ function RateCalendar({ plan, roomTypes, viewMonth, setViewMonth }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MonthPicker — popover for jumping the calendar window to a given month
+// ─────────────────────────────────────────────────────────────────────────────
+function MonthPicker({ year, onYearChange, onSelect, onClose }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [onClose]);
+
+  return (
+    <div ref={ref} className={classes.calMonthPicker}>
+      <div className={classes.calMonthPickerYear}>
+        <button className={classes.calMonthPickerYearBtn} onClick={() => onYearChange(y => y - 1)}>‹</button>
+        <span className={classes.calMonthPickerYearLabel}>{year}</span>
+        <button className={classes.calMonthPickerYearBtn} onClick={() => onYearChange(y => y + 1)}>›</button>
+      </div>
+      <div className={classes.calMonthPickerGrid}>
+        {MONTHS_RU.map((name, i) => (
+          <button key={i} className={classes.calMonthPickerCell} onClick={() => onSelect(year, i)}>
+            {name.slice(0, 3)}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PlanPanel — sub-tabs: базовые цены / сезоны / календарь
 // ─────────────────────────────────────────────────────────────────────────────
-function PlanPanel({ plan, roomTypes, viewMonth, setViewMonth, onEditPlan }) {
+function PlanPanel({ plan, roomTypes, onEditPlan }) {
   const [tab, setTab] = useState('standard');
   const { data: seasons = [] } = useSeasons(plan.id);
   const seasonCount = useMemo(() => {
@@ -807,7 +917,7 @@ function PlanPanel({ plan, roomTypes, viewMonth, setViewMonth, onEditPlan }) {
       {tab === 'standard' && <StandardPrices plan={plan} roomTypes={roomTypes} />}
       {tab === 'seasons' && <Seasons plan={plan} roomTypes={roomTypes} />}
       {tab === 'calendar' && (
-        <RateCalendar plan={plan} roomTypes={roomTypes} viewMonth={viewMonth} setViewMonth={setViewMonth} />
+        <RateCalendar plan={plan} roomTypes={roomTypes} />
       )}
     </div>
   );
@@ -824,7 +934,6 @@ function Tariffs() {
   const deletePlan = useDeleteRatePlan();
 
   const [selectedPlanId, setSelectedPlanId] = useState(null);
-  const [viewMonth, setViewMonth] = useState(() => { const d = new Date(); d.setDate(1); return d; });
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState(null);
   const [formError, setFormError] = useState(null);
@@ -935,8 +1044,6 @@ function Tariffs() {
               key={selectedPlan.id}
               plan={selectedPlan}
               roomTypes={roomTypes}
-              viewMonth={viewMonth}
-              setViewMonth={setViewMonth}
               onEditPlan={() => openEdit(selectedPlan)}
             />
           )}
