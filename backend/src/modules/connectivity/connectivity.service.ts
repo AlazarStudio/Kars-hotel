@@ -144,6 +144,16 @@ export class ConnectivityService {
         throw new NotFoundException(`Category ${dto.categoryId} not found in hotel ${slug}`);
       }
 
+      type OfferRatePlan = {
+        ratePlanId: string;
+        code: string | null;
+        name: string;
+        mealPlan: string;
+        nights: number;
+        perNight: Array<{ date: string; price: number | null }>;
+        total: number | null;
+        nightlyFrom: number | null;
+      };
       const offers: Array<{
         categoryId: string;
         categoryName: string;
@@ -151,6 +161,7 @@ export class ConnectivityService {
         roomsAvailable: number;
         nightlyRate: number;
         currency: string;
+        ratePlans: OfferRatePlan[];
       }> = [];
 
       let nights = 0;
@@ -164,11 +175,39 @@ export class ConnectivityService {
         const roomsAvailable = Math.min(...avail.days.map((d) => d.available));
         if (roomsAvailable < 1 || !avail.bookable) continue;
 
-        // Nightly rate: cheapest configured rate on the first night, else the
-        // category base price (rates may not be configured for every hotel).
+        // Per-rate-plan offers (TravelLine-style): each plan gets a per-night
+        // breakdown + total via the shared resolution chain (override → season
+        // → standard → basePrice).
+        const planPrices = await this.availability.priceByPlan(
+          rt.id,
+          dto.checkIn,
+          dto.checkOut,
+          rt.basePrice as never,
+        );
+        const ratePlans: OfferRatePlan[] = planPrices.map((p) => ({
+          ratePlanId: p.ratePlanId,
+          code: p.code,
+          name: p.name,
+          mealPlan: p.mealPlan,
+          nights: p.nights,
+          perNight: p.perNight.map((n) => ({
+            date: n.date,
+            price: n.price != null ? Number(n.price) : null,
+          })),
+          total: p.total != null ? Number(p.total) : null,
+          nightlyFrom: p.nightlyFrom != null ? Number(p.nightlyFrom) : null,
+        }));
+
+        // Back-compat nightly rate: cheapest plan's nightly, else cheapest
+        // configured rate on the first night, else the category base price.
+        const cheapestPlanNightly = ratePlans
+          .map((p) => p.nightlyFrom)
+          .filter((n): n is number => n != null)
+          .reduce<number | null>((min, n) => (min === null || n < min ? n : min), null);
         const firstNight = avail.days[0];
         const nightlyRate =
-          firstNight.minPrice != null ? Number(firstNight.minPrice) : Number(rt.basePrice);
+          cheapestPlanNightly ??
+          (firstNight.minPrice != null ? Number(firstNight.minPrice) : Number(rt.basePrice));
 
         offers.push({
           categoryId: rt.id,
@@ -177,6 +216,7 @@ export class ConnectivityService {
           roomsAvailable,
           nightlyRate,
           currency: tenant.currency,
+          ratePlans,
         });
       }
 
@@ -213,6 +253,34 @@ export class ConnectivityService {
         );
       }
 
+      // Resolve the rate plan and price the stay so the reservation carries a
+      // total. The partner picks a specific plan (TravelLine-style); we price it
+      // via the same resolution chain used for availability.
+      let ratePlanId: string | undefined;
+      let totalPrice: number | undefined;
+      if (dto.ratePlanId) {
+        const plan = await this.prisma.forTenantExplicit(tenant.id, (tx) =>
+          tx.ratePlan.findUnique({ where: { id: dto.ratePlanId } }),
+        );
+        if (!plan || !plan.isActive) {
+          throw new NotFoundException(`Rate plan ${dto.ratePlanId} not found in hotel ${slug}`);
+        }
+        ratePlanId = plan.id;
+        const planPrices = await this.availability.priceByPlan(
+          dto.categoryId,
+          dto.checkIn,
+          dto.checkOut,
+          category.basePrice as never,
+        );
+        const match = planPrices.find((p) => p.ratePlanId === plan.id);
+        if (!match) {
+          throw new ConflictException(
+            `Rate plan ${dto.ratePlanId} is not bookable for the selected dates`,
+          );
+        }
+        totalPrice = match.total != null ? Number(match.total) : undefined;
+      }
+
       const roomId = await this.pickAvailableRoom(
         tenant.id,
         dto.categoryId,
@@ -238,6 +306,8 @@ export class ConnectivityService {
         status: 'CONFIRMED',
         source: 'CORPORATE',
         notes: notes || undefined,
+        ratePlanId,
+        totalPrice,
       });
 
       this.logger.log(

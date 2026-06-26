@@ -18,6 +18,12 @@ export class ConnectCreateReservationDto {
   @IsUUID()
   categoryId!: string;
 
+  /** Chosen rate plan (PMS ratePlan id). When set, the stay is priced by this plan. */
+  @ApiPropertyOptional({ format: 'uuid', description: 'Chosen rate plan id' })
+  @IsOptional()
+  @IsUUID()
+  ratePlanId?: string;
+
   @ApiProperty({ example: '2026-07-01' })
   @IsDateString()
   checkIn!: string;

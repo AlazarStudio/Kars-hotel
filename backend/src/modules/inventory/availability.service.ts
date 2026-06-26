@@ -37,6 +37,26 @@ export interface AvailabilityResult {
   days: DayAvailability[];
 }
 
+/** One night of a rate-plan price breakdown. */
+export interface RatePlanNight {
+  date: string;          // 'YYYY-MM-DD'
+  price: string | null;  // resolved price for that night (RUB decimal string), null if not configured
+}
+
+/** Priced offer for a single rate plan over a stay period. */
+export interface RatePlanPrice {
+  ratePlanId: string;
+  code: string | null;
+  name: string;
+  mealPlan: string;      // NONE | BB | HB | FB | AI
+  nights: number;
+  perNight: RatePlanNight[];
+  /** Sum of per-night prices when EVERY night is priced; null otherwise. */
+  total: string | null;
+  /** Cheapest single night across the stay (null when nothing is priced). */
+  nightlyFrom: string | null;
+}
+
 /** Redis TTL for cached availability responses (seconds). */
 const CACHE_TTL_SECONDS = 60;
 
@@ -341,6 +361,145 @@ export class AvailabilityService {
     return Promise.all(
       roomTypes.map((rt) => this.check(rt.id, checkIn, checkOut, ratePlanId)),
     );
+  }
+
+  /**
+   * Resolve the per-night price breakdown for EVERY active rate plan over a
+   * stay period, for one room type. This is the per-plan counterpart of
+   * `check()` (which only returns the cheapest price across plans) and powers
+   * TravelLine-style per-rate-plan offers on the partner API.
+   *
+   * The price for a (ratePlan × date) resolves the same way it does everywhere
+   * else in the app:
+   *   per-day Rate override  →  covering season  →  standard price  →  basePrice.
+   * The category base price is the final fallback so a plan always yields a
+   * bookable number (matching the published catalog price list). Plans that
+   * cannot be priced for every night are dropped.
+   *
+   * @param basePrice  Category base price used as the last-resort fallback.
+   */
+  async priceByPlan(
+    roomTypeId: string,
+    checkIn: string,
+    checkOut: string,
+    basePrice?: Prisma.Decimal | number | null,
+  ): Promise<RatePlanPrice[]> {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    const cacheKey =
+      InventoryService.cacheKey(tenantId, roomTypeId, checkIn, checkOut) + ':plans';
+
+    const cached = await this.redis.raw.get(cacheKey);
+    if (cached) {
+      this.logger.debug(`Rate-plan price cache hit: ${cacheKey}`);
+      return JSON.parse(cached) as RatePlanPrice[];
+    }
+
+    const baseFallback =
+      basePrice != null && Number(basePrice) > 0 ? new Prisma.Decimal(basePrice as never) : null;
+
+    const result = await this.prisma.forTenant(async (tx) => {
+      const checkInDate = parseISO(checkIn);
+      const checkOutDate = parseISO(checkOut);
+      const stayDates = eachDayOfInterval({ start: checkInDate, end: checkOutDate }).slice(0, -1);
+      if (!stayDates.length) return [] as RatePlanPrice[];
+
+      const ratePlans = await tx.ratePlan.findMany({
+        where: { isActive: true },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+        select: { id: true, code: true, name: true, mealPlan: true },
+      });
+      if (!ratePlans.length) return [] as RatePlanPrice[];
+
+      // Per-day Rate overrides for every plan of this room type in range.
+      const dailyRows = await tx.$queryRaw<Array<{ rate_plan_id: string; date: Date; price: string }>>`
+        SELECT rate_plan_id, date, MIN(price)::text AS price
+        FROM rate
+        WHERE tenant_id    = ${tenantId}::uuid
+          AND room_type_id = ${roomTypeId}::uuid
+          AND date BETWEEN ${checkInDate}::date AND ${checkOutDate}::date
+        GROUP BY rate_plan_id, date
+      `;
+
+      const [seasonRows, standardRows] = await Promise.all([
+        tx.rateSeason.findMany({
+          where: {
+            roomTypeId,
+            dateFrom: { lte: checkOutDate },
+            dateTo: { gte: checkInDate },
+          },
+          select: { ratePlanId: true, roomTypeId: true, dateFrom: true, dateTo: true, price: true, sortOrder: true },
+        }),
+        tx.standardRate.findMany({
+          where: { roomTypeId },
+          select: { ratePlanId: true, roomTypeId: true, price: true },
+        }),
+      ]);
+
+      const baseline = new BaselineResolver(
+        seasonRows.map((s) => ({
+          ratePlanId: s.ratePlanId,
+          roomTypeId: s.roomTypeId,
+          dateFrom: isoDay(s.dateFrom),
+          dateTo: isoDay(s.dateTo),
+          price: s.price as unknown as Prisma.Decimal,
+          sortOrder: s.sortOrder,
+        })),
+        standardRows.map((s) => ({
+          ratePlanId: s.ratePlanId,
+          roomTypeId: s.roomTypeId,
+          price: s.price as unknown as Prisma.Decimal,
+        })),
+      );
+
+      const dailyByPlanDay = new Map<string, string>();
+      for (const r of dailyRows) {
+        dailyByPlanDay.set(`${r.rate_plan_id}|${format(r.date, 'yyyy-MM-dd')}`, r.price);
+      }
+
+      const priced: RatePlanPrice[] = [];
+      for (const plan of ratePlans) {
+        const perNight: RatePlanNight[] = [];
+        let total: Prisma.Decimal | null = new Prisma.Decimal(0);
+        let cheapest: Prisma.Decimal | null = null;
+
+        for (const date of stayDates) {
+          const day = format(date, 'yyyy-MM-dd');
+          const daily = dailyByPlanDay.get(`${plan.id}|${day}`);
+          const eff: Prisma.Decimal | null =
+            daily != null
+              ? new Prisma.Decimal(daily)
+              : baseline.resolve(plan.id, roomTypeId, day) ?? baseFallback;
+
+          perNight.push({ date: day, price: eff != null ? eff.toFixed(2) : null });
+
+          if (eff == null) {
+            total = null; // a missing night means we cannot quote a full total
+          } else {
+            if (total !== null) total = total.plus(eff);
+            if (cheapest === null || eff.lessThan(cheapest)) cheapest = eff;
+          }
+        }
+
+        // Drop plans we cannot price for the whole stay.
+        if (total === null) continue;
+
+        priced.push({
+          ratePlanId: plan.id,
+          code: plan.code,
+          name: plan.name,
+          mealPlan: plan.mealPlan,
+          nights: stayDates.length,
+          perNight,
+          total: total.toFixed(2),
+          nightlyFrom: cheapest != null ? cheapest.toFixed(2) : null,
+        });
+      }
+
+      return priced;
+    });
+
+    await this.redis.raw.set(cacheKey, JSON.stringify(result), 'EX', CACHE_TTL_SECONDS);
+    return result;
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
