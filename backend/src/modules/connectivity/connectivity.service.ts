@@ -299,6 +299,7 @@ export class ConnectivityService {
         roomId,
         guestName: dto.guestName,
         phone: dto.phone,
+        email: dto.email,
         checkIn: dto.checkIn,
         checkOut: dto.checkOut,
         adults: dto.adults,

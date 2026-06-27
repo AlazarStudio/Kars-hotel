@@ -87,7 +87,7 @@ export class ReservationsService {
         place_number: number;
       }[]>`
         INSERT INTO reservation (
-          tenant_id, room_id, room_type_id, guest_name, phone,
+          tenant_id, room_id, room_type_id, guest_name, phone, email,
           check_in, check_out,
           status, source, adults, children,
           notes, total_price, rate_plan_id, place_number, version
@@ -97,6 +97,7 @@ export class ReservationsService {
           ${roomTypeId}::uuid,
           ${dto.guestName},
           ${dto.phone ?? null},
+          ${dto.email ?? null},
           ${dto.checkIn}::date,
           ${dto.checkOut}::date,
           ${initialStatus}::"ReservationStatus",

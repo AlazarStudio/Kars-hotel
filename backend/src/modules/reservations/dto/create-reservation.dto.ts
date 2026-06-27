@@ -1,6 +1,7 @@
 import {
   IsString,
   IsDateString,
+  IsEmail,
   IsInt,
   IsOptional,
   IsNumber,
@@ -24,6 +25,11 @@ export class CreateReservationDto {
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @ApiPropertyOptional({ example: 'ivan@example.com' })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
 
   @ApiProperty({ example: '2026-06-01' })
   @IsDateString()

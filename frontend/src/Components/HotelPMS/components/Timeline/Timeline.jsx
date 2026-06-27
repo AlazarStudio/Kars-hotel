@@ -121,6 +121,10 @@ function Timeline({ multiPlaceEnabled = true }) {
   const visibleBookings = useMemo(() => {
     const end = addDays(viewStart, daysCount);
     return bookings.filter(b => {
+      // Cancelled / no-show bookings are never shown on the chessboard —
+      // they live only in the "Отменённые" list. Checked-out (archived) ones
+      // stay visible but are rendered semi-transparent (see renderBooking).
+      if (b.status === 'cancelled' || b.status === 'no_show') return false;
       if (search) {
         const q = search.toLowerCase();
         if (!b.guestName.toLowerCase().includes(q)) return false;
@@ -485,17 +489,20 @@ function Timeline({ multiPlaceEnabled = true }) {
     const cfg    = BOOKING_STATUS[b.status] || BOOKING_STATUS.new;
     const nights = differenceInDays(parseISO(b.checkOut), parseISO(b.checkIn));
     const isBeingDragged = b.id === dragBookingId && !isGhost;
+    // Completed stays are archived: shown faded and view-only (no drag/resize).
+    const isArchived = b.status === 'checked_out' && !isGhost;
+    const interactive = !isGhost && !isArchived;
 
     return (
       <div
         key={isGhost ? `ghost-${b.id}` : b.id}
-        className={`${classes.bookingBlock} ${isBeingDragged ? classes.isDragging : ''} ${isGhost ? classes.isGhost : ''}`}
+        className={`${classes.bookingBlock} ${isBeingDragged ? classes.isDragging : ''} ${isGhost ? classes.isGhost : ''} ${isArchived ? classes.isArchived : ''}`}
         style={{
           left, width, background: cfg.color,
           ...(topOverride !== null ? { top: topOverride } : {}),
           ...(heightOverride !== null ? { height: heightOverride } : {}),
         }}
-        onMouseDown={!isGhost ? (e) => handleBookingMouseDown(e, b, 'move') : undefined}
+        onMouseDown={interactive ? (e) => handleBookingMouseDown(e, b, 'move') : undefined}
         onClick={!isGhost ? (e) => { e.stopPropagation(); openEditForm(b); } : undefined}
         onMouseEnter={!isGhost ? (e) => {
           if (isDragging) return;
@@ -507,10 +514,12 @@ function Timeline({ multiPlaceEnabled = true }) {
         } : undefined}
         onMouseLeave={!isGhost ? () => setTooltip(null) : undefined}
       >
-        <div
-          className={`${classes.resizeHandle} ${classes.resizeHandleLeft}`}
-          onMouseDown={(e) => { e.stopPropagation(); handleBookingMouseDown(e, b, 'resize-left'); }}
-        />
+        {interactive && (
+          <div
+            className={`${classes.resizeHandle} ${classes.resizeHandleLeft}`}
+            onMouseDown={(e) => { e.stopPropagation(); handleBookingMouseDown(e, b, 'resize-left'); }}
+          />
+        )}
         {!hideText && (
           <div className={classes.bookingInner}>
             <div className={classes.bookingText}>
@@ -519,10 +528,12 @@ function Timeline({ multiPlaceEnabled = true }) {
             </div>
           </div>
         )}
-        <div
-          className={`${classes.resizeHandle} ${classes.resizeHandleRight}`}
-          onMouseDown={(e) => { e.stopPropagation(); handleBookingMouseDown(e, b, 'resize-right'); }}
-        />
+        {interactive && (
+          <div
+            className={`${classes.resizeHandle} ${classes.resizeHandleRight}`}
+            onMouseDown={(e) => { e.stopPropagation(); handleBookingMouseDown(e, b, 'resize-right'); }}
+          />
+        )}
       </div>
     );
   }, [viewStart, daysCount, handleBookingMouseDown, openEditForm, dragBookingId, isDragging]);

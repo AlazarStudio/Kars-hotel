@@ -118,6 +118,12 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('booking'); // 'booking' | 'folio'
 
+  // In-app cancellation dialog (replaces native confirm/prompt)
+  const [showCancel, setShowCancel] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState(null);
+
   const nights = form.checkIn && form.checkOut
     ? Math.max(0, differenceInDays(parseISO(form.checkOut), parseISO(form.checkIn)))
     : 0;
@@ -125,7 +131,24 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
   const room = rooms.find(r => r.id === form.roomId);
   const category = categories.find(c => c.id === room?.categoryId);
   const pricePerNight = category?.basePrice || 0;
-  const totalPrice = nights * pricePerNight;
+  const computedTotal = nights * pricePerNight;
+
+  // A partner/corporate booking is priced by its rate plan and stores that
+  // total on the reservation; the category base price is just the rack rate.
+  // Keep the stored total while the price-affecting fields (room + dates) are
+  // untouched, and recompute from the base price only when they change — so
+  // opening an existing booking shows its real tariff price and saving it does
+  // not overwrite that with the rack rate.
+  const storedTotal = booking.totalPrice != null ? Number(booking.totalPrice) : null;
+  const priceUnchanged =
+    !isNew &&
+    form.roomId === booking.roomId &&
+    form.checkIn === booking.checkIn &&
+    form.checkOut === booking.checkOut;
+  const totalPrice = priceUnchanged && storedTotal != null ? storedTotal : computedTotal;
+  // Nightly figure shown next to the total — derived from the effective total
+  // so the line stays consistent even for a stored rate-plan price.
+  const displayNightly = nights > 0 ? Math.round(totalPrice / nights) : pricePerNight;
 
   // Availability check for the selected room
   const conflict = useMemo(() => {
@@ -163,15 +186,27 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
     }
   };
 
-  const handleCancel = async () => {
-    if (!window.confirm('Отменить бронь?')) return;
-    const reason = window.prompt('Причина отмены (необязательно):') ?? undefined;
+  const openCancel = () => {
+    setCancelReason('');
+    setCancelError(null);
+    setShowCancel(true);
+  };
+
+  const confirmCancel = async () => {
+    if (cancelling) return;
+    setCancelling(true);
+    setCancelError(null);
     try {
+      const reason = cancelReason.trim() || undefined;
       await cancelReservation(booking.id, reason);
+      setShowCancel(false);
       onClose?.();
       if (typeof onDelete === 'function') onDelete(booking.id);
     } catch (err) {
       console.error('Cancel failed:', err);
+      setCancelError('Не удалось отменить бронь. Попробуйте ещё раз.');
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -341,7 +376,7 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
             {nights > 0 && (
               <div className={`${classes.priceRow} ${classes.formFull}`}>
                 <div>
-                  <div className={classes.priceLabel}>{nights} ноч. × {pricePerNight.toLocaleString('ru-RU')} ₽</div>
+                  <div className={classes.priceLabel}>{nights} ноч. × {displayNightly.toLocaleString('ru-RU')} ₽</div>
                 </div>
                 <div className={classes.priceValue}>{totalPrice.toLocaleString('ru-RU')} ₽</div>
               </div>
@@ -358,7 +393,7 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
 
         <div className={classes.modalFooter}>
           {!isNew && ['new', 'confirmed'].includes(booking?.status) && (
-            <button className={classes.btnDanger} onClick={handleCancel}>
+            <button className={classes.btnDanger} onClick={openCancel}>
               Отменить бронь
             </button>
           )}
@@ -373,6 +408,65 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
           </button>
         </div>
       </div>
+
+      {showCancel && (
+        <div
+          className={classes.modalOverlay}
+          style={{ zIndex: 60 }}
+          onClick={() => !cancelling && setShowCancel(false)}
+        >
+          <div
+            className={`${classes.modal} ${classes.confirmModal}`}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className={classes.modalHeader}>
+              <div className={classes.modalTitle}>Отменить бронь?</div>
+              <button
+                className={classes.modalClose}
+                onClick={() => setShowCancel(false)}
+                disabled={cancelling}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className={classes.modalBody}>
+              <div className={classes.confirmText}>
+                Бронь гостя <strong>{form.guestName || '—'}</strong> будет отменена.
+                Это действие нельзя отменить.
+              </div>
+              <div className={classes.formGroup} style={{ marginTop: 14 }}>
+                <div className={classes.formLabel}>Причина отмены (необязательно)</div>
+                <textarea
+                  className={classes.formTextarea}
+                  value={cancelReason}
+                  onChange={e => setCancelReason(e.target.value)}
+                  placeholder="Например: гость отменил, дубль брони…"
+                  autoFocus
+                />
+              </div>
+              {cancelError && <div className={classes.confirmError}>{cancelError}</div>}
+            </div>
+
+            <div className={classes.modalFooter}>
+              <button
+                className={classes.btnSecondary}
+                onClick={() => setShowCancel(false)}
+                disabled={cancelling}
+              >
+                Назад
+              </button>
+              <button
+                className={classes.btnDangerSolid}
+                onClick={confirmCancel}
+                disabled={cancelling}
+              >
+                {cancelling ? 'Отмена…' : 'Отменить бронь'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

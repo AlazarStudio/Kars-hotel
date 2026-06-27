@@ -80,7 +80,7 @@ export class TimelineService {
    *
    * Uses a single SQL query with two CTEs:
    *   1. `rooms_cte` — all active rooms joined with their room type.
-   *   2. `res_cte`   — all non-cancelled reservations that overlap the window.
+   *   2. `res_cte`   — all reservations (any status) that overlap the window.
    *
    * Result is grouped into RoomType → Room → Reservation[] for the UI.
    * Cached in Redis for CACHE_TTL seconds.
@@ -126,7 +126,13 @@ export class TimelineService {
         ORDER BY sort_order, floor, room_number
       `;
 
-      // 2. All reservations that overlap the date window (not cancelled/no-show).
+      // 2. All reservations that overlap the date window — every status.
+      //    Cancelled / no-show / checked-out rows are returned so the UI can
+      //    show them in the "Архив" / "Отменённые" views and fade completed
+      //    stays in the timeline. The client decides what to hide where
+      //    (cancelled & no-show are hidden from the chessboard; checked-out is
+      //    rendered semi-transparent). Availability is computed client-side and
+      //    already ignores cancelled / no-show, so returning them is safe.
       const resRows = await tx.$queryRaw<RawReservationRow[]>`
         SELECT
           id,
@@ -148,7 +154,6 @@ export class TimelineService {
         FROM reservation
         WHERE check_in  < ${toDate}::date + INTERVAL '1 day'
           AND check_out > ${fromDate}::date
-          AND status NOT IN ('CANCELLED', 'NO_SHOW')
         ORDER BY check_in
       `;
 

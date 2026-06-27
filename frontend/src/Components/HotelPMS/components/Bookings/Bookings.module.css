@@ -85,6 +85,12 @@
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
   overflow: hidden;
   flex: 1;
+  /* Flex column so the head stays put and the body scrolls. `min-height: 0`
+     lets this flex item shrink below its content height — without it the body
+     overflows and gets clipped instead of scrolling. */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .tableHead {
@@ -93,6 +99,7 @@
   background: #F7FAFC;
   border-bottom: 2px solid #E8EDF3;
   padding: 10px 20px;
+  flex-shrink: 0;
 }
 
 .th {
@@ -103,7 +110,7 @@
   letter-spacing: 0.5px;
 }
 
-.tableBody { overflow-y: auto; }
+.tableBody { overflow-y: auto; flex: 1; min-height: 0; }
 
 .tableRow {
   display: grid;

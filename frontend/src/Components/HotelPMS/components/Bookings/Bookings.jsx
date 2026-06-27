@@ -19,6 +19,14 @@ import {
 const VIEW_START = subDays(new Date(), 60);
 const DAYS_COUNT = 240;
 
+// Status groups for the bookings views.
+//  • active   — operational bookings shown under «Все брони»
+//  • archived — completed stays (выехал) → «Архивные»
+//  • cancelled/no-show — closed bookings → «Отменённые»
+const ACTIVE_STATUSES = ['new', 'confirmed', 'checked_in'];
+const ARCHIVED_STATUSES = ['checked_out'];
+const CANCELLED_STATUSES = ['cancelled', 'no_show'];
+
 function Bookings() {
   const { data, loading, error, reload } = useTimeline(VIEW_START, DAYS_COUNT);
 
@@ -65,28 +73,52 @@ function Bookings() {
   const [formData, setFormData] = useState(null);
   const [savingError, setSavingError] = useState(null);
 
+  const matchesSearch = (b) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (
+      b.guestName.toLowerCase().includes(q) ||
+      b.phone?.includes(q) ||
+      rooms.find(r => r.id === b.roomId)?.number.includes(q)
+    );
+  };
+  const byCheckInDesc = (a, b) => (a.checkIn < b.checkIn ? 1 : -1);
+
+  // «Все брони» — only active (operational) bookings; archived & cancelled
+  // live in their own tabs.
+  const activeBookings = useMemo(
+    () => bookings.filter(b => ACTIVE_STATUSES.includes(b.status)),
+    [bookings],
+  );
+
   const filtered = useMemo(() => {
-    return bookings.filter(b => {
-      if (statusFilter !== 'all' && b.status !== statusFilter) return false;
-      if (search) {
-        const q = search.toLowerCase();
-        return (
-          b.guestName.toLowerCase().includes(q) ||
-          b.phone?.includes(q) ||
-          rooms.find(r => r.id === b.roomId)?.number.includes(q)
-        );
-      }
-      return true;
-    }).sort((a, b) => a.checkIn < b.checkIn ? 1 : -1);
-  }, [bookings, statusFilter, search, rooms]);
+    return activeBookings
+      .filter(b => (statusFilter === 'all' || b.status === statusFilter) && matchesSearch(b))
+      .sort(byCheckInDesc);
+  }, [activeBookings, statusFilter, search, rooms]);
+
+  const archivedBookings = useMemo(
+    () => bookings.filter(b => ARCHIVED_STATUSES.includes(b.status) && matchesSearch(b)).sort(byCheckInDesc),
+    [bookings, search, rooms],
+  );
+
+  const cancelledBookings = useMemo(
+    () => bookings.filter(b => CANCELLED_STATUSES.includes(b.status) && matchesSearch(b)).sort(byCheckInDesc),
+    [bookings, search, rooms],
+  );
 
   const statusCounts = useMemo(() => {
-    const counts = { all: bookings.length };
-    Object.keys(BOOKING_STATUS).forEach(k => {
-      counts[k] = bookings.filter(b => b.status === k).length;
+    const counts = { all: activeBookings.length };
+    ACTIVE_STATUSES.forEach(k => {
+      counts[k] = activeBookings.filter(b => b.status === k).length;
     });
     return counts;
-  }, [bookings]);
+  }, [activeBookings]);
+
+  const tabCounts = useMemo(() => ({
+    archived: bookings.filter(b => ARCHIVED_STATUSES.includes(b.status)).length,
+    cancelled: bookings.filter(b => CANCELLED_STATUSES.includes(b.status)).length,
+  }), [bookings]);
 
   const getRoomNumber   = (roomId) => rooms.find(r => r.id === roomId)?.number || '?';
   const getCategoryName = (roomId) => {
@@ -155,6 +187,56 @@ function Bookings() {
     }
   };
 
+  const renderBookingsTable = (list, emptyText) => (
+    <div className={classes.table}>
+      <div className={classes.tableHead}>
+        <div className={classes.th}>Гость</div>
+        <div className={classes.th}>Номер</div>
+        <div className={classes.th}>Заезд</div>
+        <div className={classes.th}>Выезд</div>
+        <div className={classes.th}>Статус</div>
+        <div className={classes.th}>Сумма</div>
+        <div className={classes.th}></div>
+      </div>
+      <div className={classes.tableBody}>
+        {list.length === 0 && !loading && (
+          <div className={classes.empty}>{emptyText}</div>
+        )}
+        {list.map(b => {
+          const cfg = BOOKING_STATUS[b.status] || BOOKING_STATUS.new;
+          const nights = differenceInDays(parseISO(b.checkOut), parseISO(b.checkIn));
+          return (
+            <div key={b.id} className={classes.tableRow} onClick={() => openEdit(b)}>
+              <div className={classes.td}>
+                <div className={classes.guestName}>{b.guestName}</div>
+                <div className={classes.guestPhone}>{b.phone || '—'} · {b.adults} взр{b.children ? `, ${b.children} дет` : ''}</div>
+              </div>
+              <div className={classes.td}>
+                <div className={classes.roomBadge}>№{getRoomNumber(b.roomId)}</div>
+                <div style={{ fontSize: 10, color: '#8896AB', marginTop: 2 }}>{getCategoryName(b.roomId)}</div>
+              </div>
+              <div className={classes.td}>{format(parseISO(b.checkIn), 'd MMM', { locale: ru })}</div>
+              <div className={classes.td}>{format(parseISO(b.checkOut), 'd MMM', { locale: ru })} <span style={{ color: '#8896AB', fontSize: 11 }}>({nights} н.)</span></div>
+              <div className={classes.td}>
+                <span className={classes.statusBadge} style={{ background: cfg.color + '22', color: cfg.color }}>
+                  {cfg.label}
+                </span>
+              </div>
+              <div className={`${classes.td} ${classes.price}`}>
+                {b.totalPrice ? `${b.totalPrice.toLocaleString('ru-RU')} ₽` : '—'}
+              </div>
+              <div className={classes.td}>
+                <button className={classes.actionBtn} onClick={e => { e.stopPropagation(); openEdit(b); }}>
+                  Открыть
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   return (
     <div className={classes.root}>
       <div className={classes.pageHeader}>
@@ -180,6 +262,8 @@ function Bookings() {
           { key: 'all', label: 'Все брони' },
           { key: 'arrivals', label: 'Заезды' },
           { key: 'departures', label: 'Выезды' },
+          { key: 'archived', label: `Архивные${tabCounts.archived ? ` (${tabCounts.archived})` : ''}` },
+          { key: 'cancelled', label: `Отменённые${tabCounts.cancelled ? ` (${tabCounts.cancelled})` : ''}` },
         ].map(tab => (
           <div
             key={tab.key}
@@ -210,8 +294,9 @@ function Bookings() {
             >
               Все ({statusCounts.all})
             </div>
-            {Object.entries(BOOKING_STATUS).map(([key, cfg]) => (
-              statusCounts[key] > 0 && (
+            {ACTIVE_STATUSES.map(key => {
+              const cfg = BOOKING_STATUS[key];
+              return statusCounts[key] > 0 && (
                 <div
                   key={key}
                   className={`${classes.filterChip} ${statusFilter === key ? classes.active : ''}`}
@@ -220,57 +305,29 @@ function Bookings() {
                 >
                   {cfg.label} ({statusCounts[key]})
                 </div>
-              )
-            ))}
+              );
+            })}
           </div>
 
-          <div className={classes.table}>
-            <div className={classes.tableHead}>
-              <div className={classes.th}>Гость</div>
-              <div className={classes.th}>Номер</div>
-              <div className={classes.th}>Заезд</div>
-              <div className={classes.th}>Выезд</div>
-              <div className={classes.th}>Статус</div>
-              <div className={classes.th}>Сумма</div>
-              <div className={classes.th}></div>
-            </div>
-            <div className={classes.tableBody}>
-              {filtered.length === 0 && !loading && (
-                <div className={classes.empty}>Бронирования не найдены</div>
-              )}
-              {filtered.map(b => {
-                const cfg = BOOKING_STATUS[b.status] || BOOKING_STATUS.new;
-                const nights = differenceInDays(parseISO(b.checkOut), parseISO(b.checkIn));
-                return (
-                  <div key={b.id} className={classes.tableRow} onClick={() => openEdit(b)}>
-                    <div className={classes.td}>
-                      <div className={classes.guestName}>{b.guestName}</div>
-                      <div className={classes.guestPhone}>{b.phone || '—'} · {b.adults} взр{b.children ? `, ${b.children} дет` : ''}</div>
-                    </div>
-                    <div className={classes.td}>
-                      <div className={classes.roomBadge}>№{getRoomNumber(b.roomId)}</div>
-                      <div style={{ fontSize: 10, color: '#8896AB', marginTop: 2 }}>{getCategoryName(b.roomId)}</div>
-                    </div>
-                    <div className={classes.td}>{format(parseISO(b.checkIn), 'd MMM', { locale: ru })}</div>
-                    <div className={classes.td}>{format(parseISO(b.checkOut), 'd MMM', { locale: ru })} <span style={{ color: '#8896AB', fontSize: 11 }}>({nights} н.)</span></div>
-                    <div className={classes.td}>
-                      <span className={classes.statusBadge} style={{ background: cfg.color + '22', color: cfg.color }}>
-                        {cfg.label}
-                      </span>
-                    </div>
-                    <div className={`${classes.td} ${classes.price}`}>
-                      {b.totalPrice ? `${b.totalPrice.toLocaleString('ru-RU')} ₽` : '—'}
-                    </div>
-                    <div className={classes.td}>
-                      <button className={classes.actionBtn} onClick={e => { e.stopPropagation(); openEdit(b); }}>
-                        Открыть
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+          {renderBookingsTable(filtered, 'Бронирования не найдены')}
+        </>
+      )}
+
+      {activeTab === 'archived' && (
+        <>
+          <div style={{ fontSize: 12, color: '#8896AB', margin: '0 2px 10px' }}>
+            Завершённые брони (гость выехал). В шахматке отображаются полупрозрачными.
           </div>
+          {renderBookingsTable(archivedBookings, 'Архивных броней нет')}
+        </>
+      )}
+
+      {activeTab === 'cancelled' && (
+        <>
+          <div style={{ fontSize: 12, color: '#8896AB', margin: '0 2px 10px' }}>
+            Отменённые брони и неявки. Сохраняются для истории, в шахматке не отображаются.
+          </div>
+          {renderBookingsTable(cancelledBookings, 'Отменённых броней нет')}
         </>
       )}
 
