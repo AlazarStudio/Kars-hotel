@@ -1,4 +1,10 @@
-import { Injectable, ConflictException, NotFoundException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/context/tenant-context';
 import { TimelineService } from '../timeline/timeline.service';
@@ -90,7 +96,7 @@ export class ReservationsService {
           tenant_id, room_id, room_type_id, guest_name, phone, email,
           check_in, check_out,
           status, source, adults, children,
-          notes, total_price, rate_plan_id, place_number, version
+          notes, total_price, rate_plan_id, place_number, channel_managed, version
         ) VALUES (
           ${tenantId}::uuid,
           ${dto.roomId}::uuid,
@@ -108,6 +114,7 @@ export class ReservationsService {
           ${dto.totalPrice != null ? dto.totalPrice : null},
           ${dto.ratePlanId ?? null}::uuid,
           ${placeNumber},
+          ${dto.channelManaged ?? false},
           1
         )
         RETURNING id, status, version, place_number
@@ -641,19 +648,39 @@ export class ReservationsService {
 
   // ─── Cancel ───────────────────────────────────────────────────────────────────
 
-  async cancel(id: string, userId: string, reason?: string) {
+  /**
+   * Cancel a reservation.
+   *
+   * Channel-managed reservations (created by a partner such as Kars Avia via the
+   * connectivity API) are owned by that partner — hotel staff may view them but
+   * cannot cancel them from the PMS. Only the owning channel can release them, by
+   * calling through with `fromChannel: true`. This keeps a single source of truth
+   * for the booking's lifecycle and prevents the two systems drifting out of sync.
+   */
+  async cancel(
+    id: string,
+    userId: string,
+    reason?: string,
+    opts: { fromChannel?: boolean } = {},
+  ) {
     const tenantId = TenantContext.getTenantIdOrThrow();
 
     type TxResult =
       | { ok: true; id: string; version: number; before: string }
-      | { ok: false; reason: 'NOT_FOUND' | 'WRONG_STATUS' };
+      | { ok: false; reason: 'NOT_FOUND' | 'WRONG_STATUS' | 'CHANNEL_MANAGED' };
 
     const result = await this.prisma.forTenant(async (tx): Promise<TxResult> => {
-      const rows = await tx.$queryRaw<{ id: string; status: string; version: number }[]>`
-        SELECT id, status, version FROM reservation WHERE id = ${id}::uuid LIMIT 1
+      const rows = await tx.$queryRaw<
+        { id: string; status: string; version: number; channel_managed: boolean }[]
+      >`
+        SELECT id, status, version, channel_managed FROM reservation WHERE id = ${id}::uuid LIMIT 1
       `;
       if (!rows.length) return { ok: false, reason: 'NOT_FOUND' };
       const cur = rows[0];
+      // A partner owns this booking — hotel staff cannot cancel it locally.
+      if (cur.channel_managed && !opts.fromChannel) {
+        return { ok: false, reason: 'CHANNEL_MANAGED' };
+      }
       if (['CANCELLED', 'CHECKED_OUT'].includes(cur.status)) {
         return { ok: false, reason: 'WRONG_STATUS' };
       }
@@ -675,6 +702,12 @@ export class ReservationsService {
 
     if (!result.ok) {
       if (result.reason === 'NOT_FOUND') throw new NotFoundException('Reservation not found');
+      if (result.reason === 'CHANNEL_MANAGED') {
+        throw new ForbiddenException(
+          'This reservation belongs to an external partner (Kars Avia) and cannot be ' +
+            'cancelled from the hotel. Please cancel it through the partner that created it.',
+        );
+      }
       throw new ConflictException(`Cannot cancel: reservation is already cancelled or checked out`);
     }
 

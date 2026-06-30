@@ -154,6 +154,15 @@ export class ConnectivityService {
         total: number | null;
         nightlyFrom: number | null;
       };
+      type OfferRoom = {
+        id: string;
+        number: string;
+        floor: number;
+        capacity: number;
+        bedType: string;
+        view: string;
+        available: boolean;
+      };
       const offers: Array<{
         categoryId: string;
         categoryName: string;
@@ -162,6 +171,7 @@ export class ConnectivityService {
         nightlyRate: number;
         currency: string;
         ratePlans: OfferRatePlan[];
+        rooms: OfferRoom[];
       }> = [];
 
       let nights = 0;
@@ -209,6 +219,16 @@ export class ConnectivityService {
           cheapestPlanNightly ??
           (firstNight.minPrice != null ? Number(firstNight.minPrice) : Number(rt.basePrice));
 
+        // Physical rooms of this category, each with its parameters and whether
+        // it is free for the whole stay — so the partner's dispatcher can pick a
+        // specific room and see occupied ones up-front (not at booking time).
+        const rooms = await this.listRoomsForCategory(
+          tenant.id,
+          rt.id,
+          dto.checkIn,
+          dto.checkOut,
+        );
+
         offers.push({
           categoryId: rt.id,
           categoryName: rt.name,
@@ -217,6 +237,7 @@ export class ConnectivityService {
           nightlyRate,
           currency: tenant.currency,
           ratePlans,
+          rooms,
         });
       }
 
@@ -281,12 +302,25 @@ export class ConnectivityService {
         totalPrice = match.total != null ? Number(match.total) : undefined;
       }
 
-      const roomId = await this.pickAvailableRoom(
-        tenant.id,
-        dto.categoryId,
-        dto.checkIn,
-        dto.checkOut,
-      );
+      // Partner pinned a specific room → validate it belongs to the category and
+      // still has a free place; otherwise auto-assign any free room (back-compat).
+      let roomId: string | null;
+      if (dto.roomId) {
+        roomId = await this.resolvePinnedRoom(
+          tenant.id,
+          dto.roomId,
+          dto.categoryId,
+          dto.checkIn,
+          dto.checkOut,
+        );
+      } else {
+        roomId = await this.pickAvailableRoom(
+          tenant.id,
+          dto.categoryId,
+          dto.checkIn,
+          dto.checkOut,
+        );
+      }
       if (!roomId) {
         throw new ConflictException('No room available in this category for the selected dates');
       }
@@ -306,6 +340,9 @@ export class ConnectivityService {
         children: dto.children ?? 0,
         status: 'CONFIRMED',
         source: 'CORPORATE',
+        // Owned by the partner channel — hotel staff can view but not cancel it
+        // locally; only this connectivity API can release it (see cancel below).
+        channelManaged: true,
         notes: notes || undefined,
         ratePlanId,
         totalPrice,
@@ -321,8 +358,12 @@ export class ConnectivityService {
   async getReservation(slug: string, id: string) {
     const tenant = await this.resolveTenant(slug);
     // RLS guarantees this only resolves if the reservation belongs to `tenant`.
+    // Pull the room number so the partner can show which room was assigned.
     const row = await this.prisma.forTenantExplicit(tenant.id, (tx) =>
-      tx.reservation.findUnique({ where: { id } }),
+      tx.reservation.findUnique({
+        where: { id },
+        include: { room: { select: { number: true } } },
+      }),
     );
     if (!row) throw new NotFoundException(`Reservation ${id} not found in hotel ${slug}`);
     return this.mapReservation(tenant, row);
@@ -332,8 +373,10 @@ export class ConnectivityService {
     const tenant = await this.resolveTenant(slug);
     // Ensure it belongs to this hotel before touching it.
     await this.getReservation(slug, id);
+    // fromChannel: the partner owns this booking, so it is allowed to release it
+    // even though hotel staff are blocked from cancelling channel-managed rows.
     return this.runAsTenant(tenant.id, () =>
-      this.reservations.cancel(id, undefined as unknown as string, reason),
+      this.reservations.cancel(id, undefined as unknown as string, reason, { fromChannel: true }),
     );
   }
 
@@ -380,6 +423,115 @@ export class ConnectivityService {
       isSuperAdmin: false,
     };
     return TenantContext.run(ctx, fn);
+  }
+
+  /**
+   * List the physical rooms in a category with their parameters and whether each
+   * has a free place for the requested stay. A room is `available` when its
+   * occupied places (overlapping, non-released reservations) are fewer than its
+   * capacity. Ordered floor then number so the partner UI reads naturally.
+   */
+  private async listRoomsForCategory(
+    tenantId: string,
+    roomTypeId: string,
+    checkIn: string,
+    checkOut: string,
+  ): Promise<
+    Array<{
+      id: string;
+      number: string;
+      floor: number;
+      capacity: number;
+      bedType: string;
+      view: string;
+      available: boolean;
+    }>
+  > {
+    return this.prisma.forTenantExplicit(tenantId, async (tx) => {
+      const rows = await tx.$queryRaw<
+        Array<{
+          id: string;
+          number: string;
+          floor: number;
+          capacity: number;
+          bed_type: string;
+          view: string;
+          occupied_places: bigint;
+        }>
+      >`
+        SELECT
+          r.id,
+          r.number,
+          r.floor,
+          r.capacity,
+          r.bed_type,
+          r.view,
+          (
+            SELECT COUNT(*) FROM reservation res
+            WHERE res.room_id = r.id
+              AND res.check_in  < ${checkOut}::date
+              AND res.check_out > ${checkIn}::date
+              AND res.status NOT IN ('CANCELLED', 'NO_SHOW')
+          ) AS occupied_places
+        FROM room r
+        WHERE r.room_type_id = ${roomTypeId}::uuid
+          AND r.is_active = true
+        ORDER BY r.floor ASC, r.number ASC
+      `;
+      return rows.map((r) => ({
+        id: r.id,
+        number: r.number,
+        floor: r.floor,
+        capacity: r.capacity,
+        bedType: r.bed_type,
+        view: r.view,
+        available: Number(r.occupied_places) < r.capacity,
+      }));
+    });
+  }
+
+  /**
+   * Validate a partner-pinned room: it must be active, belong to the requested
+   * category, and still have a free place for the stay. Returns the room id when
+   * bookable; throws a descriptive 404/409 otherwise so the partner sees why.
+   */
+  private async resolvePinnedRoom(
+    tenantId: string,
+    roomId: string,
+    roomTypeId: string,
+    checkIn: string,
+    checkOut: string,
+  ): Promise<string> {
+    return this.prisma.forTenantExplicit(tenantId, async (tx) => {
+      const rows = await tx.$queryRaw<
+        Array<{ id: string; room_type_id: string; capacity: number; occupied_places: bigint }>
+      >`
+        SELECT
+          r.id,
+          r.room_type_id,
+          r.capacity,
+          (
+            SELECT COUNT(*) FROM reservation res
+            WHERE res.room_id = r.id
+              AND res.check_in  < ${checkOut}::date
+              AND res.check_out > ${checkIn}::date
+              AND res.status NOT IN ('CANCELLED', 'NO_SHOW')
+          ) AS occupied_places
+        FROM room r
+        WHERE r.id = ${roomId}::uuid
+          AND r.is_active = true
+        LIMIT 1
+      `;
+      const room = rows[0];
+      if (!room) throw new NotFoundException(`Room ${roomId} not found`);
+      if (room.room_type_id !== roomTypeId) {
+        throw new ConflictException('Chosen room does not belong to the requested category');
+      }
+      if (Number(room.occupied_places) >= room.capacity) {
+        throw new ConflictException('Chosen room is no longer available for the selected dates');
+      }
+      return room.id;
+    });
   }
 
   /** Pick the first active room in a category that has a free place for the period. */
@@ -497,6 +649,7 @@ export class ConnectivityService {
       notes: string | null;
       createdAt: Date;
       updatedAt: Date;
+      room?: { number: string } | null;
     },
   ) {
     return {
@@ -505,6 +658,8 @@ export class ConnectivityService {
       slug: tenant.slug,
       categoryId: r.roomTypeId,
       roomId: r.roomId,
+      // Human room number assigned by the hotel, surfaced to the partner UI.
+      roomNumber: r.room?.number ?? null,
       placeNumber: r.placeNumber,
       guestName: r.guestName,
       phone: r.phone,

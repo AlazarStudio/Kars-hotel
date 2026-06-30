@@ -100,6 +100,10 @@ function getConflict(bookings, roomId, checkIn, checkOut, excludeId, roomCapacit
 
 function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDelete, onClose, savingError }) {
   const isNew = !booking.id;
+  // Bookings owned by an external partner channel (Kars Avia) are managed there —
+  // hotel staff can view them but cannot cancel them locally. The backend enforces
+  // this too (403); we hide the action here so the user never hits that error.
+  const isChannelManaged = !!booking?.channelManaged;
 
   const [form, setForm] = useState({
     guestName: booking.guestName || '',
@@ -392,7 +396,12 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
         )}
 
         <div className={classes.modalFooter}>
-          {!isNew && ['new', 'confirmed'].includes(booking?.status) && (
+          {!isNew && isChannelManaged && (
+            <div className={classes.channelNote}>
+              Бронь из Kars Avia — отменить можно только на стороне партнёра.
+            </div>
+          )}
+          {!isNew && !isChannelManaged && ['new', 'confirmed'].includes(booking?.status) && (
             <button className={classes.btnDanger} onClick={openCancel}>
               Отменить бронь
             </button>

@@ -5,6 +5,7 @@ import {
   IsInt,
   IsOptional,
   IsNumber,
+  IsBoolean,
   Min,
   IsNotEmpty,
 } from 'class-validator';
@@ -74,4 +75,14 @@ export class CreateReservationDto {
   @IsOptional()
   @IsString()
   ratePlanId?: string;
+
+  @ApiPropertyOptional({
+    example: false,
+    description:
+      'Set by the connectivity layer for partner-created bookings. Channel-managed ' +
+      'reservations can only be cancelled by the owning partner, not by hotel staff.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  channelManaged?: boolean;
 }

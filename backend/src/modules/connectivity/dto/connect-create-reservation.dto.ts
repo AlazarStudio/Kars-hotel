@@ -11,13 +11,20 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
- * Book a room by CATEGORY (not a specific room). The connectivity layer picks
- * an available physical room in the category and creates the reservation.
+ * Book a room in a CATEGORY. The partner may pin a specific physical room via
+ * `roomId` (chosen from the availability room list); when omitted, the
+ * connectivity layer auto-picks any free room in the category.
  */
 export class ConnectCreateReservationDto {
   @ApiProperty({ format: 'uuid', description: 'Room category (PMS roomType) id' })
   @IsUUID()
   categoryId!: string;
+
+  /** Specific physical room chosen by the partner; auto-assigned when omitted. */
+  @ApiPropertyOptional({ format: 'uuid', description: 'Specific room id to book' })
+  @IsOptional()
+  @IsUUID()
+  roomId?: string;
 
   /** Chosen rate plan (PMS ratePlan id). When set, the stay is priced by this plan. */
   @ApiPropertyOptional({ format: 'uuid', description: 'Chosen rate plan id' })

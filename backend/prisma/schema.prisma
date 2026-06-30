@@ -489,6 +489,11 @@ model Reservation {
   totalPrice  Decimal?          @map("total_price") @db.Decimal(12, 2)
   ratePlanId  String?           @map("rate_plan_id") @db.Uuid
   source      ReservationSource @default(DIRECT)
+  /// True when the reservation was created by an external partner channel
+  /// (e.g. Kars Avia via the connectivity API). The owning channel controls its
+  /// lifecycle: hotel staff may view it but cannot cancel it from the PMS — only
+  /// the partner can release it through the connectivity API.
+  channelManaged Boolean        @default(false) @map("channel_managed")
   notes       String?
   placeNumber Int               @default(1) @map("place_number")
   version     Int               @default(0)

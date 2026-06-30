@@ -40,6 +40,8 @@ export interface TimelineReservation {
   notes: string | null;
   totalPrice: string | null;
   source: ReservationSource;
+  /** Owned by an external partner channel (Kars Avia) — cannot be cancelled from the PMS. */
+  channelManaged: boolean;
   ratePlanId: string | null;
   version: number;
   placeNumber: number;

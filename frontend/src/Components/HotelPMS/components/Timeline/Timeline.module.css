@@ -979,6 +979,21 @@
 }
 .btnDanger:hover { background: #FFEBEE; }
 
+/* Notice shown in place of the cancel button for partner-owned (Kars Avia)
+   bookings, which the hotel cannot cancel locally. Left-aligned like btnDanger. */
+.channelNote {
+  margin-right: auto;
+  align-self: center;
+  max-width: 320px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #7A8699;
+  background: #F1F5FB;
+  border: 1px solid #E1E8F2;
+  border-radius: 8px;
+  padding: 7px 12px;
+}
+
 .btnDangerSolid {
   padding: 9px 22px;
   background: #EF5350;
