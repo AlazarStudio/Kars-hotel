@@ -291,7 +291,11 @@ export class AuthService implements OnModuleInit {
       .catch(() => undefined);
   }
 
-  async me(userId: string, tenantId: string): Promise<AuthenticatedUser> {
+  async me(
+    userId: string,
+    tenantId: string,
+    impersonatedBy?: string,
+  ): Promise<AuthenticatedUser> {
     const user = await this.prisma.admin.user.findFirst({
       where: { id: userId, tenantId, isActive: true },
       include: {
@@ -299,15 +303,36 @@ export class AuthService implements OnModuleInit {
       },
     });
     if (!user) throw new UnauthorizedException('User no longer exists');
+
+    // Display identity: when a Kars Avia dispatcher operates a hotel via SSO,
+    // the session runs as that hotel's owner (permissions/tenant scope), but the
+    // UI must show WHO is actually working — the dispatcher — while the banner
+    // says «от имени <hotel>». Permissions/roleCode stay the effective owner's
+    // so the hotel screens gate correctly; only the shown name/label change.
+    let displayName = user.fullName;
+    let displayEmail = user.email;
+    let isDispatcher = user.isDispatcher;
+    if (impersonatedBy) {
+      const dispatcher = await this.prisma.admin.user.findUnique({
+        where: { id: impersonatedBy },
+        select: { email: true, fullName: true, isDispatcher: true },
+      });
+      if (dispatcher) {
+        displayName = dispatcher.fullName;
+        displayEmail = dispatcher.email;
+        isDispatcher = dispatcher.isDispatcher;
+      }
+    }
+
     return {
       id: user.id,
       tenantId,
-      email: user.email,
-      fullName: user.fullName,
+      email: displayEmail,
+      fullName: displayName,
       roleCode: user.role.code,
       permissions: user.role.rolePermissions.map((rp) => rp.permission.code),
       isSuperAdmin: (user.role.code as string) === 'SUPER_ADMIN',
-      isDispatcher: user.isDispatcher,
+      isDispatcher,
     };
   }
 

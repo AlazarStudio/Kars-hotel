@@ -120,7 +120,9 @@ function Sidebar({ hotel }) {
         {user && (
           <div className={classes.user}>
             <div className={classes.userName} title={user.email}>{user.fullName || user.email}</div>
-            <div className={classes.userRole}>{ROLE_LABELS[user.roleCode] || user.roleCode}</div>
+            <div className={classes.userRole}>
+              {user.isDispatcher ? 'Администратор (диспетчер)' : ROLE_LABELS[user.roleCode] || user.roleCode}
+            </div>
           </div>
         )}
         <button type="button" className={classes.logoutBtn} onClick={handleLogout}>
