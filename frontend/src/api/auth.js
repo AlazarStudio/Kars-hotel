@@ -46,3 +46,11 @@ export async function ssoExchange(code) {
   setAccessToken(data.accessToken);
   return data; // { accessToken, accessTtlSeconds, mode: 'admin'|'hotel', tenant? }
 }
+
+// Exit impersonation via the operator's `imp` claim — no refresh cookie needed,
+// so it works for SSO dispatchers (no cookie at all) and super-admins alike.
+export async function exitImpersonation() {
+  const { data } = await api.post('/auth/exit-impersonation');
+  setAccessToken(data.accessToken);
+  return data; // { accessToken, accessTtlSeconds }
+}

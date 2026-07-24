@@ -337,6 +337,45 @@ export class AuthService implements OnModuleInit {
   }
 
   /**
+   * Exit impersonation: re-issue an access token for whoever STARTED the
+   * impersonation (the `imp` claim on the current token). Works without a
+   * refresh cookie — the impersonation token itself proves who the operator is
+   * — so it fixes both the SSO-dispatcher exit (no cookie at all) and the
+   * super-admin exit (avoids rotating the refresh cookie on every toggle). The
+   * re-issued token restores admin-panel access (isa) and the dispatcher flag.
+   */
+  async exitImpersonation(operatorUserId: string): Promise<{
+    accessToken: string;
+    accessTtlSeconds: number;
+  }> {
+    const user = await this.prisma.admin.user.findUnique({
+      where: { id: operatorUserId },
+      include: {
+        role: { include: { rolePermissions: { include: { permission: true } } } },
+      },
+    });
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('Operator account is inactive');
+    }
+    const isSuperAdmin = (user.role.code as string) === 'SUPER_ADMIN';
+    const accessPayload: JwtAccessPayload = {
+      sub: user.id,
+      tid: user.tenantId,
+      role: user.role.code,
+      perms: user.role.rolePermissions.map((rp) => rp.permission.code),
+      email: user.email,
+      ...(isSuperAdmin ? { isa: true } : {}),
+      ...(user.isDispatcher ? { disp: true } : {}),
+    };
+    const accessTtlSeconds = 3600;
+    const accessToken = await this.jwt.signAsync(accessPayload, {
+      secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
+      expiresIn: accessTtlSeconds,
+    });
+    return { accessToken, accessTtlSeconds };
+  }
+
+  /**
    * Issue a short-lived impersonation access token (no refresh token) that
    * gives the caller OWNER-level access to a specific tenant. Only callable
    * by super-admin users. Returns just the access token string.

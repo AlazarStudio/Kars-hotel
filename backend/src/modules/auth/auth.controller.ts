@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
@@ -75,6 +75,23 @@ export class AuthController {
   async ssoExchange(@Body() body: { code?: string }) {
     if (!body?.code) throw new UnauthorizedException('SSO code is required');
     return this.auth.exchangeSsoCode(body.code);
+  }
+
+  @Post('exit-impersonation')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Exit impersonation: re-issue a token for the operator (imp claim). Works without a refresh cookie (SSO dispatcher / super-admin).',
+  })
+  @ApiResponse({ status: 200, description: 'Operator token re-issued' })
+  @ApiResponse({ status: 400, description: 'Not in an impersonation session' })
+  async exitImpersonation(@CurrentUser() user: AuthenticatedRequestUser) {
+    if (!user.impersonatedBy) {
+      throw new BadRequestException('Not in an impersonation session');
+    }
+    return this.auth.exitImpersonation(user.impersonatedBy);
   }
 
   @Public()

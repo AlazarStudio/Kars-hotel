@@ -98,15 +98,20 @@ export function AuthProvider({ children }) {
   }, []);
 
   /**
-   * Exit impersonation: clear the flag first, then restore admin token
-   * via the still-intact httpOnly refresh cookie.
+   * Exit impersonation: re-issue the operator's own token from the `imp` claim
+   * (server-side), NOT from the refresh cookie. This is what makes exit work for
+   * an SSO dispatcher (who never had a refresh cookie) as well as a super-admin.
+   * Auto-refresh stays blocked for dispatchers (cookieless), re-enabled for
+   * native super-admins.
    */
   const exitImpersonation = useCallback(async () => {
-    setImpersonatingFlag(false);       // re-enable auto-refresh BEFORE refreshing
     try {
-      await authApi.refresh();         // uses admin's refresh cookie → new admin token
+      await authApi.exitImpersonation();  // sets the operator's access token
       const profile = await authApi.me();
       setUser(profile);
+      // Dispatchers arrived via SSO (no refresh cookie) → keep auto-refresh off;
+      // native super-admins keep their cookie → auto-refresh may resume.
+      setImpersonatingFlag(!!profile.isDispatcher);
     } finally {
       setImpersonatedTenant(null);
     }
