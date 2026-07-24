@@ -4,8 +4,8 @@ import { useAuth } from '../../auth/AuthContext';
 
 /**
  * Вход по SSO-ссылке из диспетчерской Kars Avia: /sso?code=<одноразовый код>.
- * Обменивает код на access-токен и уводит либо в конкретную гостиницу
- * (владельцем тенанта), либо в супер-админку платформы.
+ * Обменивает код на access-токен собственной учётки диспетчера и уводит либо в
+ * конкретную гостиницу (режим «от имени <name>»), либо в админ-панель.
  */
 export default function SsoEntry() {
   const [params] = useSearchParams();
@@ -25,8 +25,8 @@ export default function SsoEntry() {
     }
     (async () => {
       try {
-        const { superAdmin } = await ssoEnter(code);
-        navigate(superAdmin ? '/admin' : '/dashboard', { replace: true });
+        const { mode } = await ssoEnter(code);
+        navigate(mode === 'hotel' ? '/dashboard' : '/admin', { replace: true });
       } catch {
         setError('Ссылка недействительна или устарела. Вернитесь в Kars Avia и нажмите кнопку перехода ещё раз.');
       }

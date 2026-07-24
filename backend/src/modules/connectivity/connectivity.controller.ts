@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -45,8 +46,21 @@ export class ConnectivityController {
     summary:
       'Mint a one-time SSO entry code (dispatcher "open in PMS"); optional hotelSlug targets a specific hotel',
   })
-  createSso(@Body() body: { hotelSlug?: string }) {
-    return this.connectivity.createSso(body?.hotelSlug);
+  createSso(
+    @Body()
+    body: {
+      hotelSlug?: string;
+      dispatcher?: { email?: string; fullName?: string };
+    },
+  ) {
+    const email = body?.dispatcher?.email?.trim();
+    if (!email) {
+      throw new BadRequestException('dispatcher.email is required');
+    }
+    return this.connectivity.createSso(
+      { email, fullName: body.dispatcher?.fullName?.trim() || email },
+      body?.hotelSlug,
+    );
   }
 
   @Get('hotels')

@@ -20,6 +20,12 @@ export interface JwtAccessPayload {
    * token for a specific tenant.
    */
   imp?: string;
+  /**
+   * Dispatcher flag — true for Kars Avia dispatcher accounts (SUPER_ADMIN
+   * rights, but labelled «Администратор/Диспетчер» in the UI, not
+   * «Суперадминистратор»).
+   */
+  disp?: boolean;
 }
 
 /** Payload encoded inside the JWT refresh token. */

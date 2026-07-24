@@ -69,7 +69,7 @@ function AdminSidebar({ activeId }) {
         <div className={classes.logoBadge}>SA</div>
         <div className={classes.logoTexts}>
           <div className={classes.logoTitle}>Kars Hotel</div>
-          <div className={classes.logoSubtitle}>Super Admin</div>
+          <div className={classes.logoSubtitle}>{user?.isDispatcher ? 'Диспетчер Kars Avia' : 'Super Admin'}</div>
         </div>
       </div>
 
@@ -92,7 +92,7 @@ function AdminSidebar({ activeId }) {
         {user && (
           <div className={classes.user}>
             <div className={classes.userName} title={user.email}>{user.fullName || user.email}</div>
-            <div className={classes.userRole}>Суперадминистратор</div>
+            <div className={classes.userRole}>{user?.isDispatcher ? 'Администратор' : 'Суперадминистратор'}</div>
           </div>
         )}
         <button type="button" className={classes.logoutBtn} onClick={logout}>
@@ -439,7 +439,7 @@ function SettingsSection() {
           <div className={classes.settingsInfo}>
             <div className={classes.settingsRow}><span>Email</span><strong>{user?.email}</strong></div>
             <div className={classes.settingsRow}><span>Имя</span><strong>{user?.fullName}</strong></div>
-            <div className={classes.settingsRow}><span>Роль</span><strong>Суперадминистратор</strong></div>
+            <div className={classes.settingsRow}><span>Роль</span><strong>{user?.isDispatcher ? 'Администратор' : 'Суперадминистратор'}</strong></div>
           </div>
 
           <div className={classes.formDivider} />

@@ -37,6 +37,7 @@ export interface AuthenticatedUser {
   roleCode: string;
   permissions: string[];
   isSuperAdmin?: boolean;
+  isDispatcher?: boolean;
 }
 
 @Injectable()
@@ -306,6 +307,7 @@ export class AuthService implements OnModuleInit {
       roleCode: user.role.code,
       permissions: user.role.rolePermissions.map((rp) => rp.permission.code),
       isSuperAdmin: (user.role.code as string) === 'SUPER_ADMIN',
+      isDispatcher: user.isDispatcher,
     };
   }
 
@@ -366,31 +368,94 @@ export class AuthService implements OnModuleInit {
   // access token on arrival. The code — not the token — travels in the URL, is
   // single-use and short-lived, so a leaked/history'd link is useless.
   //
-  // Target: with a tenantId the visitor lands INSIDE that hotel as its owner
-  // (same mechanics as super-admin impersonation); without — as the platform
-  // super-admin (the dispatcher centre operates the PMS platform itself).
+  // Every Kars Avia dispatcher gets their OWN PMS account (auto-provisioned by
+  // email on first SSO, reused afterwards) — never a shared super-admin or a
+  // hotel's owner account. That account holds the SUPER_ADMIN role (full rights)
+  // but is flagged isDispatcher, so the UI labels it «Администратор/Диспетчер».
   //
-  // Codes live in memory: 60 s TTL and single-use make persistence pointless —
-  // a backend restart between issue and click just means clicking the button
-  // again on the dispatcher side.
+  // Two entry modes:
+  //  • admin (no hotel): sign in AS the dispatcher → lands in the admin panel.
+  //  • hotel (with slug): impersonate that hotel, tagged imp=<dispatcher id> for
+  //    attribution → the frontend shows «Вы работаете от имени <hotel>».
+  //
+  // Codes live in memory: 60 s TTL + single-use make persistence pointless.
 
   private readonly ssoCodes = new Map<
     string,
-    { tenantId: string | null; expiresAt: number }
+    { dispatcherUserId: string; tenantId: string | null; expiresAt: number }
   >();
   private static readonly SSO_CODE_TTL_MS = 60_000;
 
-  createSsoCode(tenantId: string | null): {
-    code: string;
-    expiresInSeconds: number;
-  } {
-    // Opportunistic sweep so abandoned codes don't accumulate.
+  /**
+   * Find-or-create the PMS account representing a Kars Avia dispatcher. Keyed by
+   * email; lives in the platform tenant with the SUPER_ADMIN role but flagged
+   * isDispatcher. Password is random — dispatchers only ever enter via SSO.
+   */
+  async provisionDispatcher(dispatcher: {
+    email: string;
+    fullName: string;
+  }): Promise<{ id: string }> {
+    const email = dispatcher.email.trim().toLowerCase();
+    const existing = await this.prisma.admin.user.findUnique({
+      where: { email },
+      select: { id: true, isDispatcher: true },
+    });
+    if (existing) {
+      // Legacy/edge: an account with this email exists but wasn't flagged — make
+      // it a dispatcher so labels/attribution are correct.
+      if (!existing.isDispatcher) {
+        await this.prisma.admin.user.update({
+          where: { id: existing.id },
+          data: { isDispatcher: true },
+        });
+      }
+      return { id: existing.id };
+    }
+    const platform = await this.prisma.admin.tenant.findUnique({
+      where: { slug: 'platform' },
+      select: { id: true },
+    });
+    if (!platform) {
+      throw new ForbiddenException('Platform tenant is not provisioned');
+    }
+    const role = await this.prisma.admin.role.findFirst({
+      where: { tenantId: platform.id, code: RoleCode.SUPER_ADMIN },
+      select: { id: true },
+    });
+    if (!role) {
+      throw new ForbiddenException('Platform SUPER_ADMIN role is missing');
+    }
+    const passwordHash = await bcrypt.hash(
+      crypto.randomBytes(24).toString('base64url'),
+      10,
+    );
+    const created = await this.prisma.admin.user.create({
+      data: {
+        tenantId: platform.id,
+        email,
+        fullName: dispatcher.fullName || email,
+        passwordHash,
+        roleId: role.id,
+        isDispatcher: true,
+      },
+      select: { id: true },
+    });
+    this.logger.log(`Dispatcher provisioned: ${email}`);
+    return created;
+  }
+
+  async createSsoCode(
+    dispatcher: { email: string; fullName: string },
+    tenantId: string | null,
+  ): Promise<{ code: string; expiresInSeconds: number }> {
     const now = Date.now();
     for (const [k, v] of this.ssoCodes) {
       if (v.expiresAt < now) this.ssoCodes.delete(k);
     }
+    const { id: dispatcherUserId } = await this.provisionDispatcher(dispatcher);
     const code = crypto.randomBytes(24).toString('base64url');
     this.ssoCodes.set(code, {
+      dispatcherUserId,
       tenantId,
       expiresAt: now + AuthService.SSO_CODE_TTL_MS,
     });
@@ -400,7 +465,10 @@ export class AuthService implements OnModuleInit {
   async exchangeSsoCode(code: string): Promise<{
     accessToken: string;
     accessTtlSeconds: number;
-    superAdmin: boolean;
+    // 'admin' → landed in the platform admin panel as the dispatcher;
+    // 'hotel' → impersonating a specific hotel (banner «от имени <name>»).
+    mode: 'admin' | 'hotel';
+    tenant?: { id: string; name: string };
   }> {
     const entry = this.ssoCodes.get(code);
     // Single-use: the code dies on first touch, valid or not.
@@ -409,50 +477,52 @@ export class AuthService implements OnModuleInit {
       throw new UnauthorizedException('SSO code is invalid or expired');
     }
 
+    // Hotel mode: dispatcher works inside one hotel, tagged with their id.
     if (entry.tenantId) {
       const { accessToken, accessTtlSeconds } =
-        await this.issueImpersonationToken(entry.tenantId, 'kars-avia-sso');
-      return { accessToken, accessTtlSeconds, superAdmin: false };
+        await this.issueImpersonationToken(
+          entry.tenantId,
+          entry.dispatcherUserId,
+        );
+      const tenant = await this.prisma.admin.tenant.findUnique({
+        where: { id: entry.tenantId },
+        select: { id: true, name: true },
+      });
+      return {
+        accessToken,
+        accessTtlSeconds,
+        mode: 'hotel',
+        tenant: tenant ?? undefined,
+      };
     }
 
-    // Platform-level entry: sign in as the platform SUPER_ADMIN account.
-    const platform = await this.prisma.admin.tenant.findUnique({
-      where: { slug: 'platform' },
-      select: { id: true },
+    // Admin mode: sign in as the dispatcher's own account.
+    const dispatcher = await this.prisma.admin.user.findUnique({
+      where: { id: entry.dispatcherUserId },
+      include: {
+        role: {
+          include: { rolePermissions: { include: { permission: true } } },
+        },
+      },
     });
-    const admin = platform
-      ? await this.prisma.admin.user.findFirst({
-          where: {
-            tenantId: platform.id,
-            isActive: true,
-            role: { code: RoleCode.SUPER_ADMIN },
-          },
-          include: {
-            role: {
-              include: { rolePermissions: { include: { permission: true } } },
-            },
-          },
-          orderBy: { createdAt: 'asc' },
-        })
-      : null;
-    if (!admin) {
-      throw new ForbiddenException('Platform admin account is not provisioned');
+    if (!dispatcher || !dispatcher.isActive) {
+      throw new ForbiddenException('Dispatcher account is inactive');
     }
     const accessPayload: JwtAccessPayload = {
-      sub: admin.id,
-      tid: admin.tenantId,
-      role: admin.role.code,
-      perms: admin.role.rolePermissions.map((rp) => rp.permission.code),
-      email: admin.email,
+      sub: dispatcher.id,
+      tid: dispatcher.tenantId,
+      role: dispatcher.role.code,
+      perms: dispatcher.role.rolePermissions.map((rp) => rp.permission.code),
+      email: dispatcher.email,
       isa: true,
-      imp: 'kars-avia-sso',
+      disp: true,
     };
     const accessTtlSeconds = 3600;
     const accessToken = await this.jwt.signAsync(accessPayload, {
       secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
       expiresIn: accessTtlSeconds,
     });
-    return { accessToken, accessTtlSeconds, superAdmin: true };
+    return { accessToken, accessTtlSeconds, mode: 'admin' };
   }
 
   // ─── Internals ──────────────────────────────────────────────────────────────

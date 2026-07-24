@@ -149,6 +149,10 @@ model User {
   roleId       String    @map("role_id") @db.Uuid
   role         Role      @relation(fields: [roleId], references: [id])
   isActive     Boolean   @default(true)
+  /// True for Kars Avia dispatcher accounts auto-provisioned via partner SSO.
+  /// They hold the SUPER_ADMIN role (full rights) but are labelled
+  /// «Администратор/Диспетчер» in the UI, not «Суперадминистратор».
+  isDispatcher Boolean   @default(false) @map("is_dispatcher")
   lastLoginAt  DateTime? @map("last_login_at")
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt

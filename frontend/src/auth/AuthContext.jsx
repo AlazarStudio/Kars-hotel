@@ -81,14 +81,19 @@ export function AuthProvider({ children }) {
 
   /**
    * Partner SSO entry (Kars Avia dispatcher link): exchange the one-time code
-   * for an access token and adopt the session. Returns { superAdmin } so the
-   * /sso page can route to /admin or /dashboard.
+   * for an access token and adopt the session. Returns { mode } so the /sso
+   * page can route: 'admin' → /admin (dispatcher's own admin panel), 'hotel' →
+   * /dashboard with the «Вы работаете от имени <name>» banner.
    */
   const ssoEnter = useCallback(async (code) => {
     const result = await authApi.ssoExchange(code); // sets token + imp flag
     const profile = await authApi.me();
     setUser(profile);
     setStatus(STATUS.AUTHENTICATED);
+    // Hotel mode is an impersonation session — drive the same banner the
+    // super-admin impersonation uses so the dispatcher always sees whose hotel
+    // they're operating.
+    setImpersonatedTenant(result.mode === 'hotel' ? result.tenant : null);
     return result;
   }, []);
 

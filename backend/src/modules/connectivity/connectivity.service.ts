@@ -62,20 +62,26 @@ export class ConnectivityService {
   }
 
   /**
-   * Partner SSO (Kars Avia dispatcher): mint a one-time entry code. With a
-   * hotel slug the link lands inside that hotel as its owner; without — as the
-   * platform super-admin. The dispatcher embeds the code into the PMS frontend
-   * /sso URL; the code is single-use and expires in a minute.
+   * Partner SSO (Kars Avia dispatcher): mint a one-time entry code for the given
+   * dispatcher (identified by email — their own PMS account is provisioned on
+   * first use). With a hotel slug the link lands inside that hotel («от имени
+   * <name>»); without — in the admin panel as the dispatcher. Single-use, 60 s.
    */
-  async createSso(hotelSlug?: string) {
+  async createSso(
+    dispatcher: { email: string; fullName: string },
+    hotelSlug?: string,
+  ) {
     let tenantId: string | null = null;
     if (hotelSlug) {
       const tenant = await this.resolveTenant(hotelSlug);
       tenantId = tenant.id;
     }
-    const { code, expiresInSeconds } = this.auth.createSsoCode(tenantId);
+    const { code, expiresInSeconds } = await this.auth.createSsoCode(
+      dispatcher,
+      tenantId,
+    );
     this.logger.log(
-      `Partner SSO code minted for ${hotelSlug ?? 'platform'} (ttl ${expiresInSeconds}s)`,
+      `Partner SSO code minted for ${dispatcher.email} → ${hotelSlug ?? 'platform'} (ttl ${expiresInSeconds}s)`,
     );
     return { code, expiresInSeconds };
   }

@@ -44,5 +44,5 @@ export async function ssoExchange(code) {
   const { data } = await api.post('/auth/sso/exchange', { code });
   setImpersonatingFlag(true);
   setAccessToken(data.accessToken);
-  return data; // { accessToken, accessTtlSeconds, superAdmin }
+  return data; // { accessToken, accessTtlSeconds, mode: 'admin'|'hotel', tenant? }
 }
