@@ -1,4 +1,4 @@
-import { api, setAccessToken, performRefresh } from './client';
+import { api, setAccessToken, setImpersonatingFlag, performRefresh } from './client';
 
 export async function registerTenant(payload) {
   const { data } = await api.post('/auth/register-tenant', payload);
@@ -32,4 +32,17 @@ export async function refresh() {
 export async function me() {
   const { data } = await api.get('/auth/me');
   return data;
+}
+
+/**
+ * Partner SSO (вход по одноразовому коду из диспетчерской Kars Avia).
+ * Кода хватает на один обмен; в ответ приходит только access-токен (без
+ * refresh-cookie), поэтому включаем флаг impersonating — 401-интерсептор не
+ * должен пытаться рефрешиться несуществующей кукой.
+ */
+export async function ssoExchange(code) {
+  const { data } = await api.post('/auth/sso/exchange', { code });
+  setImpersonatingFlag(true);
+  setAccessToken(data.accessToken);
+  return data; // { accessToken, accessTtlSeconds, superAdmin }
 }

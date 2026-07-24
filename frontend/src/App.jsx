@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import HotelPMS from './Components/HotelPMS/HotelPMS';
 import Login from './Components/Auth/Login';
 import Register from './Components/Auth/Register';
+import SsoEntry from './Components/Auth/SsoEntry';
 import AdminPanel from './Components/AdminPanel/AdminPanel';
 import ProtectedRoute from './auth/ProtectedRoute';
 
@@ -25,6 +26,8 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      {/* Вход по одноразовой SSO-ссылке из диспетчерской Kars Avia */}
+      <Route path="/sso" element={<SsoEntry />} />
 
       {/* Super-admin panel with sub-sections */}
       <Route path="/admin" element={<ProtectedAdmin />} />

@@ -25,7 +25,12 @@ export function AuthProvider({ children }) {
         const profile = await authApi.me();
         if (!cancelled) { setUser(profile); setStatus(STATUS.AUTHENTICATED); }
       } catch {
-        if (!cancelled) { setUser(null); setStatus(STATUS.UNAUTHENTICATED); }
+        // Never downgrade an already-authenticated session: the /sso entry
+        // page may have signed in (access-token-only, no refresh cookie)
+        // while this cookie-refresh attempt was still failing in parallel.
+        if (!cancelled) {
+          setStatus((s) => (s === STATUS.AUTHENTICATED ? s : STATUS.UNAUTHENTICATED));
+        }
       }
     })();
     return () => { cancelled = true; };
@@ -75,6 +80,19 @@ export function AuthProvider({ children }) {
   }, []);
 
   /**
+   * Partner SSO entry (Kars Avia dispatcher link): exchange the one-time code
+   * for an access token and adopt the session. Returns { superAdmin } so the
+   * /sso page can route to /admin or /dashboard.
+   */
+  const ssoEnter = useCallback(async (code) => {
+    const result = await authApi.ssoExchange(code); // sets token + imp flag
+    const profile = await authApi.me();
+    setUser(profile);
+    setStatus(STATUS.AUTHENTICATED);
+    return result;
+  }, []);
+
+  /**
    * Exit impersonation: clear the flag first, then restore admin token
    * via the still-intact httpOnly refresh cookie.
    */
@@ -100,10 +118,11 @@ export function AuthProvider({ children }) {
       impersonatedTenant,
       impersonate,
       exitImpersonation,
+      ssoEnter,
       isSuperAdmin: user?.isSuperAdmin === true,
       isImpersonating: impersonatedTenant !== null,
     }),
-    [user, status, login, registerTenant, logout, hasPermission, impersonatedTenant, impersonate, exitImpersonation],
+    [user, status, login, registerTenant, logout, hasPermission, impersonatedTenant, impersonate, exitImpersonation, ssoEnter],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -6,6 +6,8 @@ export const PARTNER_SCOPES = {
   AvailabilityRead: 'availability:read',
   ReservationsRead: 'reservations:read',
   ReservationsWrite: 'reservations:write',
+  // Mint one-time SSO entry codes (dispatcher «open in PMS» buttons).
+  SsoCreate: 'sso:create',
 } as const;
 
 export type PartnerScope = (typeof PARTNER_SCOPES)[keyof typeof PARTNER_SCOPES];

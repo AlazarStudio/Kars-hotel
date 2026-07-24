@@ -64,6 +64,20 @@ export class AuthController {
   }
 
   @Public()
+  @Post('sso/exchange')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Exchange a one-time partner SSO code (issued to the Kars Avia dispatcher platform) for an access token',
+  })
+  @ApiResponse({ status: 200, description: 'Access token issued' })
+  @ApiResponse({ status: 401, description: 'Code invalid or expired' })
+  async ssoExchange(@Body() body: { code?: string }) {
+    if (!body?.code) throw new UnauthorizedException('SSO code is required');
+    return this.auth.exchangeSsoCode(body.code);
+  }
+
+  @Public()
   @Post('refresh')
   @ApiOperation({ summary: 'Rotate refresh token, issue a new access token' })
   @ApiResponse({ status: 200 })

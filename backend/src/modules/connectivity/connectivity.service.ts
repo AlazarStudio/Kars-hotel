@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext, RequestContext } from '../../common/context/tenant-context';
+import { AuthService } from '../auth/auth.service';
 import { AvailabilityService } from '../inventory/availability.service';
 import { ReservationsService } from '../reservations/reservations.service';
 import { ConnectAvailabilityDto } from './dto/connect-availability.dto';
@@ -34,6 +35,7 @@ export class ConnectivityService {
     private readonly prisma: PrismaService,
     private readonly availability: AvailabilityService,
     private readonly reservations: ReservationsService,
+    private readonly auth: AuthService,
   ) {}
 
   // ─── Catalog (cross-tenant) ────────────────────────────────────────────────
@@ -57,6 +59,25 @@ export class ConnectivityService {
       ...this.mapHotel(t),
       categoryCount: countByTenant.get(t.id) ?? 0,
     }));
+  }
+
+  /**
+   * Partner SSO (Kars Avia dispatcher): mint a one-time entry code. With a
+   * hotel slug the link lands inside that hotel as its owner; without — as the
+   * platform super-admin. The dispatcher embeds the code into the PMS frontend
+   * /sso URL; the code is single-use and expires in a minute.
+   */
+  async createSso(hotelSlug?: string) {
+    let tenantId: string | null = null;
+    if (hotelSlug) {
+      const tenant = await this.resolveTenant(hotelSlug);
+      tenantId = tenant.id;
+    }
+    const { code, expiresInSeconds } = this.auth.createSsoCode(tenantId);
+    this.logger.log(
+      `Partner SSO code minted for ${hotelSlug ?? 'platform'} (ttl ${expiresInSeconds}s)`,
+    );
+    return { code, expiresInSeconds };
   }
 
   async getHotel(slug: string) {

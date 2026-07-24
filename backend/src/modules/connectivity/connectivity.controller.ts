@@ -38,6 +38,17 @@ import { ConnectCancelDto } from './dto/connect-cancel.dto';
 export class ConnectivityController {
   constructor(private readonly connectivity: ConnectivityService) {}
 
+  @Post('sso')
+  @HttpCode(HttpStatus.OK)
+  @RequireScopes(PARTNER_SCOPES.SsoCreate)
+  @ApiOperation({
+    summary:
+      'Mint a one-time SSO entry code (dispatcher "open in PMS"); optional hotelSlug targets a specific hotel',
+  })
+  createSso(@Body() body: { hotelSlug?: string }) {
+    return this.connectivity.createSso(body?.hotelSlug);
+  }
+
   @Get('hotels')
   @RequireScopes(PARTNER_SCOPES.HotelsRead)
   @ApiOperation({ summary: 'List all connected hotels' })

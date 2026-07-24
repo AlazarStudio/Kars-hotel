@@ -5,6 +5,7 @@ import { PartnerKeyService } from './partner-key.service';
 import { PartnerApiKeyGuard } from './guards/partner-api-key.guard';
 import { InventoryModule } from '../inventory/inventory.module';
 import { ReservationsModule } from '../reservations/reservations.module';
+import { AuthModule } from '../auth/auth.module';
 
 /**
  * Connectivity module — exposes the cross-tenant partner API (`/api/connect/v1`)
@@ -12,7 +13,7 @@ import { ReservationsModule } from '../reservations/reservations.module';
  * so partner bookings share the exact same business rules as in-app bookings.
  */
 @Module({
-  imports: [InventoryModule, ReservationsModule],
+  imports: [InventoryModule, ReservationsModule, AuthModule],
   controllers: [ConnectivityController],
   providers: [ConnectivityService, PartnerKeyService, PartnerApiKeyGuard],
   exports: [PartnerKeyService],

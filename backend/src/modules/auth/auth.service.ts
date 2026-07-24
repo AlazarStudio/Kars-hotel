@@ -359,6 +359,102 @@ export class AuthService implements OnModuleInit {
     return { accessToken, accessTtlSeconds };
   }
 
+  // ─── Partner SSO (Kars Avia dispatcher → PMS) ───────────────────────────────
+  //
+  // The dispatcher platform requests a one-time SSO code over the partner API
+  // (X-Api-Key), embeds it in a link, and the PMS frontend exchanges it for an
+  // access token on arrival. The code — not the token — travels in the URL, is
+  // single-use and short-lived, so a leaked/history'd link is useless.
+  //
+  // Target: with a tenantId the visitor lands INSIDE that hotel as its owner
+  // (same mechanics as super-admin impersonation); without — as the platform
+  // super-admin (the dispatcher centre operates the PMS platform itself).
+  //
+  // Codes live in memory: 60 s TTL and single-use make persistence pointless —
+  // a backend restart between issue and click just means clicking the button
+  // again on the dispatcher side.
+
+  private readonly ssoCodes = new Map<
+    string,
+    { tenantId: string | null; expiresAt: number }
+  >();
+  private static readonly SSO_CODE_TTL_MS = 60_000;
+
+  createSsoCode(tenantId: string | null): {
+    code: string;
+    expiresInSeconds: number;
+  } {
+    // Opportunistic sweep so abandoned codes don't accumulate.
+    const now = Date.now();
+    for (const [k, v] of this.ssoCodes) {
+      if (v.expiresAt < now) this.ssoCodes.delete(k);
+    }
+    const code = crypto.randomBytes(24).toString('base64url');
+    this.ssoCodes.set(code, {
+      tenantId,
+      expiresAt: now + AuthService.SSO_CODE_TTL_MS,
+    });
+    return { code, expiresInSeconds: AuthService.SSO_CODE_TTL_MS / 1000 };
+  }
+
+  async exchangeSsoCode(code: string): Promise<{
+    accessToken: string;
+    accessTtlSeconds: number;
+    superAdmin: boolean;
+  }> {
+    const entry = this.ssoCodes.get(code);
+    // Single-use: the code dies on first touch, valid or not.
+    this.ssoCodes.delete(code);
+    if (!entry || entry.expiresAt < Date.now()) {
+      throw new UnauthorizedException('SSO code is invalid or expired');
+    }
+
+    if (entry.tenantId) {
+      const { accessToken, accessTtlSeconds } =
+        await this.issueImpersonationToken(entry.tenantId, 'kars-avia-sso');
+      return { accessToken, accessTtlSeconds, superAdmin: false };
+    }
+
+    // Platform-level entry: sign in as the platform SUPER_ADMIN account.
+    const platform = await this.prisma.admin.tenant.findUnique({
+      where: { slug: 'platform' },
+      select: { id: true },
+    });
+    const admin = platform
+      ? await this.prisma.admin.user.findFirst({
+          where: {
+            tenantId: platform.id,
+            isActive: true,
+            role: { code: RoleCode.SUPER_ADMIN },
+          },
+          include: {
+            role: {
+              include: { rolePermissions: { include: { permission: true } } },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        })
+      : null;
+    if (!admin) {
+      throw new ForbiddenException('Platform admin account is not provisioned');
+    }
+    const accessPayload: JwtAccessPayload = {
+      sub: admin.id,
+      tid: admin.tenantId,
+      role: admin.role.code,
+      perms: admin.role.rolePermissions.map((rp) => rp.permission.code),
+      email: admin.email,
+      isa: true,
+      imp: 'kars-avia-sso',
+    };
+    const accessTtlSeconds = 3600;
+    const accessToken = await this.jwt.signAsync(accessPayload, {
+      secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
+      expiresIn: accessTtlSeconds,
+    });
+    return { accessToken, accessTtlSeconds, superAdmin: true };
+  }
+
   // ─── Internals ──────────────────────────────────────────────────────────────
 
   /**
