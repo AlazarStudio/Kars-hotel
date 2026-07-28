@@ -42,7 +42,13 @@ export class ConnectivityService {
 
   async listHotels() {
     const tenants = await this.prisma.admin.tenant.findMany({
-      where: { isActive: true, slug: { not: ConnectivityService.PLATFORM_SLUG } },
+      /* В3 · partnerVisible скрывает отель из каталога, не выключая его самого:
+       * «пока не берём заявки» не должно означать «сотрудники не могут войти». */
+      where: {
+        isActive: true,
+        partnerVisible: true,
+        slug: { not: ConnectivityService.PLATFORM_SLUG },
+      },
       orderBy: { name: 'asc' },
     });
     // The directory omits the full room-category list (it's only on the detail
@@ -460,7 +466,9 @@ export class ConnectivityService {
       throw new NotFoundException(`Hotel '${slug}' not found`);
     }
     const tenant = await this.prisma.admin.tenant.findUnique({ where: { slug } });
-    if (!tenant || !tenant.isActive) {
+    /* Скрытый отель не отдаём и по прямой ссылке: иначе флаг убирал бы его
+     * только из списка, а бронь по сохранённому id всё равно проходила бы. */
+    if (!tenant || !tenant.isActive || !tenant.partnerVisible) {
       throw new NotFoundException(`Hotel '${slug}' not found`);
     }
     return tenant;

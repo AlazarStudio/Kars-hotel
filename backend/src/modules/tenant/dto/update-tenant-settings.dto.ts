@@ -178,6 +178,14 @@ export class UpdateTenantSettingsDto {
   mealDinner?: string;
 
   @ApiPropertyOptional({
+    description:
+      'Показывать отель в каталоге партнёра. Не выключает сам отель — только снимает его с предложения.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  partnerVisible?: boolean;
+
+  @ApiPropertyOptional({
     description: 'Инфраструктура рядом, список строк',
     type: [String],
   })

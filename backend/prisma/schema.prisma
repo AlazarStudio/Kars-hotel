@@ -92,6 +92,12 @@ model Tenant {
   mealDinner        String?    @map("meal_dinner")
   // Инфраструктура рядом: «аптека 200 м», «остановка у выхода».
   infrastructure    Json       @default("[]")    @map("infrastructure") @db.JsonB
+  /// Показывать ли отель в каталоге партнёра (перенос В3). Отдельно от
+  /// isActive: тот выключает отель ЦЕЛИКОМ, вместе с входом сотрудников, и
+  /// пользоваться им, чтобы временно снять отель с предложения, значит
+  /// заодно выгнать людей из системы. Здесь отель работает как обычно, просто
+  /// оператору не предлагается.
+  partnerVisible    Boolean    @default(true)    @map("partner_visible")
 
   users     User[]
   roles     Role[]
