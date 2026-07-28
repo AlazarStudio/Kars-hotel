@@ -423,6 +423,35 @@ export class ConnectivityService {
     };
   }
 
+  /* История изменений гостиницы для партнёра (перенос В7).
+   *
+   * У оператора есть свой журнал аудита, но событий PMS он не видит: отель
+   * поменял тариф или выключил категорию — на стороне партнёра это выглядит
+   * как «цены вдруг другие». Отдаём хвост нашего журнала по этому тенанту.
+   *
+   * Что НЕ отдаём: `diff` целиком, ip и user-agent. Партнёру нужен ответ на
+   * вопрос «что и когда поменялось у отеля», а не операционная телеметрия
+   * чужой системы; ip сотрудника отеля — вообще не его дело. Имя автора
+   * отдаём: без него запись «тариф изменён» не с кем обсуждать.
+   */
+  async getHotelHistory(slug: string, take = 50) {
+    const tenant = await this.resolveTenant(slug);
+    const rows = await this.prisma.admin.auditLog.findMany({
+      where: { tenantId: tenant.id },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(Math.max(take, 1), 200),
+      include: { user: { select: { fullName: true } } },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      entity: r.entity,
+      entityId: r.entityId,
+      action: r.action,
+      actorName: r.user?.fullName ?? null,
+      occurredAt: r.createdAt.toISOString(),
+    }));
+  }
+
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
   /** Resolve a hotel by slug across all tenants (admin client). */

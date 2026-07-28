@@ -109,6 +109,15 @@ export class ConnectivityController {
     return this.connectivity.getFacts(slug, id);
   }
 
+  // В7 · история изменений гостиницы: оператор видит, что и когда поменял
+  // отель, не заходя в PMS.
+  @Get('hotels/:slug/history')
+  @RequireScopes(PARTNER_SCOPES.HotelsRead)
+  @ApiOperation({ summary: 'Recent audit trail for a hotel (partner view)' })
+  getHistory(@Param('slug') slug: string, @Query('take') take?: string) {
+    return this.connectivity.getHotelHistory(slug, Number(take) || 50);
+  }
+
   @Delete('hotels/:slug/reservations/:id')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(PARTNER_SCOPES.ReservationsWrite)
