@@ -11,6 +11,7 @@ import { TimelineService } from '../timeline/timeline.service';
 import { TimelineGateway } from '../timeline/timeline.gateway';
 import { FolioService } from '../folio/folio.service';
 import { HousekeepingService } from '../housekeeping/housekeeping.service';
+import { PartnerWebhookService } from '../connectivity/partner-webhook.service';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
 import { SwapReservationsDto } from './dto/swap-reservations.dto';
@@ -29,7 +30,23 @@ export class ReservationsService {
     private readonly timelineGateway: TimelineGateway,
     private readonly folioService: FolioService,
     private readonly hkService: HousekeepingService,
+    private readonly partnerWebhooks: PartnerWebhookService,
   ) {}
+
+  /* Сколько гостей забронировано и (для заехавших) сколько фактически
+   * разместилось. Партнёр по расхождению пересчитывает: платит за фактических.
+   * Отдельного поля «сколько реально пришло» в PMS нет — при заезде считаем,
+   * что приехали все забронированные; расхождение отель фиксирует правкой
+   * брони, и оно приезжает следующим событием. */
+  private async guestCounts(
+    reservationId: string,
+  ): Promise<{ guestsBooked: number; guestsArrived: number }> {
+    const rows = await this.prisma.admin.$queryRaw<
+      { adults: number; children: number }[]
+    >`SELECT adults, children FROM reservation WHERE id = ${reservationId}::uuid LIMIT 1`;
+    const booked = (rows[0]?.adults ?? 0) + (rows[0]?.children ?? 0);
+    return { guestsBooked: booked, guestsArrived: booked };
+  }
 
   async create(dto: CreateReservationDto) {
     const tenantId = TenantContext.getTenantIdOrThrow();
@@ -529,6 +546,17 @@ export class ReservationsService {
     await this.timelineService.invalidate(tenantId);
     this.timelineGateway.notifyUpdate(tenantId, { action: 'updated' });
 
+    /* Г5 · партнёру факт заезда нужен сразу: от него зависит расчёт с
+     * авиакомпанией. Не ждём — отправка не блокирует ответ, а сорвавшийся
+     * вебхук партнёр доберёт опросом фактов. */
+    await this.partnerWebhooks.emitForReservation('guest.checked_in', id, {
+      reservationId: id,
+      status: 'checked_in',
+      checkedInAt: new Date().toISOString(),
+      noShow: false,
+      ...(await this.guestCounts(id)),
+    });
+
     return { id: result.id, status: 'CHECKED_IN', version: result.version };
   }
 
@@ -592,6 +620,14 @@ export class ReservationsService {
     await this.timelineService.invalidate(tenantId);
     this.timelineGateway.notifyUpdate(tenantId, { action: 'updated' });
 
+    await this.partnerWebhooks.emitForReservation('guest.checked_out', id, {
+      reservationId: id,
+      status: 'checked_out',
+      checkedOutAt: new Date().toISOString(),
+      noShow: false,
+      ...(await this.guestCounts(id)),
+    });
+
     return { id: result.id, status: 'CHECKED_OUT', version: result.version };
   }
 
@@ -642,6 +678,15 @@ export class ReservationsService {
 
     await this.timelineService.invalidate(tenantId);
     this.timelineGateway.notifyUpdate(tenantId, { action: 'updated' });
+
+    await this.partnerWebhooks.emitForReservation('guest.no_show', id, {
+      reservationId: id,
+      status: 'no_show',
+      noShow: true,
+      ...(await this.guestCounts(id)),
+      // Никто не заехал — счётчик прибывших перекрываем нулём.
+      guestsArrived: 0,
+    });
 
     return { id: result.id, status: 'NO_SHOW', version: result.version };
   }
