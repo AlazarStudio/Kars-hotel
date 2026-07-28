@@ -102,6 +102,7 @@ model Tenant {
   users     User[]
   roles     Role[]
   auditLogs AuditLog[]
+  partnerServices PartnerService[]
 
   @@map("tenant")
 }
@@ -216,6 +217,42 @@ model RefreshToken {
 
 /// Append-only audit trail for all mutations. tenantId nullable for system events
 /// (e.g. failed login before tenant context is known).
+/// Группа партнёрской услуги (перенос Б5/Е2/Е4).
+enum PartnerServiceGroup {
+  MEAL  // Питание: завтрак, обед, ужин
+  EXTRA // Доп. услуги: трансфер до города, поздний выезд, прачечная…
+}
+
+/// Каталог услуг отеля для партнёра: питание и доп. услуги с ценами.
+///
+/// Тарифные планы (RatePlan) отвечают за проживание — сколько стоит ночь в
+/// категории. Но диспетчеру нужно знать и цену обеда, и «сколько стоит поздний
+/// выезд»: это отдельные строки в заявке и в расчёте с авиакомпанией. Раньше
+/// такие цены жили только в заглушке hotel-mock, то есть нигде.
+model PartnerService {
+  id        String              @id @default(uuid()) @db.Uuid
+  tenantId  String              @map("tenant_id") @db.Uuid
+  tenant    Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  group     PartnerServiceGroup
+  name      String
+  /// Цена без НДС, в рублях (в контракте с Авиа она уедет в копейках).
+  priceNet  Decimal?            @map("price_net") @db.Decimal(12, 2)
+  /// Ставка НДС, %. Хранится у услуги, а не берётся у отеля: у питания и
+  /// проживания ставки различаются.
+  vatRate   Decimal             @default(20) @map("vat_rate") @db.Decimal(5, 2)
+  /// «Стоимость по запросу»: цена есть, но называется в переписке — так
+  /// работают банкеты и нестандартные заказы. Отдельный флаг, а не price = 0:
+  /// ноль читается как «бесплатно», и это попадёт в расчёт.
+  onRequest Boolean             @default(false) @map("on_request")
+  isActive  Boolean             @default(true)  @map("is_active")
+  sortOrder Int                 @default(0)     @map("sort_order")
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  @@index([tenantId, group])
+  @@map("partner_service")
+}
+
 model AuditLog {
   id        String   @id @default(uuid()) @db.Uuid
   tenantId  String?  @map("tenant_id") @db.Uuid

@@ -8,6 +8,7 @@ import { RequirePermissions } from '../../common/decorators/require-permissions.
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedRequestUser } from '../auth/strategies/jwt.strategy';
 import { CreateTenantUserDto, UpdateTenantUserDto } from './dto/manage-user.dto';
+import { UpsertPartnerServiceDto } from './dto/partner-service.dto';
 import { MAX_PHOTO_BYTES, UploadedFile as MediaFile } from '../../common/storage/storage.service';
 
 @ApiTags('Tenant')
@@ -21,6 +22,39 @@ export class TenantController {
   @ApiOperation({ summary: 'Get current tenant settings' })
   getSettings() {
     return this.service.getSettings();
+  }
+
+  /* Б5/Е2/Е4 · каталог услуг для партнёра. Читать — как настройки, менять —
+   * как настройки: это коммерческие данные отеля, а не операционные. */
+  @Get('partner-services')
+  @RequirePermissions('room.read')
+  @ApiOperation({ summary: 'Partner-facing service catalogue (meals + extras)' })
+  listPartnerServices() {
+    return this.service.listPartnerServices();
+  }
+
+  @Post('partner-services')
+  @RequirePermissions('user.update')
+  @ApiOperation({ summary: 'Add a partner-facing service' })
+  createPartnerService(@Body() dto: UpsertPartnerServiceDto) {
+    return this.service.createPartnerService(dto);
+  }
+
+  @Patch('partner-services/:id')
+  @RequirePermissions('user.update')
+  @ApiOperation({ summary: 'Update a partner-facing service' })
+  updatePartnerService(
+    @Param('id') id: string,
+    @Body() dto: UpsertPartnerServiceDto,
+  ) {
+    return this.service.updatePartnerService(id, dto);
+  }
+
+  @Delete('partner-services/:id')
+  @RequirePermissions('user.update')
+  @ApiOperation({ summary: 'Delete a partner-facing service' })
+  deletePartnerService(@Param('id') id: string) {
+    return this.service.deletePartnerService(id);
   }
 
   @Patch('settings')

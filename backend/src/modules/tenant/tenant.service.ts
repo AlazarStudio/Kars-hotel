@@ -6,6 +6,7 @@ import { TenantContext } from '../../common/context/tenant-context';
 import { StorageService, UploadedFile } from '../../common/storage/storage.service';
 import { UpdateTenantSettingsDto } from './dto/update-tenant-settings.dto';
 import { CreateTenantUserDto, UpdateTenantUserDto } from './dto/manage-user.dto';
+import { UpsertPartnerServiceDto } from './dto/partner-service.dto';
 
 @Injectable()
 export class TenantService {
@@ -13,6 +14,87 @@ export class TenantService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
   ) {}
+
+  /* ── Каталог услуг для партнёра (Б5/Е2/Е4) ────────────────────────────
+   * Питание и доп. услуги: то, что попадает в заявку отдельной строкой.
+   * Проживание сюда не входит — за него отвечают тарифные планы. */
+
+  listPartnerServices() {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    return this.prisma.admin.partnerService.findMany({
+      where: { tenantId },
+      orderBy: [{ group: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+    });
+  }
+
+  async createPartnerService(dto: UpsertPartnerServiceDto) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    const created = await this.prisma.admin.partnerService.create({
+      data: { tenantId, ...this.partnerServiceData(dto) },
+    });
+    await this.prisma.writeAuditLog({
+      tenantId,
+      entity: 'partner_service',
+      entityId: created.id,
+      action: 'create',
+      diff: { before: {}, after: { name: dto.name, group: dto.group } },
+    });
+    return created;
+  }
+
+  async updatePartnerService(id: string, dto: UpsertPartnerServiceDto) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    const before = await this.prisma.admin.partnerService.findFirst({
+      where: { id, tenantId },
+    });
+    if (!before) throw new NotFoundException('Услуга не найдена');
+    const updated = await this.prisma.admin.partnerService.update({
+      where: { id },
+      data: this.partnerServiceData(dto),
+    });
+    await this.prisma.writeAuditLog({
+      tenantId,
+      entity: 'partner_service',
+      entityId: id,
+      action: 'update',
+      diff: {
+        before: { name: before.name, onRequest: before.onRequest },
+        after: { name: updated.name, onRequest: updated.onRequest },
+      },
+    });
+    return updated;
+  }
+
+  async deletePartnerService(id: string) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    const removed = await this.prisma.admin.partnerService.deleteMany({
+      where: { id, tenantId },
+    });
+    if (removed.count === 0) throw new NotFoundException('Услуга не найдена');
+    await this.prisma.writeAuditLog({
+      tenantId,
+      entity: 'partner_service',
+      entityId: id,
+      action: 'delete',
+      diff: { before: { id }, after: {} },
+    });
+    return { ok: true };
+  }
+
+  /* «По запросу» обнуляет цену, а не соседствует с ней: строка «по запросу,
+   * 500 ₽» не значит ничего, и партнёр всё равно не знает, что показать. */
+  private partnerServiceData(dto: UpsertPartnerServiceDto) {
+    const onRequest = dto.onRequest ?? false;
+    return {
+      group: dto.group,
+      name: dto.name.trim(),
+      priceNet: onRequest ? null : (dto.priceNet ?? null),
+      vatRate: dto.vatRate ?? 20,
+      onRequest,
+      isActive: dto.isActive ?? true,
+      sortOrder: dto.sortOrder ?? 0,
+    };
+  }
 
   async getSettings() {
     const tenantId = TenantContext.getTenantIdOrThrow();

@@ -94,7 +94,7 @@ export class ConnectivityService {
 
   async getHotel(slug: string) {
     const tenant = await this.resolveTenant(slug);
-    const { roomTypes, ratePlans, standardRates } = await this.prisma.forTenantExplicit(
+    const { roomTypes, ratePlans, standardRates, services } = await this.prisma.forTenantExplicit(
       tenant.id,
       async (tx) => {
         const roomTypes = await tx.roomType.findMany({
@@ -111,7 +111,11 @@ export class ConnectivityService {
               where: { ratePlanId: { in: ratePlans.map((p) => p.id) } },
             })
           : [];
-        return { roomTypes, ratePlans, standardRates };
+        const services = await tx.partnerService.findMany({
+          where: { isActive: true },
+          orderBy: [{ group: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+        });
+        return { roomTypes, ratePlans, standardRates, services };
       },
     );
 
@@ -124,6 +128,18 @@ export class ConnectivityService {
       // otherwise the category base price — so partners always see a number.
       // Seasonal/daily overrides are date-specific and surface via availability.
       ratePlans: this.buildRatePlanPriceList(tenant.currency, roomTypes, ratePlans, standardRates),
+      /* Б5/Е2/Е4 · питание и доп. услуги отдельными группами. Тарифные планы
+       * отвечают за проживание, а обед и поздний выезд попадают в заявку
+       * отдельными строками — партнёру нужно и то, и другое. */
+      services: services.map((sv) => ({
+        id: sv.id,
+        group: sv.group,
+        name: sv.name,
+        // Рубли: перевод в копейки — на стороне Авиа, как и для остальных цен.
+        priceNet: sv.priceNet != null ? Number(sv.priceNet) : null,
+        vatRate: Number(sv.vatRate),
+        onRequest: sv.onRequest,
+      })),
     };
   }
 
