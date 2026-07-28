@@ -15,6 +15,7 @@ import { RoomStatus } from '@prisma/client';
 import { RoomsService } from './rooms.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
+import { CreateManyRoomsDto } from './dto/create-many-rooms.dto';
 import { UpdateRoomStatusDto } from './dto/update-room-status.dto';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 
@@ -31,11 +32,13 @@ export class RoomsController {
   @ApiQuery({ name: 'floor', required: false, type: Number })
   @ApiQuery({ name: 'status', required: false, enum: RoomStatus })
   @ApiQuery({ name: 'isActive', required: false, type: Boolean })
+  @ApiQuery({ name: 'q', required: false, description: 'Поиск по номеру и заметке' })
   list(
     @Query('roomTypeId') roomTypeId?: string,
     @Query('floor') floorRaw?: string,
     @Query('status') status?: RoomStatus,
     @Query('isActive') isActiveRaw?: string,
+    @Query('q') q?: string,
   ) {
     let floor: number | undefined;
     if (floorRaw !== undefined && floorRaw !== '') {
@@ -45,7 +48,7 @@ export class RoomsController {
     }
     const isActive =
       isActiveRaw === 'true' ? true : isActiveRaw === 'false' ? false : undefined;
-    return this.service.list({ roomTypeId, floor, status, isActive });
+    return this.service.list({ roomTypeId, floor, status, isActive, q: q?.trim() || undefined });
   }
 
   @Get(':id')
@@ -60,6 +63,15 @@ export class RoomsController {
   @ApiOperation({ summary: 'Create a new room' })
   create(@Body() dto: CreateRoomDto) {
     return this.service.create(dto);
+  }
+
+  // Д2 · «создать несколько»: этаж — это 20–40 одинаковых номеров подряд,
+  // заводить их по одному значит сорок раз заполнить одну форму.
+  @Post('bulk')
+  @RequirePermissions('room.update')
+  @ApiOperation({ summary: 'Create a numbered range of rooms in one category' })
+  createMany(@Body() dto: CreateManyRoomsDto) {
+    return this.service.createMany(dto);
   }
 
   @Patch(':id')

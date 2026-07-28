@@ -4,12 +4,15 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/context/tenant-context';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
+import { CreateManyRoomsDto } from './dto/create-many-rooms.dto';
 
 export interface ListRoomsFilter {
   roomTypeId?: string;
   floor?: number;
   status?: RoomStatus;
   isActive?: boolean;
+  /** Д7 · поиск по номеру и заметке. */
+  q?: string;
 }
 
 @Injectable()
@@ -24,6 +27,17 @@ export class RoomsService {
           floor: filter.floor,
           status: filter.status,
           isActive: filter.isActive,
+          /* Д7 · поиск. Ищем по номеру и заметке: заметка — единственное место,
+           * где живёт «угловой, шумно от лифта», и искать по ней приходится
+           * ровно тогда, когда гость просит «не как в прошлый раз». */
+          ...(filter.q
+            ? {
+                OR: [
+                  { number: { contains: filter.q, mode: 'insensitive' as const } },
+                  { notes: { contains: filter.q, mode: 'insensitive' as const } },
+                ],
+              }
+            : {}),
         },
         orderBy: [{ floor: 'asc' }, { number: 'asc' }],
         include: { roomType: { select: { id: true, code: true, name: true } } },
@@ -82,6 +96,90 @@ export class RoomsService {
       diff: { before: {}, after: { number: dto.number, roomTypeId: dto.roomTypeId } },
     });
     return room;
+  }
+
+  /* Д2 · массовое создание номеров одной категории.
+   *
+   * Одна транзакция на всю пачку: этаж заводится целиком либо не заводится —
+   * половина созданных номеров хуже, чем ни одного, потому что вторую половину
+   * придётся досоздавать вручную, гадая, докуда дошло.
+   *
+   * Занятые номера по умолчанию пропускаем, а не роняем операцию: чаще всего
+   * пачкой ДОзаполняют этаж, и падение из-за одного существующего номера
+   * заставило бы человека вычислять диапазон заново. Что пропустили — говорим
+   * в ответе: молча «создать 20, создалось 17» недопустимо.
+   */
+  async createMany(dto: CreateManyRoomsDto) {
+    const rt = await this.prisma.forTenant((tx) =>
+      tx.roomType.findUnique({ where: { id: dto.roomTypeId }, select: { id: true } }),
+    );
+    if (!rt) throw new NotFoundException('Категория номера не найдена');
+
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    const prefix = dto.prefix ?? '';
+    const suffix = dto.suffix ?? '';
+    const numbers = Array.from(
+      { length: dto.count },
+      (_, i) => `${prefix}${dto.startNumber + i}${suffix}`,
+    );
+
+    const existing = await this.prisma.forTenant((tx) =>
+      tx.room.findMany({
+        where: { number: { in: numbers } },
+        select: { number: true },
+      }),
+    );
+    const taken = new Set(existing.map((r) => r.number));
+    const skipped = numbers.filter((n) => taken.has(n));
+
+    if (skipped.length && dto.skipExisting === false) {
+      throw new ConflictException(
+        `Уже существуют номера: ${skipped.join(', ')}`,
+      );
+    }
+    const toCreate = numbers.filter((n) => !taken.has(n));
+    if (!toCreate.length) {
+      return { created: 0, skipped, rooms: [] as unknown[] };
+    }
+
+    const rooms = await this.prisma.forTenant(async (tx) => {
+      const made: unknown[] = [];
+      for (const number of toCreate) {
+        made.push(
+          await tx.room.create({
+            data: {
+              tenantId,
+              roomTypeId: dto.roomTypeId,
+              number,
+              floor: dto.floor ?? 1,
+              bedType: dto.bedType ?? 'DOUBLE',
+              view: dto.view ?? 'NONE',
+              status: dto.status ?? 'CLEAN',
+              isActive: dto.isActive ?? true,
+              capacity: dto.capacity ?? 1,
+              notes: dto.notes ?? null,
+            },
+            include: { roomType: { select: { id: true, code: true, name: true } } },
+          }),
+        );
+      }
+      return made;
+    });
+
+    // Одна запись аудита на пачку: сорок строк «создан номер» в журнале
+    // прячут всё остальное, а произошло одно действие.
+    await this.prisma.writeAuditLog({
+      tenantId,
+      entity: 'room',
+      entityId: dto.roomTypeId,
+      action: 'create_many',
+      diff: {
+        before: {},
+        after: { created: toCreate, skipped, roomTypeId: dto.roomTypeId },
+      },
+    });
+
+    return { created: rooms.length, skipped, rooms };
   }
 
   async update(id: string, dto: UpdateRoomDto) {
