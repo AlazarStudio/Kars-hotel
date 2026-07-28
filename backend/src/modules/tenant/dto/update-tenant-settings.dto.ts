@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsArray,
   IsBoolean,
   IsInt,
   IsNumber,
@@ -129,4 +130,60 @@ export class UpdateTenantSettingsDto {
   @IsString()
   @MaxLength(500)
   logoUrl?: string;
+
+  // ── Профиль для партнёрского каталога (В2/В4) ───────────────────────────
+  // Диспетчер партнёра выбирает, куда селить экипаж, и звёзд для этого мало.
+
+  @ApiPropertyOptional({ description: 'Гостевой рейтинг 0..5', example: 4.6 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(5)
+  guestRating?: number;
+
+  @ApiPropertyOptional({ description: 'Заявленная вместимость, мест' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  capacity?: number;
+
+  @ApiPropertyOptional({ description: 'Код обслуживаемого аэропорта (IATA)', example: 'MRV' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(8)
+  airportCode?: string;
+
+  @ApiPropertyOptional({ description: 'Время в пути до аэропорта, минут' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  airportMinutes?: number;
+
+  @ApiPropertyOptional({ description: 'Окно завтрака', example: '07:00–10:00' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  mealBreakfast?: string;
+
+  @ApiPropertyOptional({ description: 'Окно обеда' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  mealLunch?: string;
+
+  @ApiPropertyOptional({ description: 'Окно ужина' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  mealDinner?: string;
+
+  @ApiPropertyOptional({
+    description: 'Инфраструктура рядом, список строк',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(120, { each: true })
+  infrastructure?: string[];
 }

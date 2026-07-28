@@ -70,6 +70,29 @@ model Tenant {
   cancellationHours Int        @default(24)      @map("cancellation_hours")
   multiPlaceEnabled Boolean    @default(false)   @map("multi_place_enabled")
 
+  // ── Профиль для партнёрского каталога (перенос В2/В4) ────────────────────
+  // Партнёр показывает карточку отеля диспетчеру, который выбирает, куда
+  // селить экипаж. Ему нужны не только звёзды: рейтинг гостей, вместимость и
+  // «сколько ехать до аэропорта» — то, по чему выбор и делается.
+  // Гостевой рейтинг 0..5. Отдельно от `stars`: звёзды — официальная
+  // категория, рейтинг — как там на самом деле.
+  guestRating       Float?     @map("guest_rating")
+  // Суммарная вместимость («мощность») в местах. Считать по номерам нельзя:
+  // часть фонда может быть выключена, а партнёру нужна заявленная величина.
+  capacity          Int?
+  // Код аэропорта (IATA), который обслуживает гостиница, и типичное время в
+  // пути до него. Минуты, а не километры: диспетчер планирует время подачи.
+  airportCode       String?    @map("airport_code")
+  airportMinutes    Int?       @map("airport_minutes")
+  // Окна питания, свободные строки вида «07:00–10:00». Не структурируем:
+  // у отелей встречаются «07:00–10:00, 10:30–11:00 для экипажей», и любая
+  // схема на два поля это потеряет.
+  mealBreakfast     String?    @map("meal_breakfast")
+  mealLunch         String?    @map("meal_lunch")
+  mealDinner        String?    @map("meal_dinner")
+  // Инфраструктура рядом: «аптека 200 м», «остановка у выхода».
+  infrastructure    Json       @default("[]")    @map("infrastructure") @db.JsonB
+
   users     User[]
   roles     Role[]
   auditLogs AuditLog[]

@@ -606,6 +606,14 @@ export class ConnectivityService {
     checkOutTime: string;
     logoUrl: string | null;
     galleryPhotos: unknown;
+    guestRating: number | null;
+    capacity: number | null;
+    airportCode: string | null;
+    airportMinutes: number | null;
+    mealBreakfast: string | null;
+    mealLunch: string | null;
+    mealDinner: string | null;
+    infrastructure: unknown;
   }) {
     return {
       id: t.id,
@@ -628,6 +636,26 @@ export class ConnectivityService {
       photos: Array.isArray(t.galleryPhotos)
         ? (t.galleryPhotos as unknown[]).filter((p): p is string => typeof p === 'string')
         : [],
+      /* В2/В4 · профиль для каталога партнёра. Незаполненное отдаём как
+       * отсутствующее (undefined), а не нулём: карточка опустит поле, а не
+       * покажет «0 звёзд» и «0 мест» — выдуманное значение хуже пустого. */
+      rating: t.guestRating ?? undefined,
+      capacity: t.capacity ?? undefined,
+      airportCode: t.airportCode ?? undefined,
+      airportMinutes: t.airportMinutes ?? undefined,
+      mealSchedule:
+        t.mealBreakfast || t.mealLunch || t.mealDinner
+          ? {
+              breakfast: t.mealBreakfast ?? undefined,
+              lunch: t.mealLunch ?? undefined,
+              dinner: t.mealDinner ?? undefined,
+            }
+          : undefined,
+      infrastructure: Array.isArray(t.infrastructure)
+        ? (t.infrastructure as unknown[]).filter(
+            (x): x is string => typeof x === 'string',
+          )
+        : undefined,
     };
   }
 
