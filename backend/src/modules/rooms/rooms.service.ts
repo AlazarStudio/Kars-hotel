@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, RoomStatus } from '@prisma/client';
+import { Prisma, RoomPartnerHold, RoomStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/context/tenant-context';
 import { CreateRoomDto } from './dto/create-room.dto';
@@ -13,6 +13,8 @@ export interface ListRoomsFilter {
   isActive?: boolean;
   /** Д7 · поиск по номеру и заметке. */
   q?: string;
+  /** Д4/Д7 · фильтр по договорному блоку: NONE | QUOTA | RESERVE. */
+  partnerHold?: RoomPartnerHold;
 }
 
 @Injectable()
@@ -27,6 +29,7 @@ export class RoomsService {
           floor: filter.floor,
           status: filter.status,
           isActive: filter.isActive,
+          partnerHold: filter.partnerHold,
           /* Д7 · поиск. Ищем по номеру и заметке: заметка — единственное место,
            * где живёт «угловой, шумно от лифта», и искать по ней приходится
            * ровно тогда, когда гость просит «не как в прошлый раз». */
@@ -80,6 +83,7 @@ export class RoomsService {
             status: dto.status ?? 'CLEAN',
             isActive: dto.isActive ?? true,
             capacity: dto.capacity ?? 1,
+            partnerHold: dto.partnerHold ?? 'NONE',
             notes: dto.notes ?? null,
           },
           include: { roomType: { select: { id: true, code: true, name: true } } },
@@ -204,6 +208,7 @@ export class RoomsService {
             status: dto.status ?? undefined,
             isActive: dto.isActive ?? undefined,
             capacity: dto.capacity ?? undefined,
+            partnerHold: dto.partnerHold ?? undefined,
             notes: dto.notes === undefined ? undefined : dto.notes,
           },
           include: { roomType: { select: { id: true, code: true, name: true } } },

@@ -525,6 +525,8 @@ export class ConnectivityService {
       bedType: string;
       view: string;
       available: boolean;
+      /** Д4 · держится ли номер за партнёром: NONE | QUOTA | RESERVE. */
+      hold: string;
     }>
   > {
     return this.prisma.forTenantExplicit(tenantId, async (tx) => {
@@ -536,6 +538,7 @@ export class ConnectivityService {
           capacity: number;
           bed_type: string;
           view: string;
+          partner_hold: string;
           occupied_places: bigint;
         }>
       >`
@@ -546,6 +549,7 @@ export class ConnectivityService {
           r.capacity,
           r.bed_type,
           r.view,
+          r.partner_hold,
           (
             SELECT COUNT(*) FROM reservation res
             WHERE res.room_id = r.id
@@ -566,6 +570,9 @@ export class ConnectivityService {
         bedType: r.bed_type,
         view: r.view,
         available: Number(r.occupied_places) < r.capacity,
+        // Признак информационный: занятость считается одинаково для всех
+        // номеров, блок лишь подсказывает диспетчеру, что номер «его».
+        hold: r.partner_hold,
       }));
     });
   }

@@ -11,7 +11,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { RoomStatus } from '@prisma/client';
+import { RoomPartnerHold, RoomStatus } from '@prisma/client';
 import { RoomsService } from './rooms.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
@@ -33,12 +33,19 @@ export class RoomsController {
   @ApiQuery({ name: 'status', required: false, enum: RoomStatus })
   @ApiQuery({ name: 'isActive', required: false, type: Boolean })
   @ApiQuery({ name: 'q', required: false, description: 'Поиск по номеру и заметке' })
+  @ApiQuery({
+    name: 'partnerHold',
+    required: false,
+    enum: RoomPartnerHold,
+    description: 'Договорный блок: NONE | QUOTA | RESERVE',
+  })
   list(
     @Query('roomTypeId') roomTypeId?: string,
     @Query('floor') floorRaw?: string,
     @Query('status') status?: RoomStatus,
     @Query('isActive') isActiveRaw?: string,
     @Query('q') q?: string,
+    @Query('partnerHold') partnerHold?: RoomPartnerHold,
   ) {
     let floor: number | undefined;
     if (floorRaw !== undefined && floorRaw !== '') {
@@ -48,7 +55,14 @@ export class RoomsController {
     }
     const isActive =
       isActiveRaw === 'true' ? true : isActiveRaw === 'false' ? false : undefined;
-    return this.service.list({ roomTypeId, floor, status, isActive, q: q?.trim() || undefined });
+    return this.service.list({
+      roomTypeId,
+      floor,
+      status,
+      isActive,
+      q: q?.trim() || undefined,
+      partnerHold,
+    });
   }
 
   @Get(':id')

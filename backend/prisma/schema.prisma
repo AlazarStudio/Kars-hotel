@@ -683,6 +683,25 @@ model RoomType {
 /// operational state used by the rack-chart UI and the Housekeeping module.
 /// `capacity` — number of independently bookable places (beds) in this room.
 /// A capacity=1 room behaves exactly like the pre-H1 model.
+/// Держится ли номер за партнёром по договору (перенос Д4/А3).
+///
+/// NONE — обычный номер, продаётся кому угодно.
+/// QUOTA — гарантированный блок: отель держит номер за партнёром по договору,
+///   партнёр вправе рассчитывать, что он свободен.
+/// RESERVE — держим сверх квоты: подстраховка на пиковые дни, партнёр видит
+///   такой номер, но знает, что это не гарантия.
+///
+/// Признак ИНФОРМАЦИОННЫЙ: он не блокирует продажу номера в PMS. Блокировать
+/// значило бы вынести коммерческую договорённость в техническое ограничение —
+/// а договорённости меняются быстрее, чем данные в базе, и отель всё равно
+/// продаст номер, если так решил. Задача признака — чтобы обе стороны видели
+/// одно и то же и расхождение было заметно, а не молча случилось.
+enum RoomPartnerHold {
+  NONE
+  QUOTA
+  RESERVE
+}
+
 model Room {
   id         String     @id @default(uuid()) @db.Uuid
   tenantId   String     @map("tenant_id") @db.Uuid
@@ -695,6 +714,9 @@ model Room {
   status     RoomStatus @default(CLEAN)
   isActive   Boolean    @default(true) @map("is_active")
   capacity   Int        @default(1)
+  /// Держится ли номер за партнёром по договору (Д4). Информационный признак,
+  /// продажу в PMS не блокирует — см. комментарий к RoomPartnerHold.
+  partnerHold RoomPartnerHold @default(NONE) @map("partner_hold")
   notes      String?
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
@@ -706,6 +728,7 @@ model Room {
   @@index([tenantId])
   @@index([roomTypeId])
   @@index([status])
+  @@index([tenantId, partnerHold])
   @@map("room")
 }
 

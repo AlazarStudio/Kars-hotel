@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { BedType, RoomStatus, RoomView } from '@prisma/client';
+import { BedType, RoomPartnerHold, RoomStatus, RoomView } from '@prisma/client';
 import {
   IsBoolean,
   IsEnum,
@@ -52,6 +52,16 @@ export class CreateRoomDto {
   @IsInt()
   @Min(1)
   capacity?: number;
+
+  @ApiPropertyOptional({
+    enum: RoomPartnerHold,
+    default: RoomPartnerHold.NONE,
+    description:
+      'Держится ли номер за партнёром по договору (Д4). Признак информационный — продажу не блокирует.',
+  })
+  @IsOptional()
+  @IsEnum(RoomPartnerHold)
+  partnerHold?: RoomPartnerHold;
 
   @ApiPropertyOptional()
   @IsOptional()
