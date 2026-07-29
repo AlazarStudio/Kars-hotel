@@ -3,7 +3,11 @@ import classes from './Rooms.module.css';
 import RoomTypeFormModal from './RoomTypeFormModal';
 import RoomFormModal from './RoomFormModal';
 import ConfirmDialog from '../../shared/ConfirmDialog';
-import { ROOM_STATUS_CONFIG, BED_TYPE_LABELS } from '../../shared/status-config';
+import {
+  ROOM_STATUS_CONFIG,
+  BED_TYPE_LABELS,
+  PARTNER_HOLD_CONFIG,
+} from '../../shared/status-config';
 import {
   useRoomTypes,
   useCreateRoomType,
@@ -230,6 +234,20 @@ function Rooms() {
                     <div className={classes.roomMeta}>
                       {room.floor} этаж · {BED_TYPE_LABELS[room.bedType] || room.bedType}
                     </div>
+                    {/* А3 · договорный блок виден прямо на карточке: администратор
+                        решает «продавать или нет» здесь, а не открывая номер. */}
+                    {room.partnerHold && room.partnerHold !== 'NONE' && (
+                      <div
+                        className={classes.holdBadge}
+                        style={{
+                          background: PARTNER_HOLD_CONFIG[room.partnerHold]?.bg,
+                          color: PARTNER_HOLD_CONFIG[room.partnerHold]?.color,
+                        }}
+                        title={PARTNER_HOLD_CONFIG[room.partnerHold]?.hint}
+                      >
+                        {PARTNER_HOLD_CONFIG[room.partnerHold]?.short}
+                      </div>
+                    )}
                     <div
                       className={classes.hkBadge}
                       style={{ background: cfg.bg, color: cfg.color }}

@@ -23,6 +23,7 @@ interface RawRoomRow {
   floor: number;
   room_status: string;
   capacity: number;
+  partner_hold: string;
   room_type_id: string;
   room_type_code: string;
   room_type_name: string;
@@ -114,6 +115,7 @@ export class TimelineService {
             r.floor,
             r.status        AS room_status,
             r.capacity,
+            r.partner_hold,
             rt.id           AS room_type_id,
             rt.code         AS room_type_code,
             rt.name         AS room_type_name,
@@ -206,6 +208,7 @@ export class TimelineService {
           floor: row.floor,
           status: row.room_status as TimelineRoom['status'],
           capacity: row.capacity,
+          partnerHold: row.partner_hold as TimelineRoom['partnerHold'],
           reservations: resByRoom.get(row.room_id) ?? [],
         };
         rt.rooms.push(room);

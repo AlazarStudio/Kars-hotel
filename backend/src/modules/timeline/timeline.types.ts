@@ -54,6 +54,10 @@ export interface TimelineRoom {
   floor: number;
   status: RoomStatus;
   capacity: number;
+  /* А3 · договорный блок за партнёром. В шахматке он нужен ровно там, где
+   * администратор решает, кого селить: увидеть договорённость надо ДО того,
+   * как номер продан, а не в отчёте на следующий день. */
+  partnerHold: 'NONE' | 'QUOTA' | 'RESERVE';
   reservations: TimelineReservation[];
 }
 

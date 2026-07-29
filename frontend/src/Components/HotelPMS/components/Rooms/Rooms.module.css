@@ -308,3 +308,16 @@
 .hkMenuItem:hover {
   background: #F3F4F6;
 }
+
+/* А3 · метка договорного блока на карточке номера. Спокойный тон и мелкий
+   кегль: это пометка о договорённости, а не статус номера — путать её со
+   статусом уборки нельзя, иначе администратор решит, что номер занят. */
+.holdBadge {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+}

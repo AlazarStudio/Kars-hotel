@@ -7,6 +7,7 @@ import { ru } from 'date-fns/locale';
 import classes from './Timeline.module.css';
 import { DAY_WIDTH, LEFT_PANEL_WIDTH, BOOKING_STATUS, HK_STATUS } from '../../constants';
 import BookingForm from './BookingForm';
+import { PARTNER_HOLD_CONFIG } from '../../shared/status-config';
 import { useTimeline } from '../../../../hooks/useTimeline';
 import { createReservation, updateReservation, swapReservations } from '../../../../api/reservations';
 
@@ -47,6 +48,11 @@ function Timeline({ multiPlaceEnabled = true }) {
 
 
   const [search, setSearch] = useState('');
+  /* А3 · режим «Резерв»: показать только номера, которые держатся за
+   * партнёром по договору. Не отдельный экран, а фильтр той же шахматки —
+   * администратор смотрит на ту же сетку и те же брони, просто суженные.
+   * Второй экран означал бы вторую правду о занятости номеров. */
+  const [holdOnly, setHoldOnly] = useState(false);
   const [tooltip, setTooltip] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState(null);
@@ -614,6 +620,15 @@ function Timeline({ multiPlaceEnabled = true }) {
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
+        {/* А3 · режим «Резерв» — фильтр той же сетки, а не отдельный экран. */}
+        <button
+          type="button"
+          className={`${classes.daysToggleBtn} ${holdOnly ? classes.active : ''}`}
+          onClick={() => setHoldOnly(v => !v)}
+          title="Показать только номера, которые держим за партнёром по договору"
+        >
+          Резерв
+        </button>
         <div className={classes.legend}>
           {Object.entries(BOOKING_STATUS).map(([key, cfg]) => (
             <div key={key} className={classes.legendItem}>
@@ -668,8 +683,13 @@ function Timeline({ multiPlaceEnabled = true }) {
 
           {/* Category groups */}
           {categories.map(cat => {
-            const catRooms = rooms.filter(r => r.categoryId === cat.id)
+            const catRooms = rooms
+              .filter(r => r.categoryId === cat.id)
+              .filter(r => !holdOnly || (r.partnerHold && r.partnerHold !== 'NONE'))
               .slice().sort((a, b) => (a.capacity ?? 1) - (b.capacity ?? 1));
+            // В режиме «Резерв» категории без договорных номеров не показываем:
+            // пустой заголовок категории — это шум, а не информация.
+            if (holdOnly && catRooms.length === 0) return null;
             return (
               <div key={cat.id} className={classes.categoryGroup}>
                 <div className={classes.categoryHeader} style={{ width: gridWidth }}>
@@ -728,6 +748,21 @@ function Timeline({ multiPlaceEnabled = true }) {
                           )}
                           <div className={classes.roomNumber}>№{room.number}</div>
                           <div className={classes.roomCategory}>{cat.name}</div>
+                          {/* Пометка видна ВСЕГДА, не только в режиме «Резерв»:
+                              администратор селит из обычной шахматки, и узнать
+                              о договорённости он должен там же. */}
+                          {room.partnerHold && room.partnerHold !== 'NONE' && (
+                            <span
+                              className={classes.holdBadge}
+                              style={{
+                                background: PARTNER_HOLD_CONFIG[room.partnerHold]?.bg,
+                                color: PARTNER_HOLD_CONFIG[room.partnerHold]?.color,
+                              }}
+                              title={PARTNER_HOLD_CONFIG[room.partnerHold]?.hint}
+                            >
+                              {PARTNER_HOLD_CONFIG[room.partnerHold]?.short}
+                            </span>
+                          )}
                           {isMulti && (
                             <span className={classes.capacityBadge}>{cap}м</span>
                           )}

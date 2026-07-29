@@ -37,6 +37,8 @@ function transformTimeline(data) {
         categoryId: rt.id,
         capacity: room.capacity ?? 1,
         hk: hkMap[room.status] ?? 'clean',
+        // А3 · договорный блок: показывается в шахматке отдельной пометкой.
+        partnerHold: room.partnerHold ?? 'NONE',
       });
 
       for (const res of room.reservations) {

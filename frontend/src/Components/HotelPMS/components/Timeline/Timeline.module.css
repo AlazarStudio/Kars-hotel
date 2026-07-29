@@ -1036,3 +1036,16 @@
   font-size: 11px;
   font-weight: 700;
 }
+
+/* А3 · метка договорного блока в строке номера. Мелкая и спокойная: это
+   пометка о договорённости с партнёром, а не статус занятости — спутать её со
+   статусом брони нельзя, иначе номер сочтут проданным. */
+.holdBadge {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  white-space: nowrap;
+}

@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
 import Modal from '../../shared/Modal';
 import formClasses from '../../shared/Form.module.css';
-import { BED_TYPE_LABELS, ROOM_STATUS_CONFIG, ROOM_VIEW_LABELS } from '../../shared/status-config';
+import {
+  BED_TYPE_LABELS,
+  PARTNER_HOLD_CONFIG,
+  ROOM_STATUS_CONFIG,
+  ROOM_VIEW_LABELS,
+} from '../../shared/status-config';
 
 const EMPTY = {
   roomTypeId: '',
@@ -11,6 +16,7 @@ const EMPTY = {
   bedType: 'DOUBLE',
   view: 'NONE',
   status: 'CLEAN',
+  partnerHold: 'NONE',
   notes: '',
 };
 
@@ -43,6 +49,7 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
               bedType: editing.bedType,
               view: editing.view,
               status: editing.status,
+              partnerHold: editing.partnerHold ?? 'NONE',
               notes: editing.notes ?? '',
             }
           : {
@@ -80,6 +87,7 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
         bedType: values.bedType,
         view: values.view,
         status: values.status,
+        partnerHold: values.partnerHold,
         notes: values.notes?.trim() || undefined,
       });
       onClose?.();
@@ -202,6 +210,27 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
               <option key={k} value={k}>{cfg.label}</option>
             ))}
           </select>
+        </div>
+
+        {/* А3 · договорный блок. Стоит рядом со статусом уборки, а не в
+            отдельной вкладке: это свойство номера, и вспоминают о нём тогда
+            же, когда правят остальное. Подпись объясняет разницу между
+            квотой и резервом прямо здесь — иначе выбор делается наугад. */}
+        <div className={formClasses.field}>
+          <label className={formClasses.label}>Договорный блок</label>
+          <select
+            className={formClasses.select}
+            value={values.partnerHold}
+            onChange={(e) => set('partnerHold', e.target.value)}
+          >
+            {Object.entries(PARTNER_HOLD_CONFIG).map(([k, cfg]) => (
+              <option key={k} value={k}>{cfg.label}</option>
+            ))}
+          </select>
+          <div className={formClasses.hint}>
+            {PARTNER_HOLD_CONFIG[values.partnerHold]?.hint ??
+              'Номер не держится ни за кем по договору'}
+          </div>
         </div>
 
         <div className={formClasses.field}>
