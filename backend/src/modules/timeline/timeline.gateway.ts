@@ -24,7 +24,7 @@ import { Server, Socket } from 'socket.io';
  */
 @WebSocketGateway({
   cors: {
-    origin: '*',   // tightened per-tenant in production; dev is open
+    origin: '*', // tightened per-tenant in production; dev is open
     credentials: true,
   },
   namespace: '/timeline',
@@ -74,7 +74,10 @@ export class TimelineGateway implements OnGatewayConnection, OnGatewayDisconnect
    *
    * Payload intentionally minimal — clients refetch the full timeline.
    */
-  notifyUpdate(tenantId: string, payload: { reservationId?: string; action: 'created' | 'updated' | 'deleted' }): void {
+  notifyUpdate(
+    tenantId: string,
+    payload: { reservationId?: string; action: 'created' | 'updated' | 'deleted' },
+  ): void {
     const room = `timeline:${tenantId}`;
     this.server.to(room).emit('timeline:update', {
       tenantId,

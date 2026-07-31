@@ -1,5 +1,15 @@
 // backend/src/modules/reservations/reservations.controller.ts
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { ReservationsService } from './reservations.service';
 import { CreateReservationDto } from './dto/create-reservation.dto';
@@ -74,10 +84,7 @@ export class ReservationsController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions('reservation.checkout')
   @ApiOperation({ summary: 'Check out a guest — moves to CHECKED_OUT, marks room DIRTY' })
-  checkOut(
-    @Param('id') id: string,
-    @CurrentUser() user: AuthenticatedRequestUser,
-  ) {
+  checkOut(@Param('id') id: string, @CurrentUser() user: AuthenticatedRequestUser) {
     return this.reservationsService.checkOut(id, user.userId);
   }
 
@@ -85,10 +92,7 @@ export class ReservationsController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions('reservation.update')
   @ApiOperation({ summary: 'Mark reservation as no-show' })
-  noShow(
-    @Param('id') id: string,
-    @CurrentUser() user: AuthenticatedRequestUser,
-  ) {
+  noShow(@Param('id') id: string, @CurrentUser() user: AuthenticatedRequestUser) {
     return this.reservationsService.noShow(id, user.userId);
   }
 

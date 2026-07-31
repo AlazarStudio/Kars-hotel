@@ -18,5 +18,4 @@ export const PARTNER_SCOPES_KEY = 'partnerScopes';
  * Declare the scope(s) a partner key must hold to call the decorated route.
  * Enforced by {@link PartnerApiKeyGuard}.
  */
-export const RequireScopes = (...scopes: PartnerScope[]) =>
-  SetMetadata(PARTNER_SCOPES_KEY, scopes);
+export const RequireScopes = (...scopes: PartnerScope[]) => SetMetadata(PARTNER_SCOPES_KEY, scopes);

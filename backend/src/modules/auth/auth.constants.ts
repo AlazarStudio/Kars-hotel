@@ -92,7 +92,13 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, ReadonlyArray<string>> = {
     'report.view.finance',
     'report.export',
   ],
-  CHANNEL_MANAGER: ['user.read', 'reservation.read', 'rate.read', 'rate.update', 'restriction.update'],
+  CHANNEL_MANAGER: [
+    'user.read',
+    'reservation.read',
+    'rate.read',
+    'rate.update',
+    'restriction.update',
+  ],
   READ_ONLY: SYSTEM_PERMISSIONS.filter((p) => /\.(read|view)/.test(p.code)).map((p) => p.code),
 };
 

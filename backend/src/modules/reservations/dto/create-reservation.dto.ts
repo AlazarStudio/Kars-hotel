@@ -51,7 +51,10 @@ export class CreateReservationDto {
   @Min(0)
   children?: number;
 
-  @ApiPropertyOptional({ example: 'CONFIRMED', description: 'Default: CONFIRMED for manual bookings, NEW for OTA' })
+  @ApiPropertyOptional({
+    example: 'CONFIRMED',
+    description: 'Default: CONFIRMED for manual bookings, NEW for OTA',
+  })
   @IsOptional()
   @IsString()
   status?: string;

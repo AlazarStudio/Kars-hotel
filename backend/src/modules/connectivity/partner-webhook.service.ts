@@ -61,9 +61,7 @@ export class PartnerWebhookService {
   ): Promise<void> {
     if (!this.url || !this.secret) return; // интеграция не настроена
     try {
-      const rows = await this.prisma.admin.$queryRaw<
-        { channel_managed: boolean; slug: string }[]
-      >`
+      const rows = await this.prisma.admin.$queryRaw<{ channel_managed: boolean; slug: string }[]>`
         SELECT r.channel_managed, t.slug
         FROM reservation r
         JOIN tenant t ON t.id = r.tenant_id
@@ -100,10 +98,7 @@ export class PartnerWebhookService {
       if (delay) await new Promise((r) => setTimeout(r, delay));
       try {
         const controller = new AbortController();
-        const timer = setTimeout(
-          () => controller.abort(),
-          PartnerWebhookService.TIMEOUT_MS,
-        );
+        const timer = setTimeout(() => controller.abort(), PartnerWebhookService.TIMEOUT_MS);
         const res = await fetch(this.url, {
           method: 'POST',
           headers: {
@@ -121,9 +116,7 @@ export class PartnerWebhookService {
         /* 4xx — партнёр событие не примет и на повторе: неверный секрет,
          * незнакомый тип. Долбиться бессмысленно, пишем в лог и выходим. */
         if (res.status >= 400 && res.status < 500) {
-          this.log.warn(
-            `Вебхук ${type} отклонён партнёром (${res.status}) — повтор не поможет`,
-          );
+          this.log.warn(`Вебхук ${type} отклонён партнёром (${res.status}) — повтор не поможет`);
           return;
         }
       } catch (e) {

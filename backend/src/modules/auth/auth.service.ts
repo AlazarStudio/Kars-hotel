@@ -12,11 +12,7 @@ import { RoleCode, TenantPlan } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import {
-  DEFAULT_ROLE_NAMES,
-  DEFAULT_ROLE_PERMISSIONS,
-  SYSTEM_PERMISSIONS,
-} from './auth.constants';
+import { DEFAULT_ROLE_NAMES, DEFAULT_ROLE_PERMISSIONS, SYSTEM_PERMISSIONS } from './auth.constants';
 import { RegisterTenantDto } from './dto/register-tenant.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtAccessPayload, JwtRefreshPayload } from './types/jwt-payload';
@@ -69,7 +65,11 @@ export class AuthService implements OnModuleInit {
 
   // ─── Public API ─────────────────────────────────────────────────────────────
 
-  async registerTenant(dto: RegisterTenantDto, ip?: string, userAgent?: string): Promise<{
+  async registerTenant(
+    dto: RegisterTenantDto,
+    ip?: string,
+    userAgent?: string,
+  ): Promise<{
     tenantId: string;
     userId: string;
     tokens: AuthTokens;
@@ -169,7 +169,11 @@ export class AuthService implements OnModuleInit {
     return { tenantId: result.tenant.id, userId: result.user.id, tokens };
   }
 
-  async login(dto: LoginDto, ip?: string, userAgent?: string): Promise<{
+  async login(
+    dto: LoginDto,
+    ip?: string,
+    userAgent?: string,
+  ): Promise<{
     user: AuthenticatedUser;
     tokens: AuthTokens;
   }> {
@@ -291,11 +295,7 @@ export class AuthService implements OnModuleInit {
       .catch(() => undefined);
   }
 
-  async me(
-    userId: string,
-    tenantId: string,
-    impersonatedBy?: string,
-  ): Promise<AuthenticatedUser> {
+  async me(userId: string, tenantId: string, impersonatedBy?: string): Promise<AuthenticatedUser> {
     const user = await this.prisma.admin.user.findFirst({
       where: { id: userId, tenantId, isActive: true },
       include: {
@@ -489,10 +489,7 @@ export class AuthService implements OnModuleInit {
     if (!role) {
       throw new ForbiddenException('Platform SUPER_ADMIN role is missing');
     }
-    const passwordHash = await bcrypt.hash(
-      crypto.randomBytes(24).toString('base64url'),
-      10,
-    );
+    const passwordHash = await bcrypt.hash(crypto.randomBytes(24).toString('base64url'), 10);
     const created = await this.prisma.admin.user.create({
       data: {
         tenantId: platform.id,
@@ -543,11 +540,10 @@ export class AuthService implements OnModuleInit {
 
     // Hotel mode: dispatcher works inside one hotel, tagged with their id.
     if (entry.tenantId) {
-      const { accessToken, accessTtlSeconds } =
-        await this.issueImpersonationToken(
-          entry.tenantId,
-          entry.dispatcherUserId,
-        );
+      const { accessToken, accessTtlSeconds } = await this.issueImpersonationToken(
+        entry.tenantId,
+        entry.dispatcherUserId,
+      );
       const tenant = await this.prisma.admin.tenant.findUnique({
         where: { id: entry.tenantId },
         select: { id: true, name: true },
@@ -599,14 +595,22 @@ export class AuthService implements OnModuleInit {
     const email = this.config.get<string>('SUPER_ADMIN_EMAIL');
     const password = this.config.get<string>('SUPER_ADMIN_PASSWORD');
     if (!email || !password) {
-      this.logger.warn('SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD not set — skipping platform admin seed');
+      this.logger.warn(
+        'SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD not set — skipping platform admin seed',
+      );
       return;
     }
 
     // Upsert platform tenant.
     const tenant = await this.prisma.admin.tenant.upsert({
       where: { slug: 'platform' },
-      create: { slug: 'platform', name: 'Platform Admin', timezone: 'UTC', currency: 'USD', plan: 'PREMIUM' },
+      create: {
+        slug: 'platform',
+        name: 'Platform Admin',
+        timezone: 'UTC',
+        currency: 'USD',
+        plan: 'PREMIUM',
+      },
       update: {},
     });
 

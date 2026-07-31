@@ -1,12 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsBoolean,
-  IsISO8601,
-  IsInt,
-  IsOptional,
-  IsUUID,
-  Min,
-} from 'class-validator';
+import { IsBoolean, IsISO8601, IsInt, IsOptional, IsUUID, Min } from 'class-validator';
 
 export class UpsertRestrictionDto {
   @ApiPropertyOptional({ description: 'If null, applies plan-agnostic.' })

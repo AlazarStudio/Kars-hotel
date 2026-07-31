@@ -143,9 +143,7 @@ export class RoomsService {
     const skipped = numbers.filter((n) => taken.has(n));
 
     if (skipped.length && dto.skipExisting === false) {
-      throw new ConflictException(
-        `Уже существуют номера: ${skipped.join(', ')}`,
-      );
+      throw new ConflictException(`Уже существуют номера: ${skipped.join(', ')}`);
     }
     const toCreate = numbers.filter((n) => !taken.has(n));
     if (!toCreate.length) {

@@ -1,6 +1,11 @@
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'node:crypto';
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/context/tenant-context';
 import { StorageService, UploadedFile } from '../../common/storage/storage.service';
@@ -105,9 +110,7 @@ export class TenantService {
 
   async updateSettings(dto: UpdateTenantSettingsDto) {
     const tenantId = TenantContext.getTenantIdOrThrow();
-    const data = Object.fromEntries(
-      Object.entries(dto).filter(([, v]) => v !== undefined),
-    );
+    const data = Object.fromEntries(Object.entries(dto).filter(([, v]) => v !== undefined));
     return this.prisma.admin.tenant.update({
       where: { id: tenantId },
       data,
@@ -229,7 +232,10 @@ export class TenantService {
     });
   }
 
-  async createUser(tenantId: string, dto: CreateTenantUserDto): Promise<{ id: string; email: string; temporaryPassword?: string }> {
+  async createUser(
+    tenantId: string,
+    dto: CreateTenantUserDto,
+  ): Promise<{ id: string; email: string; temporaryPassword?: string }> {
     const normalizedEmail = dto.email.toLowerCase();
 
     const role = await this.prisma.admin.role.findFirst({
@@ -247,7 +253,13 @@ export class TenantService {
     const passwordHash = await bcrypt.hash(temporaryPassword, 10);
 
     const user = await this.prisma.admin.user.create({
-      data: { tenantId, email: normalizedEmail, passwordHash, fullName: dto.fullName, roleId: dto.roleId },
+      data: {
+        tenantId,
+        email: normalizedEmail,
+        passwordHash,
+        fullName: dto.fullName,
+        roleId: dto.roleId,
+      },
       select: { id: true, email: true },
     });
 
@@ -279,7 +291,13 @@ export class TenantService {
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
         ...(dto.fullName ? { fullName: dto.fullName } : {}),
       },
-      select: { id: true, email: true, fullName: true, isActive: true, role: { select: { id: true, code: true, name: true } } },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        isActive: true,
+        role: { select: { id: true, code: true, name: true } },
+      },
     });
   }
 

@@ -9,8 +9,8 @@ import { eachDayOfInterval, parseISO, format, differenceInCalendarDays } from 'd
 
 /** Per-day availability result. */
 export interface DayAvailability {
-  date: string;            // 'YYYY-MM-DD'
-  available: number;       // rooms that can be booked
+  date: string; // 'YYYY-MM-DD'
+  available: number; // rooms that can be booked
   totalRooms: number;
   bookedRooms: number;
   blockedRooms: number;
@@ -20,8 +20,8 @@ export interface DayAvailability {
   /** Aggregated restrictions for this date (union of all applicable rules). */
   restrictions: {
     closed: boolean;
-    cta: boolean;         // closed to arrival
-    ctd: boolean;         // closed to departure
+    cta: boolean; // closed to arrival
+    ctd: boolean; // closed to departure
     minLos: number | null;
     maxLos: number | null;
   };
@@ -39,8 +39,8 @@ export interface AvailabilityResult {
 
 /** One night of a rate-plan price breakdown. */
 export interface RatePlanNight {
-  date: string;          // 'YYYY-MM-DD'
-  price: string | null;  // resolved price for that night (RUB decimal string), null if not configured
+  date: string; // 'YYYY-MM-DD'
+  price: string | null; // resolved price for that night (RUB decimal string), null if not configured
 }
 
 /** Priced offer for a single rate plan over a stay period. */
@@ -48,7 +48,7 @@ export interface RatePlanPrice {
   ratePlanId: string;
   code: string | null;
   name: string;
-  mealPlan: string;      // NONE | BB | HB | FB | AI
+  mealPlan: string; // NONE | BB | HB | FB | AI
   nights: number;
   perNight: RatePlanNight[];
   /** Sum of per-night prices when EVERY night is priced; null otherwise. */
@@ -91,7 +91,8 @@ export class AvailabilityService {
     ratePlanId?: string,
   ): Promise<AvailabilityResult> {
     const tenantId = TenantContext.getTenantIdOrThrow();
-    const cacheKey = InventoryService.cacheKey(tenantId, roomTypeId, checkIn, checkOut) +
+    const cacheKey =
+      InventoryService.cacheKey(tenantId, roomTypeId, checkIn, checkOut) +
       (ratePlanId ? `:${ratePlanId}` : '');
 
     // ── Cache hit ────────────────────────────────────────────────────────────
@@ -103,13 +104,12 @@ export class AvailabilityService {
 
     // ── DB query ─────────────────────────────────────────────────────────────
     const result = await this.prisma.forTenant(async (tx) => {
-      const checkInDate  = parseISO(checkIn);
+      const checkInDate = parseISO(checkIn);
       const checkOutDate = parseISO(checkOut);
 
       // The nights of the stay are [checkIn, checkOut).
       // checkOut is the departure date — it is NOT a night of stay.
-      const stayDates = eachDayOfInterval({ start: checkInDate, end: checkOutDate })
-        .slice(0, -1); // drop checkOut itself
+      const stayDates = eachDayOfInterval({ start: checkInDate, end: checkOutDate }).slice(0, -1); // drop checkOut itself
 
       if (!stayDates.length) {
         return this.emptyResult(roomTypeId, checkIn, checkOut);
@@ -212,7 +212,14 @@ export class AvailabilityService {
             dateFrom: { lte: checkOutDate },
             dateTo: { gte: checkInDate },
           },
-          select: { ratePlanId: true, roomTypeId: true, dateFrom: true, dateTo: true, price: true, sortOrder: true },
+          select: {
+            ratePlanId: true,
+            roomTypeId: true,
+            dateFrom: true,
+            dateTo: true,
+            price: true,
+            sortOrder: true,
+          },
         }),
         tx.standardRate.findMany({
           where: { roomTypeId, ratePlanId: ratePlanId || undefined },
@@ -252,21 +259,16 @@ export class AvailabilityService {
         let min: Prisma.Decimal | null = null;
         for (const planId of planIds) {
           const daily = dailyByPlanDay.get(`${planId}|${day}`);
-          const eff = daily != null
-            ? new Prisma.Decimal(daily)
-            : baseline.resolve(planId, roomTypeId, day);
+          const eff =
+            daily != null ? new Prisma.Decimal(daily) : baseline.resolve(planId, roomTypeId, day);
           if (eff != null && (min === null || eff.lessThan(min))) min = eff;
         }
         if (min !== null) priceRows.push({ date, min_price: min.toFixed(2) });
       }
 
       // Build lookup maps
-      const invByDate = new Map(
-        inventoryRows.map((r) => [format(r.date, 'yyyy-MM-dd'), r]),
-      );
-      const resByDate = new Map(
-        restrictionRows.map((r) => [format(r.date, 'yyyy-MM-dd'), r]),
-      );
+      const invByDate = new Map(inventoryRows.map((r) => [format(r.date, 'yyyy-MM-dd'), r]));
+      const resByDate = new Map(restrictionRows.map((r) => [format(r.date, 'yyyy-MM-dd'), r]));
       const priceByDate = new Map(
         priceRows.map((r) => [format(r.date, 'yyyy-MM-dd'), r.min_price]),
       );
@@ -278,23 +280,22 @@ export class AvailabilityService {
         const inv = invByDate.get(key);
         const res = resByDate.get(key);
 
-        const totalRooms   = inv?.total_rooms   ?? roomCount;
-        const bookedRooms  = inv?.booked_rooms  ?? 0;
+        const totalRooms = inv?.total_rooms ?? roomCount;
+        const bookedRooms = inv?.booked_rooms ?? 0;
         const blockedRooms = inv?.blocked_rooms ?? 0;
-        const stopSell     = inv?.stop_sell     ?? false;
-        const available    = InventoryService.computeAvailable({ totalRooms, bookedRooms, blockedRooms });
+        const stopSell = inv?.stop_sell ?? false;
+        const available = InventoryService.computeAvailable({
+          totalRooms,
+          bookedRooms,
+          blockedRooms,
+        });
 
         // Resolve LOS restrictions: per-date rules + arrival-specific rules on checkIn.
         const isArrivalDate = key === checkIn;
         const minLos = res
-          ? Math.max(
-              res.min_los ?? 0,
-              isArrivalDate ? (res.min_los_arrival ?? 0) : 0,
-            ) || null
+          ? Math.max(res.min_los ?? 0, isArrivalDate ? (res.min_los_arrival ?? 0) : 0) || null
           : null;
-        const maxLos = res
-          ? (res.max_los ?? res.max_los_arrival ?? null)
-          : null;
+        const maxLos = res ? (res.max_los ?? res.max_los_arrival ?? null) : null;
 
         return {
           date: key,
@@ -305,9 +306,9 @@ export class AvailabilityService {
           stopSell,
           minPrice: priceByDate.get(key) ?? null,
           restrictions: {
-            closed:  res?.closed  ?? false,
-            cta:     isArrivalDate ? (res?.cta ?? false) : false,
-            ctd:     key === format(checkOutDate, 'yyyy-MM-dd') ? (res?.ctd ?? false) : false,
+            closed: res?.closed ?? false,
+            cta: isArrivalDate ? (res?.cta ?? false) : false,
+            ctd: key === format(checkOutDate, 'yyyy-MM-dd') ? (res?.ctd ?? false) : false,
             minLos,
             maxLos,
           },
@@ -358,9 +359,7 @@ export class AvailabilityService {
       }),
     );
 
-    return Promise.all(
-      roomTypes.map((rt) => this.check(rt.id, checkIn, checkOut, ratePlanId)),
-    );
+    return Promise.all(roomTypes.map((rt) => this.check(rt.id, checkIn, checkOut, ratePlanId)));
   }
 
   /**
@@ -385,8 +384,7 @@ export class AvailabilityService {
     basePrice?: Prisma.Decimal | number | null,
   ): Promise<RatePlanPrice[]> {
     const tenantId = TenantContext.getTenantIdOrThrow();
-    const cacheKey =
-      InventoryService.cacheKey(tenantId, roomTypeId, checkIn, checkOut) + ':plans';
+    const cacheKey = InventoryService.cacheKey(tenantId, roomTypeId, checkIn, checkOut) + ':plans';
 
     const cached = await this.redis.raw.get(cacheKey);
     if (cached) {
@@ -411,7 +409,9 @@ export class AvailabilityService {
       if (!ratePlans.length) return [] as RatePlanPrice[];
 
       // Per-day Rate overrides for every plan of this room type in range.
-      const dailyRows = await tx.$queryRaw<Array<{ rate_plan_id: string; date: Date; price: string }>>`
+      const dailyRows = await tx.$queryRaw<
+        Array<{ rate_plan_id: string; date: Date; price: string }>
+      >`
         SELECT rate_plan_id, date, MIN(price)::text AS price
         FROM rate
         WHERE tenant_id    = ${tenantId}::uuid
@@ -427,7 +427,14 @@ export class AvailabilityService {
             dateFrom: { lte: checkOutDate },
             dateTo: { gte: checkInDate },
           },
-          select: { ratePlanId: true, roomTypeId: true, dateFrom: true, dateTo: true, price: true, sortOrder: true },
+          select: {
+            ratePlanId: true,
+            roomTypeId: true,
+            dateFrom: true,
+            dateTo: true,
+            price: true,
+            sortOrder: true,
+          },
         }),
         tx.standardRate.findMany({
           where: { roomTypeId },
@@ -468,7 +475,7 @@ export class AvailabilityService {
           const eff: Prisma.Decimal | null =
             daily != null
               ? new Prisma.Decimal(daily)
-              : baseline.resolve(plan.id, roomTypeId, day) ?? baseFallback;
+              : (baseline.resolve(plan.id, roomTypeId, day) ?? baseFallback);
 
           perNight.push({ date: day, price: eff != null ? eff.toFixed(2) : null });
 
@@ -504,11 +511,7 @@ export class AvailabilityService {
 
   // ── Private helpers ───────────────────────────────────────────────────────
 
-  private emptyResult(
-    roomTypeId: string,
-    checkIn: string,
-    checkOut: string,
-  ): AvailabilityResult {
+  private emptyResult(roomTypeId: string, checkIn: string, checkOut: string): AvailabilityResult {
     return {
       roomTypeId,
       checkIn,

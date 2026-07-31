@@ -47,7 +47,13 @@ describe('PricingCalculator.calculatePricing', () => {
 
   it('single night with exact rate', () => {
     const rates = makeMapLookup([
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 2, price: 3800 },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: 3800,
+      },
     ]);
     const b = calculatePricing({
       ratePlan: STANDARD_PLAN,
@@ -68,9 +74,27 @@ describe('PricingCalculator.calculatePricing', () => {
 
   it('three nights with same rate', () => {
     const rates = makeMapLookup([
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 2, price: 3800 },
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-02'), occupancy: 2, price: 3800 },
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-03'), occupancy: 2, price: 3800 },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: 3800,
+      },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-02'),
+        occupancy: 2,
+        price: 3800,
+      },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-03'),
+        occupancy: 2,
+        price: 3800,
+      },
     ]);
     const b = calculatePricing({
       ratePlan: STANDARD_PLAN,
@@ -89,9 +113,27 @@ describe('PricingCalculator.calculatePricing', () => {
 
   it('three nights with different rates each', () => {
     const rates = makeMapLookup([
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 2, price: 3000 },
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-02'), occupancy: 2, price: 4500 },
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-03'), occupancy: 2, price: 5000 },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: 3000,
+      },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-02'),
+        occupancy: 2,
+        price: 4500,
+      },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-03'),
+        occupancy: 2,
+        price: 5000,
+      },
     ]);
     const b = calculatePricing({
       ratePlan: STANDARD_PLAN,
@@ -146,8 +188,20 @@ describe('PricingCalculator.calculatePricing', () => {
 
   it('stay across month boundary (last day of June → first day of July)', () => {
     const rates = makeMapLookup([
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-30'), occupancy: 2, price: 4000 },
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-07-01'), occupancy: 2, price: 5000 },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-30'),
+        occupancy: 2,
+        price: 4000,
+      },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-07-01'),
+        occupancy: 2,
+        price: 5000,
+      },
     ]);
     const b = calculatePricing({
       ratePlan: STANDARD_PLAN,
@@ -166,8 +220,20 @@ describe('PricingCalculator.calculatePricing', () => {
 
   it('stay across year boundary (Dec 31 → Jan 1)', () => {
     const rates = makeMapLookup([
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-12-31'), occupancy: 2, price: 9000 },
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2027-01-01'), occupancy: 2, price: 8000 },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-12-31'),
+        occupancy: 2,
+        price: 9000,
+      },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2027-01-01'),
+        occupancy: 2,
+        price: 8000,
+      },
     ]);
     const b = calculatePricing({
       ratePlan: STANDARD_PLAN,
@@ -206,9 +272,21 @@ describe('PricingCalculator.calculatePricing', () => {
 
   it('rate present for some nights only → mixed', () => {
     const rates = makeMapLookup([
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 2, price: 4000 },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: 4000,
+      },
       // 2026-06-02 missing
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-03'), occupancy: 2, price: 4000 },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-03'),
+        occupancy: 2,
+        price: 4000,
+      },
     ]);
     const b = calculatePricing({
       ratePlan: STANDARD_PLAN,
@@ -233,7 +311,13 @@ describe('PricingCalculator.calculatePricing', () => {
   it('occupancyPricing=false ignores requested occupancy and uses baseOccupancy', () => {
     const rates = makeMapLookup([
       // Only stored at base occupancy = 2.
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 2, price: 3000 },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: 3000,
+      },
     ]);
     const b = calculatePricing({
       ratePlan: STANDARD_PLAN, // occupancyPricing=false
@@ -253,8 +337,20 @@ describe('PricingCalculator.calculatePricing', () => {
 
   it('occupancyPricing=true: exact occupancy rate is used', () => {
     const rates = makeMapLookup([
-      { ratePlanId: OCCUPANCY_PLAN.id, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 2, price: 3000 },
-      { ratePlanId: OCCUPANCY_PLAN.id, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 3, price: 4200 },
+      {
+        ratePlanId: OCCUPANCY_PLAN.id,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: 3000,
+      },
+      {
+        ratePlanId: OCCUPANCY_PLAN.id,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 3,
+        price: 4200,
+      },
     ]);
     const b = calculatePricing({
       ratePlan: OCCUPANCY_PLAN,
@@ -273,7 +369,13 @@ describe('PricingCalculator.calculatePricing', () => {
 
   it('occupancyPricing=true: falls back to baseOccupancy if requested bucket empty', () => {
     const rates = makeMapLookup([
-      { ratePlanId: OCCUPANCY_PLAN.id, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 2, price: 3000 },
+      {
+        ratePlanId: OCCUPANCY_PLAN.id,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: 3000,
+      },
       // No row for occupancy=3
     ]);
     const b = calculatePricing({
@@ -293,7 +395,13 @@ describe('PricingCalculator.calculatePricing', () => {
 
   it('occupancyPricing=true: occupancy equal to baseOccupancy does NOT trigger fallback flag', () => {
     const rates = makeMapLookup([
-      { ratePlanId: OCCUPANCY_PLAN.id, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 2, price: 3000 },
+      {
+        ratePlanId: OCCUPANCY_PLAN.id,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: 3000,
+      },
     ]);
     const b = calculatePricing({
       ratePlan: OCCUPANCY_PLAN,
@@ -313,7 +421,13 @@ describe('PricingCalculator.calculatePricing', () => {
 
   it('child plan PERCENT -20% — parent rate × 0.80', () => {
     const rates = makeMapLookup([
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 2, price: 5000 },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: 5000,
+      },
     ]);
     const b = calculatePricing({
       ratePlan: LAST_MINUTE_PLAN,
@@ -333,7 +447,13 @@ describe('PricingCalculator.calculatePricing', () => {
 
   it('child plan ABSOLUTE +500 — parent rate + 500', () => {
     const rates = makeMapLookup([
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 2, price: 3800 },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: 3800,
+      },
     ]);
     const b = calculatePricing({
       ratePlan: PLUS_500_PLAN,
@@ -358,7 +478,13 @@ describe('PricingCalculator.calculatePricing', () => {
       occupancyPricing: false,
     };
     const rates = makeMapLookup([
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 2, price: 3800 },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: 3800,
+      },
     ]);
     const b = calculatePricing({
       ratePlan: child,
@@ -376,9 +502,21 @@ describe('PricingCalculator.calculatePricing', () => {
 
   it('child plan with OWN rate — overrides parent', () => {
     const rates = makeMapLookup([
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 2, price: 5000 },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: 5000,
+      },
       // Override on the leaf:
-      { ratePlanId: LAST_MINUTE_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 2, price: 3500 },
+      {
+        ratePlanId: LAST_MINUTE_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: 3500,
+      },
     ]);
     const b = calculatePricing({
       ratePlan: LAST_MINUTE_PLAN, // would normally compute as 5000*0.8 = 4000, but own rate overrides
@@ -399,10 +537,28 @@ describe('PricingCalculator.calculatePricing', () => {
   it('mix: child has own rate for some nights, inherits for others', () => {
     const rates = makeMapLookup([
       // Standard plan has rates for both nights.
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 2, price: 5000 },
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-02'), occupancy: 2, price: 5000 },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: 5000,
+      },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-02'),
+        occupancy: 2,
+        price: 5000,
+      },
       // Last Minute overrides only night 1:
-      { ratePlanId: LAST_MINUTE_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 2, price: 3500 },
+      {
+        ratePlanId: LAST_MINUTE_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: 3500,
+      },
     ]);
     const b = calculatePricing({
       ratePlan: LAST_MINUTE_PLAN,
@@ -429,7 +585,13 @@ describe('PricingCalculator.calculatePricing', () => {
       occupancyPricing: false,
     };
     const rates = makeMapLookup([
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 2, price: 10000 },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: 10000,
+      },
     ]);
     const b = calculatePricing({
       ratePlan: VIP_PLAN,
@@ -455,7 +617,13 @@ describe('PricingCalculator.calculatePricing', () => {
       occupancyPricing: false,
     };
     const rates = makeMapLookup([
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 2, price: 1000 },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: 1000,
+      },
     ]);
     const b = calculatePricing({
       ratePlan: minusBig,
@@ -483,7 +651,13 @@ describe('PricingCalculator.calculatePricing', () => {
       occupancyPricing: false,
     };
     const rates = makeMapLookup([
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 2, price: 3800 },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: 3800,
+      },
     ]);
     const b = calculatePricing({
       ratePlan: oddPercent,
@@ -501,9 +675,27 @@ describe('PricingCalculator.calculatePricing', () => {
 
   it('sum of three nights × 3333.33 = 9999.99 (no float drift)', () => {
     const rates = makeMapLookup([
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 2, price: '3333.33' },
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-02'), occupancy: 2, price: '3333.33' },
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-03'), occupancy: 2, price: '3333.33' },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: '3333.33',
+      },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-02'),
+        occupancy: 2,
+        price: '3333.33',
+      },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-03'),
+        occupancy: 2,
+        price: '3333.33',
+      },
     ]);
     const b = calculatePricing({
       ratePlan: STANDARD_PLAN,
@@ -528,7 +720,13 @@ describe('PricingCalculator.calculatePricing', () => {
       occupancyPricing: false,
     };
     const rates = makeMapLookup([
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 2, price: 100 },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: 100,
+      },
     ]);
     const b = calculatePricing({
       ratePlan: plan,
@@ -549,7 +747,13 @@ describe('PricingCalculator.calculatePricing', () => {
   it('does not pick up rate for a different roomType', () => {
     const rates = makeMapLookup([
       // Rate exists for a DIFFERENT room type.
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: 'some-other-type', date: date('2026-06-01'), occupancy: 2, price: 9999 },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: 'some-other-type',
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: 9999,
+      },
     ]);
     const b = calculatePricing({
       ratePlan: STANDARD_PLAN,
@@ -588,11 +792,21 @@ describe('PricingCalculator.calculatePricing', () => {
 
   it('30-night stay aggregates correctly when all nights are 2500', () => {
     const ratesList: Array<{
-      ratePlanId: string; roomTypeId: string; date: Date; occupancy: number; price: number;
+      ratePlanId: string;
+      roomTypeId: string;
+      date: Date;
+      occupancy: number;
+      price: number;
     }> = [];
     for (let i = 0; i < 30; i++) {
       const d = new Date(Date.UTC(2026, 5, 1 + i));
-      ratesList.push({ ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: d, occupancy: 2, price: 2500 });
+      ratesList.push({
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: d,
+        occupancy: 2,
+        price: 2500,
+      });
     }
     const rates = makeMapLookup(ratesList);
     const b = calculatePricing({
@@ -615,7 +829,13 @@ describe('PricingCalculator.calculatePricing', () => {
 
   it('subtotal equals totalPrice in Phase E (no taxes or extras yet)', () => {
     const rates = makeMapLookup([
-      { ratePlanId: STANDARD_PLAN_ID, roomTypeId: ROOM_TYPE_ID, date: date('2026-06-01'), occupancy: 2, price: 4000 },
+      {
+        ratePlanId: STANDARD_PLAN_ID,
+        roomTypeId: ROOM_TYPE_ID,
+        date: date('2026-06-01'),
+        occupancy: 2,
+        price: 4000,
+      },
     ]);
     const b = calculatePricing({
       ratePlan: STANDARD_PLAN,

@@ -186,13 +186,13 @@ function priceNight(args: {
 }
 
 function applyModifier(base: Decimal, plan: RatePlanLike): Decimal {
-  const v = new (Prisma.Decimal)(plan.priceModifierValue);
+  const v = new Prisma.Decimal(plan.priceModifierValue);
   if (v.isZero()) return base;
 
   let result: Decimal;
   if (plan.priceModifierType === 'PERCENT') {
     // price × (1 + percent/100)
-    const factor = new (Prisma.Decimal)(1).add(v.div(HUNDRED));
+    const factor = new Prisma.Decimal(1).add(v.div(HUNDRED));
     result = base.mul(factor);
   } else {
     // ABSOLUTE: add (or subtract if negative).
@@ -204,7 +204,7 @@ function applyModifier(base: Decimal, plan: RatePlanLike): Decimal {
   result = result.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
 
   // Clamp at 0 — we never charge a negative price.
-  if (result.lessThan(ZERO)) result = new (Prisma.Decimal)(0);
+  if (result.lessThan(ZERO)) result = new Prisma.Decimal(0);
   return result;
 }
 

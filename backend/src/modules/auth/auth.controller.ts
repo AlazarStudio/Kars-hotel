@@ -1,4 +1,16 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Req,
+  Res,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
@@ -103,7 +115,9 @@ export class AuthController {
     const cookies = (req as Request & { cookies?: Record<string, string> }).cookies;
     const refreshToken = cookies?.[REFRESH_COOKIE];
     if (!refreshToken) {
-      res.status(401).json({ statusCode: 401, message: 'Missing refresh token', error: 'Unauthorized' });
+      res
+        .status(401)
+        .json({ statusCode: 401, message: 'Missing refresh token', error: 'Unauthorized' });
       return;
     }
     try {

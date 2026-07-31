@@ -10,7 +10,10 @@ export class CancelReservationDto {
 }
 
 export class CheckInDto {
-  @ApiPropertyOptional({ description: 'Actual check-in time override (ISO datetime)', example: '2026-06-01T13:00:00Z' })
+  @ApiPropertyOptional({
+    description: 'Actual check-in time override (ISO datetime)',
+    example: '2026-06-01T13:00:00Z',
+  })
   @IsOptional()
   @IsString()
   actualCheckInTime?: string;

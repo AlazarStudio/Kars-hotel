@@ -102,7 +102,9 @@ export class RatesService {
     const result = await this.prisma.forTenant(async (tx) => {
       let written = 0;
       for (let i = 0; i < days; i++) {
-        const d = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate() + i));
+        const d = new Date(
+          Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate() + i),
+        );
         await tx.rate.upsert({
           where: {
             tenantId_ratePlanId_roomTypeId_date_occupancy: {

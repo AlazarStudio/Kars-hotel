@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/context/tenant-context';
@@ -237,9 +232,7 @@ export class InventoryService {
         ORDER BY date
       `;
 
-      const byDate = new Map(
-        existing.map((r) => [format(r.date, 'yyyy-MM-dd'), r]),
-      );
+      const byDate = new Map(existing.map((r) => [format(r.date, 'yyyy-MM-dd'), r]));
 
       const roomCount = await tx.room.count({
         where: { roomTypeId, isActive: true },

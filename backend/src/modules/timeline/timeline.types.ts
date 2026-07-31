@@ -9,12 +9,7 @@ export type ReservationStatus =
   | 'CANCELLED'
   | 'NO_SHOW';
 
-export type ReservationSource =
-  | 'DIRECT'
-  | 'PHONE'
-  | 'ONLINE'
-  | 'OTA'
-  | 'CORPORATE';
+export type ReservationSource = 'DIRECT' | 'PHONE' | 'ONLINE' | 'OTA' | 'CORPORATE';
 
 export type RoomStatus =
   | 'DIRTY'
@@ -32,7 +27,7 @@ export interface TimelineReservation {
   guestName: string;
   phone: string | null;
   email: string | null;
-  checkIn: string;   // ISO date 'YYYY-MM-DD'
+  checkIn: string; // ISO date 'YYYY-MM-DD'
   checkOut: string;
   status: ReservationStatus;
   adults: number;

@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/context/tenant-context';
@@ -34,12 +45,13 @@ export class RestrictionsController {
         where: {
           roomTypeId: roomTypeId || undefined,
           ratePlanId: ratePlanId === 'null' ? null : ratePlanId || undefined,
-          date: from || to
-            ? {
-                gte: from ? new Date(`${from}T00:00:00.000Z`) : undefined,
-                lte: to ? new Date(`${to}T00:00:00.000Z`) : undefined,
-              }
-            : undefined,
+          date:
+            from || to
+              ? {
+                  gte: from ? new Date(`${from}T00:00:00.000Z`) : undefined,
+                  lte: to ? new Date(`${to}T00:00:00.000Z`) : undefined,
+                }
+              : undefined,
         },
         orderBy: [{ date: 'asc' }],
       }),

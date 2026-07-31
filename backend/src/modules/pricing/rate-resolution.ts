@@ -49,7 +49,7 @@ export class BaselineResolver {
     // Most-specific season first: latest dateFrom, then highest sortOrder.
     for (const list of this.seasonsByKey.values()) {
       list.sort((a, b) =>
-        a.dateFrom === b.dateFrom ? b.sortOrder - a.sortOrder : (a.dateFrom < b.dateFrom ? 1 : -1),
+        a.dateFrom === b.dateFrom ? b.sortOrder - a.sortOrder : a.dateFrom < b.dateFrom ? 1 : -1,
       );
     }
     for (const s of standards) {

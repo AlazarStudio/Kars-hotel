@@ -2,7 +2,10 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsDateString, IsOptional, IsUUID } from 'class-validator';
 
 export class CheckAvailabilityDto {
-  @ApiPropertyOptional({ example: 'uuid-room-type-id', description: 'Filter by room type (omit for all types)' })
+  @ApiPropertyOptional({
+    example: 'uuid-room-type-id',
+    description: 'Filter by room type (omit for all types)',
+  })
   @IsOptional()
   @IsUUID()
   roomTypeId?: string;

@@ -103,7 +103,7 @@ export class TimelineService {
 
     // ── DB query ──────────────────────────────────────────────────────────
     const fromDate = parseISO(from);
-    const toDate   = parseISO(to);
+    const toDate = parseISO(to);
 
     const result = await this.prisma.forTenant(async (tx) => {
       // 1. All active rooms with their room type.
@@ -173,7 +173,7 @@ export class TimelineService {
           guestName: r.guest_name,
           phone: r.phone,
           email: r.email,
-          checkIn:  format(r.check_in,  'yyyy-MM-dd'),
+          checkIn: format(r.check_in, 'yyyy-MM-dd'),
           checkOut: format(r.check_out, 'yyyy-MM-dd'),
           status: r.status as TimelineReservation['status'],
           adults: r.adults,

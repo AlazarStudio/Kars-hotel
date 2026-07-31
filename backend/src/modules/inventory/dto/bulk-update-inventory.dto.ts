@@ -27,7 +27,10 @@ export class InventoryRowDto {
   @Min(0)
   blockedRooms?: number;
 
-  @ApiPropertyOptional({ example: false, description: 'Stop-sell flag (disables all new bookings)' })
+  @ApiPropertyOptional({
+    example: false,
+    description: 'Stop-sell flag (disables all new bookings)',
+  })
   @IsOptional()
   @IsBoolean()
   stopSell?: boolean;

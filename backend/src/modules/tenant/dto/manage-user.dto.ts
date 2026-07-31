@@ -1,4 +1,12 @@
-import { IsEmail, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateTenantUserDto {
@@ -16,7 +24,11 @@ export class CreateTenantUserDto {
   @IsUUID()
   roleId!: string;
 
-  @ApiPropertyOptional({ description: 'Initial password (min 8 chars). If omitted, a random one is generated and returned.', minLength: 8 })
+  @ApiPropertyOptional({
+    description:
+      'Initial password (min 8 chars). If omitted, a random one is generated and returned.',
+    minLength: 8,
+  })
   @IsOptional()
   @IsString()
   @MinLength(8)

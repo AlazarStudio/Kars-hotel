@@ -53,7 +53,10 @@ export class CreateRoomTypeDto {
   @Max(10)
   extraBeds?: number;
 
-  @ApiPropertyOptional({ default: 0, description: 'Base price per night (RUB), used until Phase E' })
+  @ApiPropertyOptional({
+    default: 0,
+    description: 'Base price per night (RUB), used until Phase E',
+  })
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)

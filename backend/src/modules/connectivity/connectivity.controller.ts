@@ -88,10 +88,7 @@ export class ConnectivityController {
   @HttpCode(HttpStatus.CREATED)
   @RequireScopes(PARTNER_SCOPES.ReservationsWrite)
   @ApiOperation({ summary: 'Create a reservation by room category' })
-  createReservation(
-    @Param('slug') slug: string,
-    @Body() dto: ConnectCreateReservationDto,
-  ) {
+  createReservation(@Param('slug') slug: string, @Body() dto: ConnectCreateReservationDto) {
     return this.connectivity.createReservation(slug, dto);
   }
 

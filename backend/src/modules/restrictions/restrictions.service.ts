@@ -100,8 +100,18 @@ export class RestrictionsService {
         const r = byDate.get(toISO(d));
         if (!r) continue;
 
-        if (r.closed) violations.push({ code: 'CLOSED', date: toISO(d), detail: `Дата ${toISO(d)} закрыта для бронирования` });
-        if (r.stopSell) violations.push({ code: 'STOP_SELL', date: toISO(d), detail: `Продажи на ${toISO(d)} остановлены` });
+        if (r.closed)
+          violations.push({
+            code: 'CLOSED',
+            date: toISO(d),
+            detail: `Дата ${toISO(d)} закрыта для бронирования`,
+          });
+        if (r.stopSell)
+          violations.push({
+            code: 'STOP_SELL',
+            date: toISO(d),
+            detail: `Продажи на ${toISO(d)} остановлены`,
+          });
 
         // MinLOS / MaxLOS apply when the booking *touches* this date.
         if (r.minLos != null && nights < r.minLos) {
@@ -124,7 +134,11 @@ export class RestrictionsService {
       const arrivalRow = byDate.get(toISO(arrival));
       if (arrivalRow) {
         if (arrivalRow.cta) {
-          violations.push({ code: 'CTA', date: toISO(arrival), detail: `Заезд на ${toISO(arrival)} закрыт (CTA)` });
+          violations.push({
+            code: 'CTA',
+            date: toISO(arrival),
+            detail: `Заезд на ${toISO(arrival)} закрыт (CTA)`,
+          });
         }
         if (arrivalRow.minLosArrival != null && nights < arrivalRow.minLosArrival) {
           violations.push({

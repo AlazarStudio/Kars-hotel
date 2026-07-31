@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   PRISMA_RECORD_NOT_FOUND,
@@ -111,11 +116,7 @@ export class RoomTypesService {
   /** Upload one image, append its public URL to the category's photo list. */
   async addPhoto(id: string, file: UploadedFile): Promise<{ photos: string[] }> {
     const existing = await this.get(id);
-    const url = await this.storage.uploadRoomTypePhoto(
-      this.currentTenantId(),
-      id,
-      file,
-    );
+    const url = await this.storage.uploadRoomTypePhoto(this.currentTenantId(), id, file);
     const photos = [...this.readPhotos(existing.photos), url];
     await this.persistPhotos(id, photos);
     return { photos };
@@ -153,9 +154,7 @@ export class RoomTypesService {
   }
 
   private async persistPhotos(id: string, photos: string[]): Promise<void> {
-    await this.prisma.forTenant((tx) =>
-      tx.roomType.update({ where: { id }, data: { photos } }),
-    );
+    await this.prisma.forTenant((tx) => tx.roomType.update({ where: { id }, data: { photos } }));
   }
 
   // ── helpers ────────────────────────────────────────────────────────────────

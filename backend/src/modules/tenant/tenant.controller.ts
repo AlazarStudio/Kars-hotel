@@ -1,4 +1,17 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { TenantService } from './tenant.service';
@@ -43,10 +56,7 @@ export class TenantController {
   @Patch('partner-services/:id')
   @RequirePermissions('user.update')
   @ApiOperation({ summary: 'Update a partner-facing service' })
-  updatePartnerService(
-    @Param('id') id: string,
-    @Body() dto: UpsertPartnerServiceDto,
-  ) {
+  updatePartnerService(@Param('id') id: string, @Body() dto: UpsertPartnerServiceDto) {
     return this.service.updatePartnerService(id, dto);
   }
 
@@ -128,7 +138,11 @@ export class TenantController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions('user.update')
   @ApiOperation({ summary: 'Update role or active status of a team member' })
-  updateUser(@CurrentUser() user: AuthenticatedRequestUser, @Param('userId') userId: string, @Body() dto: UpdateTenantUserDto) {
+  updateUser(
+    @CurrentUser() user: AuthenticatedRequestUser,
+    @Param('userId') userId: string,
+    @Body() dto: UpdateTenantUserDto,
+  ) {
     return this.service.updateUser(user.tenantId, userId, dto);
   }
 

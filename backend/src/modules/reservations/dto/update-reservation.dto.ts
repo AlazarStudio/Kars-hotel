@@ -74,7 +74,10 @@ export class UpdateReservationDto {
   @IsString()
   notes?: string;
 
-  @ApiPropertyOptional({ example: 1, description: 'Explicit place number within the room (skips auto-assign)' })
+  @ApiPropertyOptional({
+    example: 1,
+    description: 'Explicit place number within the room (skips auto-assign)',
+  })
   @IsOptional()
   @IsInt()
   @Min(1)

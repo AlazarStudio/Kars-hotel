@@ -11,12 +11,22 @@ export class HousekeepingService {
     const tenantId = TenantContext.getTenantIdOrThrow();
     return this.prisma.forTenant(async (tx) => {
       if (status) {
-        return tx.$queryRaw<{
-          id: string; room_id: string; room_number: string; room_type_name: string;
-          type: string; status: string; assignee_id: string | null;
-          assignee_name: string | null; created_from_reservation_id: string | null;
-          notes: string | null; completed_at: Date | null; created_at: Date;
-        }[]>`
+        return tx.$queryRaw<
+          {
+            id: string;
+            room_id: string;
+            room_number: string;
+            room_type_name: string;
+            type: string;
+            status: string;
+            assignee_id: string | null;
+            assignee_name: string | null;
+            created_from_reservation_id: string | null;
+            notes: string | null;
+            completed_at: Date | null;
+            created_at: Date;
+          }[]
+        >`
           SELECT
             ht.id, ht.room_id, r.number AS room_number, rt.name AS room_type_name,
             ht.type, ht.status, ht.assignee_id,
@@ -31,12 +41,22 @@ export class HousekeepingService {
           ORDER BY ht."createdAt" DESC
         `;
       }
-      return tx.$queryRaw<{
-        id: string; room_id: string; room_number: string; room_type_name: string;
-        type: string; status: string; assignee_id: string | null;
-        assignee_name: string | null; created_from_reservation_id: string | null;
-        notes: string | null; completed_at: Date | null; created_at: Date;
-      }[]>`
+      return tx.$queryRaw<
+        {
+          id: string;
+          room_id: string;
+          room_number: string;
+          room_type_name: string;
+          type: string;
+          status: string;
+          assignee_id: string | null;
+          assignee_name: string | null;
+          created_from_reservation_id: string | null;
+          notes: string | null;
+          completed_at: Date | null;
+          created_at: Date;
+        }[]
+      >`
         SELECT
           ht.id, ht.room_id, r.number AS room_number, rt.name AS room_type_name,
           ht.type, ht.status, ht.assignee_id,

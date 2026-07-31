@@ -23,14 +23,12 @@ export interface RateLookup {
    * Returns the per-night price for the exact (ratePlanId, roomTypeId, date,
    * occupancy) tuple or null if absent.
    */
-  find(
-    args: {
-      ratePlanId: string;
-      roomTypeId: string;
-      date: Date;
-      occupancy: number;
-    },
-  ): Decimal | null;
+  find(args: {
+    ratePlanId: string;
+    roomTypeId: string;
+    date: Date;
+    occupancy: number;
+  }): Decimal | null;
 }
 
 export interface PricingNight {

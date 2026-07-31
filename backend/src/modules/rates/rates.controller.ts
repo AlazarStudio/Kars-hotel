@@ -1,4 +1,17 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Put, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Put,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { RatesService } from './rates.service';
 import { BulkUpsertRatesDto } from './dto/bulk-upsert-rates.dto';
@@ -50,7 +63,8 @@ export class RatesController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Set the same price for every date in [fromDate, toDate]',
-    description: 'Productivity shortcut for the rate-calendar UI ("apply 3800 ₽ to the next 30 days").',
+    description:
+      'Productivity shortcut for the rate-calendar UI ("apply 3800 ₽ to the next 30 days").',
   })
   fill(@Body() dto: FillRatesDto) {
     return this.service.fillRange(dto);

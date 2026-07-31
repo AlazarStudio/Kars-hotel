@@ -71,7 +71,9 @@ export class PartnerKeyService {
       },
     });
 
-    this.logger.log(`Partner key minted: ${row.name} (${keyPrefix}…) scopes=[${params.scopes.join(', ')}]`);
+    this.logger.log(
+      `Partner key minted: ${row.name} (${keyPrefix}…) scopes=[${params.scopes.join(', ')}]`,
+    );
     return { id: row.id, name: row.name, keyPrefix, scopes: row.scopes, plaintext };
   }
 

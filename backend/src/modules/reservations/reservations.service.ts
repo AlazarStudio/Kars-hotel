@@ -17,7 +17,7 @@ import { UpdateReservationDto } from './dto/update-reservation.dto';
 import { SwapReservationsDto } from './dto/swap-reservations.dto';
 import { parseISO, format } from 'date-fns';
 
-const VALID_SOURCES  = ['DIRECT', 'PHONE', 'ONLINE', 'OTA', 'CORPORATE'];
+const VALID_SOURCES = ['DIRECT', 'PHONE', 'ONLINE', 'OTA', 'CORPORATE'];
 const VALID_STATUSES = ['NEW', 'CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT', 'CANCELLED', 'NO_SHOW'];
 
 @Injectable()
@@ -55,11 +55,12 @@ export class ReservationsService {
       ? (dto.source as string).toUpperCase()
       : 'DIRECT';
 
-    const initialStatus = dto.status && VALID_STATUSES.includes(dto.status.toUpperCase())
-      ? dto.status.toUpperCase()
-      : 'CONFIRMED';
+    const initialStatus =
+      dto.status && VALID_STATUSES.includes(dto.status.toUpperCase())
+        ? dto.status.toUpperCase()
+        : 'CONFIRMED';
 
-    const checkIn  = parseISO(dto.checkIn);
+    const checkIn = parseISO(dto.checkIn);
     const checkOut = parseISO(dto.checkOut);
 
     if (checkOut <= checkIn) {
@@ -98,17 +99,22 @@ export class ReservationsService {
       // 3. Auto-assign: pick the lowest available place number
       let placeNumber: number | null = null;
       for (let p = 1; p <= capacity; p++) {
-        if (!takenPlaces.has(p)) { placeNumber = p; break; }
+        if (!takenPlaces.has(p)) {
+          placeNumber = p;
+          break;
+        }
       }
       if (placeNumber === null) return { ok: false, reason: 'NO_PLACE_AVAILABLE' };
 
       // 4. Insert reservation
-      const [res] = await tx.$queryRaw<{
-        id: string;
-        status: string;
-        version: number;
-        place_number: number;
-      }[]>`
+      const [res] = await tx.$queryRaw<
+        {
+          id: string;
+          status: string;
+          version: number;
+          place_number: number;
+        }[]
+      >`
         INSERT INTO reservation (
           tenant_id, room_id, room_type_id, guest_name, phone, email,
           check_in, check_out,
@@ -138,7 +144,13 @@ export class ReservationsService {
       `;
 
       this.logger.log(`Reservation created: ${res.id} room ${dto.roomId} place ${placeNumber}`);
-      return { ok: true, id: res.id, status: res.status, version: res.version, placeNumber: res.place_number };
+      return {
+        ok: true,
+        id: res.id,
+        status: res.status,
+        version: res.version,
+        placeNumber: res.place_number,
+      };
     });
 
     if (!result.ok) {
@@ -158,10 +170,18 @@ export class ReservationsService {
       entity: 'reservation',
       entityId: result.id,
       action: 'create',
-      diff: { before: {}, after: { status: result.status, roomId: dto.roomId, guestName: dto.guestName } },
+      diff: {
+        before: {},
+        after: { status: result.status, roomId: dto.roomId, guestName: dto.guestName },
+      },
     });
 
-    return { id: result.id, status: result.status, version: result.version, placeNumber: result.placeNumber };
+    return {
+      id: result.id,
+      status: result.status,
+      version: result.version,
+      placeNumber: result.placeNumber,
+    };
   }
 
   // ─── Update ───────────────────────────────────────────────────────────────
@@ -171,29 +191,40 @@ export class ReservationsService {
 
     type TxResult =
       | { ok: true; id: string; version: number; status: string }
-      | { ok: false; reason: 'NOT_FOUND' | 'VERSION_MISMATCH' | 'DATE_CONFLICT' | 'NO_PLACE_AVAILABLE' | 'ROOM_NOT_FOUND' | 'BOOKING_CONFLICT' };
+      | {
+          ok: false;
+          reason:
+            | 'NOT_FOUND'
+            | 'VERSION_MISMATCH'
+            | 'DATE_CONFLICT'
+            | 'NO_PLACE_AVAILABLE'
+            | 'ROOM_NOT_FOUND'
+            | 'BOOKING_CONFLICT';
+        };
 
     const result = await this.prisma.forTenant(async (tx): Promise<TxResult> => {
       // 1. Fetch the current row
-      const rows = await tx.$queryRaw<{
-        id: string;
-        room_id: string;
-        room_type_id: string;
-        check_in: Date;
-        check_out: Date;
-        version: number;
-        guest_name: string;
-        phone: string | null;
-        email: string | null;
-        adults: number;
-        children: number;
-        status: string;
-        source: string;
-        notes: string | null;
-        total_price: string | null;
-        rate_plan_id: string | null;
-        place_number: number;
-      }[]>`
+      const rows = await tx.$queryRaw<
+        {
+          id: string;
+          room_id: string;
+          room_type_id: string;
+          check_in: Date;
+          check_out: Date;
+          version: number;
+          guest_name: string;
+          phone: string | null;
+          email: string | null;
+          adults: number;
+          children: number;
+          status: string;
+          source: string;
+          notes: string | null;
+          total_price: string | null;
+          rate_plan_id: string | null;
+          place_number: number;
+        }[]
+      >`
         SELECT
           id, room_id, room_type_id, check_in, check_out, version,
           guest_name, phone, email, adults, children, status, source,
@@ -212,8 +243,8 @@ export class ReservationsService {
       }
 
       // 3. Resolve final values
-      const roomId   = dto.roomId  ?? cur.room_id;
-      const checkIn  = dto.checkIn  ? parseISO(dto.checkIn)  : cur.check_in;
+      const roomId = dto.roomId ?? cur.room_id;
+      const checkIn = dto.checkIn ? parseISO(dto.checkIn) : cur.check_in;
       const checkOut = dto.checkOut ? parseISO(dto.checkOut) : cur.check_out;
 
       if (checkOut <= checkIn) {
@@ -221,11 +252,15 @@ export class ReservationsService {
       }
 
       const status = dto.status
-        ? (VALID_STATUSES.includes(dto.status.toUpperCase()) ? dto.status.toUpperCase() : cur.status)
+        ? VALID_STATUSES.includes(dto.status.toUpperCase())
+          ? dto.status.toUpperCase()
+          : cur.status
         : cur.status;
 
       const source = dto.source
-        ? (VALID_SOURCES.includes(dto.source.toUpperCase()) ? dto.source.toUpperCase() : cur.source)
+        ? VALID_SOURCES.includes(dto.source.toUpperCase())
+          ? dto.source.toUpperCase()
+          : cur.source
         : cur.source;
 
       // 4. Resolve place number
@@ -266,7 +301,10 @@ export class ReservationsService {
           const takenPlaces = new Set(occupied.map((r) => r.place_number));
           let assigned: number | null = null;
           for (let p = 1; p <= roomRows[0].capacity; p++) {
-            if (!takenPlaces.has(p)) { assigned = p; break; }
+            if (!takenPlaces.has(p)) {
+              assigned = p;
+              break;
+            }
           }
           if (assigned === null) return { ok: false, reason: 'NO_PLACE_AVAILABLE' };
           placeNumber = assigned;
@@ -298,7 +336,10 @@ export class ReservationsService {
             const takenPlaces = new Set(occupied.map((r) => r.place_number));
             let assigned: number | null = null;
             for (let p = 1; p <= capacity; p++) {
-              if (!takenPlaces.has(p)) { assigned = p; break; }
+              if (!takenPlaces.has(p)) {
+                assigned = p;
+                break;
+              }
             }
             if (assigned === null) return { ok: false, reason: 'NO_PLACE_AVAILABLE' };
             placeNumber = assigned;
@@ -319,15 +360,20 @@ export class ReservationsService {
       }
 
       // 6. Update — bump version atomically
-      const checkInStr  = format(checkIn,  'yyyy-MM-dd');
+      const checkInStr = format(checkIn, 'yyyy-MM-dd');
       const checkOutStr = format(checkOut, 'yyyy-MM-dd');
-      const guestName   = dto.guestName  ?? cur.guest_name;
-      const phone       = dto.phone  !== undefined ? (dto.phone  || null) : cur.phone;
-      const email       = dto.email  !== undefined ? (dto.email  || null) : cur.email;
-      const adults      = dto.adults    ?? cur.adults;
-      const children    = dto.children  ?? cur.children;
-      const notes       = dto.notes  !== undefined ? (dto.notes  || null) : cur.notes;
-      const totalPrice  = dto.totalPrice !== undefined ? dto.totalPrice : (cur.total_price ? Number(cur.total_price) : null);
+      const guestName = dto.guestName ?? cur.guest_name;
+      const phone = dto.phone !== undefined ? dto.phone || null : cur.phone;
+      const email = dto.email !== undefined ? dto.email || null : cur.email;
+      const adults = dto.adults ?? cur.adults;
+      const children = dto.children ?? cur.children;
+      const notes = dto.notes !== undefined ? dto.notes || null : cur.notes;
+      const totalPrice =
+        dto.totalPrice !== undefined
+          ? dto.totalPrice
+          : cur.total_price
+            ? Number(cur.total_price)
+            : null;
 
       const [res] = await tx.$queryRaw<{ id: string; version: number; status: string }[]>`
         UPDATE reservation SET
@@ -369,7 +415,9 @@ export class ReservationsService {
         case 'ROOM_NOT_FOUND':
           throw new NotFoundException('Room not found or inactive');
         case 'BOOKING_CONFLICT':
-          throw new ConflictException('The requested place is already booked for the selected period');
+          throw new ConflictException(
+            'The requested place is already booked for the selected period',
+          );
       }
     }
 
@@ -397,9 +445,14 @@ export class ReservationsService {
       | { ok: false; reason: 'NOT_FOUND' | 'VERSION_MISMATCH' | 'DIFFERENT_ROOMS' };
 
     const result = await this.prisma.forTenant(async (tx): Promise<SwapResult> => {
-      const rows = await tx.$queryRaw<{
-        id: string; room_id: string; place_number: number; version: number;
-      }[]>`
+      const rows = await tx.$queryRaw<
+        {
+          id: string;
+          room_id: string;
+          place_number: number;
+          version: number;
+        }[]
+      >`
         SELECT id, room_id, place_number, version
         FROM reservation
         WHERE id IN (${dto.idA}::uuid, ${dto.idB}::uuid)
@@ -407,8 +460,8 @@ export class ReservationsService {
 
       if (rows.length !== 2) return { ok: false, reason: 'NOT_FOUND' };
 
-      const rowA = rows.find(r => r.id === dto.idA)!;
-      const rowB = rows.find(r => r.id === dto.idB)!;
+      const rowA = rows.find((r) => r.id === dto.idA)!;
+      const rowB = rows.find((r) => r.id === dto.idB)!;
 
       if (rowA.version !== dto.versionA || rowB.version !== dto.versionB) {
         return { ok: false, reason: 'VERSION_MISMATCH' };
@@ -457,12 +510,25 @@ export class ReservationsService {
   async getArrivals(date: string) {
     const tenantId = TenantContext.getTenantIdOrThrow();
     return this.prisma.forTenant(async (tx) => {
-      return tx.$queryRaw<{
-        id: string; guest_name: string; phone: string | null; email: string | null;
-        room_id: string; room_type_id: string; check_in: Date; check_out: Date;
-        status: string; adults: number; children: number; notes: string | null;
-        total_price: string | null; rate_plan_id: string | null; source: string;
-      }[]>`
+      return tx.$queryRaw<
+        {
+          id: string;
+          guest_name: string;
+          phone: string | null;
+          email: string | null;
+          room_id: string;
+          room_type_id: string;
+          check_in: Date;
+          check_out: Date;
+          status: string;
+          adults: number;
+          children: number;
+          notes: string | null;
+          total_price: string | null;
+          rate_plan_id: string | null;
+          source: string;
+        }[]
+      >`
         SELECT id, guest_name, phone, email, room_id, room_type_id,
                check_in, check_out, status, adults, children, notes,
                total_price::text, rate_plan_id, source
@@ -479,12 +545,25 @@ export class ReservationsService {
   async getDepartures(date: string) {
     const tenantId = TenantContext.getTenantIdOrThrow();
     return this.prisma.forTenant(async (tx) => {
-      return tx.$queryRaw<{
-        id: string; guest_name: string; phone: string | null; email: string | null;
-        room_id: string; room_type_id: string; check_in: Date; check_out: Date;
-        status: string; adults: number; children: number; notes: string | null;
-        total_price: string | null; rate_plan_id: string | null; source: string;
-      }[]>`
+      return tx.$queryRaw<
+        {
+          id: string;
+          guest_name: string;
+          phone: string | null;
+          email: string | null;
+          room_id: string;
+          room_type_id: string;
+          check_in: Date;
+          check_out: Date;
+          status: string;
+          adults: number;
+          children: number;
+          notes: string | null;
+          total_price: string | null;
+          rate_plan_id: string | null;
+          source: string;
+        }[]
+      >`
         SELECT id, guest_name, phone, email, room_id, room_type_id,
                check_in, check_out, status, adults, children, notes,
                total_price::text, rate_plan_id, source
@@ -572,7 +651,9 @@ export class ReservationsService {
       | { ok: false; reason: 'NOT_FOUND' | 'WRONG_STATUS' };
 
     const result = await this.prisma.forTenant(async (tx): Promise<TxResult> => {
-      const rows = await tx.$queryRaw<{ id: string; status: string; version: number; room_id: string }[]>`
+      const rows = await tx.$queryRaw<
+        { id: string; status: string; version: number; room_id: string }[]
+      >`
         SELECT id, status, version, room_id FROM reservation WHERE id = ${id}::uuid LIMIT 1
       `;
       if (!rows.length) return { ok: false, reason: 'NOT_FOUND' };
@@ -594,7 +675,13 @@ export class ReservationsService {
         WHERE id = ${cur.room_id}::uuid
       `;
 
-      return { ok: true, id: res.id, version: res.version, before: cur.status, roomId: cur.room_id };
+      return {
+        ok: true,
+        id: res.id,
+        version: res.version,
+        before: cur.status,
+        roomId: cur.room_id,
+      };
     });
 
     if (!result.ok) {
@@ -664,7 +751,9 @@ export class ReservationsService {
 
     if (!result.ok) {
       if (result.reason === 'NOT_FOUND') throw new NotFoundException('Reservation not found');
-      throw new ConflictException(`Cannot mark as no-show: current status must be NEW or CONFIRMED`);
+      throw new ConflictException(
+        `Cannot mark as no-show: current status must be NEW or CONFIRMED`,
+      );
     }
 
     await this.prisma.writeAuditLog({
@@ -702,12 +791,7 @@ export class ReservationsService {
    * calling through with `fromChannel: true`. This keeps a single source of truth
    * for the booking's lifecycle and prevents the two systems drifting out of sync.
    */
-  async cancel(
-    id: string,
-    userId: string,
-    reason?: string,
-    opts: { fromChannel?: boolean } = {},
-  ) {
+  async cancel(id: string, userId: string, reason?: string, opts: { fromChannel?: boolean } = {}) {
     const tenantId = TenantContext.getTenantIdOrThrow();
 
     type TxResult =

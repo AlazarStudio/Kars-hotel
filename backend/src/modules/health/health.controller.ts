@@ -32,11 +32,15 @@ export class HealthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Liveness + readiness probe',
-    description: 'Pings Postgres and Redis. Returns 200 always; "status" is "degraded" if a dependency is down.',
+    description:
+      'Pings Postgres and Redis. Returns 200 always; "status" is "degraded" if a dependency is down.',
   })
   @ApiResponse({ status: 200, description: 'Health snapshot' })
   async check(): Promise<HealthPayload> {
-    const [dbResult, redisResult] = await Promise.allSettled([this.prisma.ping(), this.redis.ping()]);
+    const [dbResult, redisResult] = await Promise.allSettled([
+      this.prisma.ping(),
+      this.redis.ping(),
+    ]);
 
     const db: HealthPayload['components']['db'] =
       dbResult.status === 'fulfilled'
@@ -48,7 +52,8 @@ export class HealthController {
         ? { status: 'ok' }
         : { status: 'down', error: this.errorMessage(redisResult.reason) };
 
-    const status: HealthPayload['status'] = db.status === 'ok' && redis.status === 'ok' ? 'ok' : 'degraded';
+    const status: HealthPayload['status'] =
+      db.status === 'ok' && redis.status === 'ok' ? 'ok' : 'degraded';
 
     return {
       status,

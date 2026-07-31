@@ -1,9 +1,4 @@
-import {
-  ConflictException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext, RequestContext } from '../../common/context/tenant-context';
 import { AuthService } from '../auth/auth.service';
@@ -73,19 +68,13 @@ export class ConnectivityService {
    * first use). With a hotel slug the link lands inside that hotel («от имени
    * <name>»); without — in the admin panel as the dispatcher. Single-use, 60 s.
    */
-  async createSso(
-    dispatcher: { email: string; fullName: string },
-    hotelSlug?: string,
-  ) {
+  async createSso(dispatcher: { email: string; fullName: string }, hotelSlug?: string) {
     let tenantId: string | null = null;
     if (hotelSlug) {
       const tenant = await this.resolveTenant(hotelSlug);
       tenantId = tenant.id;
     }
-    const { code, expiresInSeconds } = await this.auth.createSsoCode(
-      dispatcher,
-      tenantId,
-    );
+    const { code, expiresInSeconds } = await this.auth.createSsoCode(dispatcher, tenantId);
     this.logger.log(
       `Partner SSO code minted for ${dispatcher.email} → ${hotelSlug ?? 'platform'} (ttl ${expiresInSeconds}s)`,
     );
@@ -271,12 +260,7 @@ export class ConnectivityService {
         // Physical rooms of this category, each with its parameters and whether
         // it is free for the whole stay — so the partner's dispatcher can pick a
         // specific room and see occupied ones up-front (not at booking time).
-        const rooms = await this.listRoomsForCategory(
-          tenant.id,
-          rt.id,
-          dto.checkIn,
-          dto.checkOut,
-        );
+        const rooms = await this.listRoomsForCategory(tenant.id, rt.id, dto.checkIn, dto.checkOut);
 
         offers.push({
           categoryId: rt.id,
@@ -363,12 +347,7 @@ export class ConnectivityService {
           dto.checkOut,
         );
       } else {
-        roomId = await this.pickAvailableRoom(
-          tenant.id,
-          dto.categoryId,
-          dto.checkIn,
-          dto.checkOut,
-        );
+        roomId = await this.pickAvailableRoom(tenant.id, dto.categoryId, dto.checkIn, dto.checkOut);
       }
       if (!roomId) {
         throw new ConflictException('No room available in this category for the selected dates');
@@ -712,9 +691,7 @@ export class ConnectivityService {
             }
           : undefined,
       infrastructure: Array.isArray(t.infrastructure)
-        ? (t.infrastructure as unknown[]).filter(
-            (x): x is string => typeof x === 'string',
-          )
+        ? (t.infrastructure as unknown[]).filter((x): x is string => typeof x === 'string')
         : undefined,
     };
   }

@@ -53,8 +53,7 @@ export class RoomsController {
       if (Number.isNaN(n)) throw new BadRequestException('floor must be an integer');
       floor = n;
     }
-    const isActive =
-      isActiveRaw === 'true' ? true : isActiveRaw === 'false' ? false : undefined;
+    const isActive = isActiveRaw === 'true' ? true : isActiveRaw === 'false' ? false : undefined;
     return this.service.list({
       roomTypeId,
       floor,
@@ -98,10 +97,7 @@ export class RoomsController {
   @Patch(':id/status')
   @RequirePermissions('room.update')
   @ApiOperation({ summary: 'Change just the room status (housekeeping shortcut)' })
-  setStatus(
-    @Param('id', new ParseUUIDPipe()) id: string,
-    @Body() dto: UpdateRoomStatusDto,
-  ) {
+  setStatus(@Param('id', new ParseUUIDPipe()) id: string, @Body() dto: UpdateRoomStatusDto) {
     return this.service.setStatus(id, dto.status);
   }
 

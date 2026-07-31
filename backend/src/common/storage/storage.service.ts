@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  OnModuleInit,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client as MinioClient } from 'minio';
 import { randomUUID } from 'node:crypto';
@@ -50,9 +45,7 @@ export class StorageService implements OnModuleInit {
     const endpoint = this.config.get<string>('S3_ENDPOINT') ?? 'http://localhost:9000';
     const url = new URL(endpoint);
     this.bucket = this.config.get<string>('S3_BUCKET') ?? 'kars-hotel';
-    this.publicBase = (
-      this.config.get<string>('S3_PUBLIC_URL') ?? endpoint
-    ).replace(/\/+$/, '');
+    this.publicBase = (this.config.get<string>('S3_PUBLIC_URL') ?? endpoint).replace(/\/+$/, '');
 
     this.client = new MinioClient({
       endPoint: url.hostname,
@@ -123,16 +116,11 @@ export class StorageService implements OnModuleInit {
       );
     }
     if (!res.ok) {
-      throw new BadRequestException(
-        `Источник вернул ${res.status} при загрузке ${sourceUrl}`,
-      );
+      throw new BadRequestException(`Источник вернул ${res.status} при загрузке ${sourceUrl}`);
     }
 
     const buffer = Buffer.from(await res.arrayBuffer());
-    let mimetype = (res.headers.get('content-type') ?? '')
-      .split(';')[0]
-      .trim()
-      .toLowerCase();
+    let mimetype = (res.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
     // Some hosts omit or mislabel the content-type — fall back to sniffing the
     // magic bytes so a valid image still gets stored with the right extension.
     if (!ALLOWED_MIME[mimetype]) {
@@ -146,10 +134,7 @@ export class StorageService implements OnModuleInit {
   }
 
   /** Validate an image file and store it under `{keyPrefix}/{uuid}.{ext}`. */
-  private async putImage(
-    keyPrefix: string,
-    file: UploadedFile,
-  ): Promise<string> {
+  private async putImage(keyPrefix: string, file: UploadedFile): Promise<string> {
     const ext = ALLOWED_MIME[file.mimetype];
     if (!ext) {
       throw new BadRequestException(
@@ -199,7 +184,10 @@ export class StorageService implements OnModuleInit {
   private async ensureBucket(): Promise<void> {
     const exists = await this.client.bucketExists(this.bucket).catch(() => false);
     if (!exists) {
-      await this.client.makeBucket(this.bucket, this.config.get<string>('S3_REGION') ?? 'us-east-1');
+      await this.client.makeBucket(
+        this.bucket,
+        this.config.get<string>('S3_REGION') ?? 'us-east-1',
+      );
       this.logger.log(`Created bucket "${this.bucket}"`);
     }
     // Anonymous read-only on objects so partners can fetch photos by URL.
@@ -224,16 +212,11 @@ function sniffImageMime(buf: Buffer): string | null {
   // JPEG: FF D8 FF
   if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
   // PNG: 89 50 4E 47
-  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47)
-    return 'image/png';
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'image/png';
   // GIF: "GIF8"
-  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38)
-    return 'image/gif';
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return 'image/gif';
   // WEBP: "RIFF"...."WEBP"
-  if (
-    buf.toString('ascii', 0, 4) === 'RIFF' &&
-    buf.toString('ascii', 8, 12) === 'WEBP'
-  )
+  if (buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP')
     return 'image/webp';
   return null;
 }
