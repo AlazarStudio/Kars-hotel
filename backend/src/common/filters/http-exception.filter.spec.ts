@@ -53,9 +53,7 @@ describe('HttpExceptionFilter', () => {
     );
 
     expect(status).toHaveBeenCalledWith(404);
-    expect(json).toHaveBeenCalledWith(
-      expect.objectContaining({ statusCode: 404 }),
-    );
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404 }));
   });
 
   it('keeps the status of an HttpException from this module copy', () => {

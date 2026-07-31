@@ -1,6 +1,11 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import {
+  PRISMA_RECORD_NOT_FOUND,
+  PRISMA_UNIQUE_VIOLATION,
+  asError,
+  prismaErrorCode,
+} from '../../common/prisma/prisma-error';
 import { StorageService, UploadedFile } from '../../common/storage/storage.service';
 import { CreateRoomTypeDto } from './dto/create-room-type.dto';
 import { UpdateRoomTypeDto } from './dto/update-room-type.dto';
@@ -170,16 +175,15 @@ export class RoomTypesService {
   }
 
   private translatePrismaError(e: unknown, code?: string): Error {
-    if (e instanceof Prisma.PrismaClientKnownRequestError) {
-      if (e.code === 'P2002') {
+    switch (prismaErrorCode(e)) {
+      case PRISMA_UNIQUE_VIOLATION:
         return new ConflictException(
           `Категория с кодом "${code ?? '?'}" уже существует в этом отеле`,
         );
-      }
-      if (e.code === 'P2025') {
+      case PRISMA_RECORD_NOT_FOUND:
         return new NotFoundException('Категория не найдена');
-      }
+      default:
+        return asError(e);
     }
-    return e instanceof Error ? e : new Error(String(e));
   }
 }

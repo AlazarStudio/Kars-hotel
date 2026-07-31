@@ -1,6 +1,11 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import {
+  PRISMA_RECORD_NOT_FOUND,
+  PRISMA_UNIQUE_VIOLATION,
+  asError,
+  prismaErrorCode,
+} from '../../common/prisma/prisma-error';
 import { TenantContext } from '../../common/context/tenant-context';
 import { CreateRatePlanDto } from './dto/create-rate-plan.dto';
 import { UpdateRatePlanDto } from './dto/update-rate-plan.dto';
@@ -103,14 +108,13 @@ export class RatePlansService {
   }
 
   private translatePrismaError(e: unknown, code?: string): Error {
-    if (e instanceof Prisma.PrismaClientKnownRequestError) {
-      if (e.code === 'P2002') {
+    switch (prismaErrorCode(e)) {
+      case PRISMA_UNIQUE_VIOLATION:
         return new ConflictException(`Тариф с кодом "${code ?? '?'}" уже существует`);
-      }
-      if (e.code === 'P2025') {
+      case PRISMA_RECORD_NOT_FOUND:
         return new NotFoundException('Тариф не найден');
-      }
+      default:
+        return asError(e);
     }
-    return e instanceof Error ? e : new Error(String(e));
   }
 }

@@ -1,6 +1,12 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, RoomPartnerHold, RoomStatus } from '@prisma/client';
+import { RoomPartnerHold, RoomStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import {
+  PRISMA_RECORD_NOT_FOUND,
+  PRISMA_UNIQUE_VIOLATION,
+  asError,
+  prismaErrorCode,
+} from '../../common/prisma/prisma-error';
 import { TenantContext } from '../../common/context/tenant-context';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
@@ -265,16 +271,13 @@ export class RoomsService {
   }
 
   private translatePrismaError(e: unknown, contextValue?: string): Error {
-    if (e instanceof Prisma.PrismaClientKnownRequestError) {
-      if (e.code === 'P2002') {
-        return new ConflictException(
-          `Номер "${contextValue ?? '?'}" уже существует в этом отеле`,
-        );
-      }
-      if (e.code === 'P2025') {
+    switch (prismaErrorCode(e)) {
+      case PRISMA_UNIQUE_VIOLATION:
+        return new ConflictException(`Номер "${contextValue ?? '?'}" уже существует в этом отеле`);
+      case PRISMA_RECORD_NOT_FOUND:
         return new NotFoundException('Номер не найден');
-      }
+      default:
+        return asError(e);
     }
-    return e instanceof Error ? e : new Error(String(e));
   }
 }

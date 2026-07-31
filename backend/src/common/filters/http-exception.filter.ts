@@ -25,10 +25,7 @@ import { Request, Response } from 'express';
 function asHttpException(e: unknown): HttpException | null {
   if (!(e instanceof Object)) return null;
   const candidate = e as Partial<HttpException>;
-  if (
-    typeof candidate.getStatus !== 'function' ||
-    typeof candidate.getResponse !== 'function'
-  ) {
+  if (typeof candidate.getStatus !== 'function' || typeof candidate.getResponse !== 'function') {
     return null;
   }
   const status = candidate.getStatus();
