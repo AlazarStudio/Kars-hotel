@@ -33,6 +33,24 @@ HTTP/REST**, через партнёрский connectivity-API. Никаких 
 - Frontend: `cd frontend && npm run lint` (eslint, `--max-warnings 0`),
   `npm run build` (vite build).
 
+**Гоча (регистр пути в pnpm-симлинках):** junction'ы в `node_modules` хранят
+абсолютный путь с тем регистром, каким его видел `pnpm install`. Установка из
+`d:\github\kars-hotel` вместо `D:\GitHub\Kars-hotel` даёт симлинки на другой
+регистр — и Node, у которого кэш модулей регистрозависим, грузит один и тот же
+пакет ДВАЖДЫ. Последствие тихое: `instanceof` между копиями даёт `false`
+(так 404 от роутера уезжали партнёру как 500). Проверка:
+
+```
+node -e "const{createRequire}=require('module');const a=require.resolve('@nestjs/common');const b=createRequire(require.resolve('@nestjs/core')).resolve('@nestjs/common');console.log(a===b?'ок':'ДУБЛЬ:\n'+a+'\n'+b)"
+```
+
+Лечится переустановкой из правильно набранного пути (`Remove-Item -Recurse
+node_modules; pnpm install --frozen-lockfile`, затем `npx prisma generate` —
+build-скрипты pnpm игнорирует). Поэтому же в коде **не полагаться на
+`instanceof`** для классов из зависимостей: и `HttpException`, и ошибки Prisma
+проверяются структурно (`common/filters/http-exception.filter.ts`,
+`common/prisma/prisma-error.ts`).
+
 ## Конвенции
 
 - **Миграции пишутся руками** в
