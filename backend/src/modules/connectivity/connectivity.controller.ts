@@ -19,6 +19,7 @@ import { PARTNER_SCOPES, RequireScopes } from './decorators/partner-scopes.decor
 import { ConnectAvailabilityDto } from './dto/connect-availability.dto';
 import { ConnectCreateReservationDto } from './dto/connect-create-reservation.dto';
 import { ConnectCancelDto } from './dto/connect-cancel.dto';
+import { ConnectRegisterHotelDto } from './dto/connect-register-hotel.dto';
 
 /**
  * Partner connectivity API — the cross-tenant integration surface consumed by
@@ -65,9 +66,29 @@ export class ConnectivityController {
 
   @Get('hotels')
   @RequireScopes(PARTNER_SCOPES.HotelsRead)
-  @ApiOperation({ summary: 'List all connected hotels' })
-  listHotels() {
-    return this.connectivity.listHotels();
+  @ApiOperation({
+    summary: 'List all connected hotels',
+    description:
+      'includeProvisional=1 — вместе с разовыми, заведёнными партнёром под ' +
+      'конкретный случай. По умолчанию их нет: договора с ними не заключено.',
+  })
+  listHotels(@Query('includeProvisional') includeProvisional?: string) {
+    return this.connectivity.listHotels({
+      includeProvisional: includeProvisional === '1' || includeProvisional === 'true',
+    });
+  }
+
+  @Post('hotels')
+  @RequireScopes(PARTNER_SCOPES.HotelsWrite)
+  @ApiOperation({
+    summary: 'Register a hotel',
+    description:
+      'Заводит запись гостиницы без кабинета и номерного фонда: диспетчер ' +
+      'сбойной заявки знает название, город и адрес, и селить людей надо ' +
+      'сейчас. По умолчанию — разовая, в каталоге не показывается.',
+  })
+  registerHotel(@Body() dto: ConnectRegisterHotelDto) {
+    return this.connectivity.registerHotel(dto);
   }
 
   @Get('hotels/:slug')

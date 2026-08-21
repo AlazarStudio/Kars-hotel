@@ -6,6 +6,8 @@ import { AvailabilityService } from '../inventory/availability.service';
 import { ReservationsService } from '../reservations/reservations.service';
 import { ConnectAvailabilityDto } from './dto/connect-availability.dto';
 import { ConnectCreateReservationDto } from './dto/connect-create-reservation.dto';
+import { ConnectRegisterHotelDto } from './dto/connect-register-hotel.dto';
+import { slugifyHotelName } from '../auth/slug.util';
 
 /**
  * Cross-tenant connectivity service backing the partner API.
@@ -35,14 +37,27 @@ export class ConnectivityService {
 
   // ─── Catalog (cross-tenant) ────────────────────────────────────────────────
 
-  async listHotels() {
+  /**
+   * Каталог гостиниц.
+   *
+   * `includeProvisional` — показать и разовые, заведённые из сбойной заявки.
+   * По умолчанию их НЕТ: диспетчер, размещающий экипаж планово, не должен
+   * натыкаться на гостиницу, куда однажды ночью отвезли людей и с которой нет
+   * договора. Просит их ровно один экран — проживание сбойной заявки.
+   */
+  async listHotels(opts: { includeProvisional?: boolean } = {}) {
     const tenants = await this.prisma.admin.tenant.findMany({
       /* В3 · partnerVisible скрывает отель из каталога, не выключая его самого:
        * «пока не берём заявки» не должно означать «сотрудники не могут войти». */
       where: {
         isActive: true,
-        partnerVisible: true,
         slug: { not: ConnectivityService.PLATFORM_SLUG },
+        /* Разовая гостиница видимости в каталоге не имеет по определению,
+           поэтому при `includeProvisional` условие снимается целиком: иначе
+           фильтр по partnerVisible отсёк бы ровно то, что просили. */
+        ...(opts.includeProvisional
+          ? { OR: [{ partnerVisible: true }, { provisional: true }] }
+          : { partnerVisible: true, provisional: false }),
       },
       orderBy: { name: 'asc' },
     });
@@ -60,6 +75,56 @@ export class ConnectivityService {
       ...this.mapHotel(t),
       categoryCount: countByTenant.get(t.id) ?? 0,
     }));
+  }
+
+  /**
+   * Регистрация гостиницы партнёром.
+   *
+   * Заводится ТОЛЬКО запись гостиницы: ни пользователей, ни ролей, ни
+   * номерного фонда. Диспетчер сбойной заявки знает название, город и адрес —
+   * требовать от него почту администратора и пароль посреди ночи значит не
+   * дать поселить людей. Кабинет заводят потом, если с гостиницей заключат
+   * договор; тогда же снимают признак `provisional`.
+   *
+   * По умолчанию гостиница разовая и в каталоге не показывается.
+   */
+  async registerHotel(dto: ConnectRegisterHotelDto) {
+    const name = dto.name.trim();
+    const slug = await this.resolveFreeSlug(name);
+    const tenant = await this.prisma.admin.tenant.create({
+      data: {
+        slug,
+        name,
+        city: dto.city?.trim() || null,
+        address: [dto.region?.trim(), dto.address?.trim()].filter(Boolean).join(', ') || null,
+        phone: dto.phone?.trim() || null,
+        airportCode: dto.airportCode?.trim().toUpperCase() || null,
+        capacity: dto.capacity ?? null,
+        provisional: dto.provisional ?? true,
+        /* Разовая не предлагается в каталоге — это и есть смысл признака.
+           Обычную (provisional: false) заводят видимой сразу. */
+        partnerVisible: !(dto.provisional ?? true),
+      },
+    });
+    this.logger.log(
+      `Partner registered hotel «${tenant.name}» (${tenant.slug})` +
+        `${tenant.provisional ? ' as provisional' : ''}`,
+    );
+    return { ...this.mapHotel(tenant), categoryCount: 0 };
+  }
+
+  /** Свободный slug под именем гостиницы: «Кавказ» → kavkaz, kavkaz-2, … */
+  private async resolveFreeSlug(name: string): Promise<string> {
+    const base = slugifyHotelName(name);
+    for (let n = 1; n < 50; n++) {
+      const candidate = n === 1 ? base : `${base}-${n}`;
+      const taken = await this.prisma.admin.tenant.findUnique({
+        where: { slug: candidate },
+        select: { id: true },
+      });
+      if (!taken) return candidate;
+    }
+    throw new ConflictException('Не удалось подобрать адрес для гостиницы');
   }
 
   /**
@@ -653,11 +718,15 @@ export class ConnectivityService {
     mealLunch: string | null;
     mealDinner: string | null;
     infrastructure: unknown;
+    provisional?: boolean;
   }) {
     return {
       id: t.id,
       slug: t.slug,
       name: t.name,
+      /* Разовая гостиница: заведена партнёром под конкретный случай, договора
+         нет. Партнёр показывает её только там, где она и появилась. */
+      provisional: t.provisional ?? false,
       city: t.city,
       address: t.address,
       country: t.country,

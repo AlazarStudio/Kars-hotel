@@ -3,6 +3,10 @@ import { SetMetadata } from '@nestjs/common';
 /** Scopes a partner API key may hold. Mirrored on the Avia adapter side. */
 export const PARTNER_SCOPES = {
   HotelsRead: 'hotels:read',
+  /* Регистрация гостиницы партнёром. Отдельно от чтения: список отелей может
+     читать кто угодно из партнёров, а заводить новые — только тот, кому это
+     разрешили явно. */
+  HotelsWrite: 'hotels:write',
   AvailabilityRead: 'availability:read',
   ReservationsRead: 'reservations:read',
   ReservationsWrite: 'reservations:write',
