@@ -91,6 +91,19 @@ export class ConnectivityController {
     return this.connectivity.registerHotel(dto);
   }
 
+  @Post('hotels/:slug/activate')
+  @RequireScopes(PARTNER_SCOPES.HotelsWrite)
+  @ApiOperation({
+    summary: 'Activate a provisional hotel',
+    description:
+      'Снимает признак «разовая»: с гостиницей заключён договор, и её место ' +
+      'теперь в общем каталоге. Идемпотентно — на обычной гостинице просто ' +
+      'возвращает её как есть.',
+  })
+  activateHotel(@Param('slug') slug: string) {
+    return this.connectivity.activateHotel(slug);
+  }
+
   @Get('hotels/:slug')
   @RequireScopes(PARTNER_SCOPES.HotelsRead)
   @ApiOperation({ summary: 'Hotel detail + room categories' })

@@ -113,6 +113,53 @@ export class ConnectivityService {
     return { ...this.mapHotel(tenant), categoryCount: 0 };
   }
 
+  /**
+   * Снятие признака «разовая»: с гостиницей заключён договор.
+   *
+   * Разовую заводит диспетчер сбойной заявки — ночью, по телефону, без
+   * договора. Дальше с ней либо больше никогда не работают, либо договор
+   * заключают; второе и есть это событие. Гостиница перестаёт быть разовой и
+   * появляется в общем каталоге: с этого момента её законно предлагать при
+   * плановом размещении экипажа.
+   *
+   * Идемпотентно: повторный вызов на обычной гостинице — не ошибка, а тот же
+   * ответ. Партнёр не должен помнить, снимал он признак или нет.
+   *
+   * Обратного метода нет намеренно: «сделать обычную гостиницу разовой» —
+   * не событие предметной области, а способ незаметно убрать её из каталога.
+   * Для этого есть `partnerVisible` в кабинете самой гостиницы.
+   */
+  async activateHotel(slug: string) {
+    const tenant = await this.resolveTenant(slug);
+    if (!tenant.provisional) {
+      return { ...this.mapHotel(tenant), categoryCount: await this.countCategories(tenant.id) };
+    }
+    const updated = await this.prisma.admin.tenant.update({
+      where: { id: tenant.id },
+      data: { provisional: false, partnerVisible: true },
+    });
+    /* В журнал гостиницы: партнёр читает его через `/hotels/:slug/history`, и
+       «почему эта гостиница вдруг в каталоге» должно иметь ответ. */
+    await this.prisma.admin.auditLog.create({
+      data: {
+        tenantId: tenant.id,
+        entity: 'tenant',
+        entityId: tenant.id,
+        action: 'activate',
+        diff: { provisional: [true, false], partnerVisible: [tenant.partnerVisible, true] },
+      },
+    });
+    this.logger.log(
+      `Partner activated hotel «${updated.name}» (${updated.slug}): provisional → false`,
+    );
+    return { ...this.mapHotel(updated), categoryCount: await this.countCategories(tenant.id) };
+  }
+
+  /** Сколько активных категорий у гостиницы — как в каталоге. */
+  private async countCategories(tenantId: string) {
+    return this.prisma.admin.roomType.count({ where: { tenantId, isActive: true } });
+  }
+
   /** Свободный slug под именем гостиницы: «Кавказ» → kavkaz, kavkaz-2, … */
   private async resolveFreeSlug(name: string): Promise<string> {
     const base = slugifyHotelName(name);
@@ -527,8 +574,14 @@ export class ConnectivityService {
     }
     const tenant = await this.prisma.admin.tenant.findUnique({ where: { slug } });
     /* Скрытый отель не отдаём и по прямой ссылке: иначе флаг убирал бы его
-     * только из списка, а бронь по сохранённому id всё равно проходила бы. */
-    if (!tenant || !tenant.isActive || !tenant.partnerVisible) {
+     * только из списка, а бронь по сохранённому id всё равно проходила бы.
+     *
+     * Разовая — не скрытая: `partnerVisible` у неё выключен потому, что ей не
+     * место в ОБЩЕМ каталоге, а не потому, что её прячут от партнёра. Партнёр
+     * сам её и завёл, у него в сбойной заявке лежит её slug — карточка по
+     * прямой ссылке обязана открываться. Раньше два разных смысла сходились в
+     * одном условии, и своя же гостиница отвечала 404. */
+    if (!tenant || !tenant.isActive || (!tenant.partnerVisible && !tenant.provisional)) {
       throw new NotFoundException(`Hotel '${slug}' not found`);
     }
     return tenant;
