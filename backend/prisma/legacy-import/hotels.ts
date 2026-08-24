@@ -55,6 +55,7 @@ function loadDatabaseUrl(): string {
 
 interface LegacyHotel {
   _id: { $oid: string } | string;
+  airportId?: { $oid: string } | string | null;
   name?: string | null;
   nameFull?: string | null;
   stars?: string | number | null;
@@ -66,6 +67,11 @@ interface LegacyHotel {
   breakfast?: { start?: string; end?: string } | null;
   lunch?: { start?: string; end?: string } | null;
   dinner?: { start?: string; end?: string } | null;
+}
+
+interface LegacyAirport {
+  _id: { $oid: string } | string;
+  code?: string | null;
 }
 
 interface LegacyRoomKind {
@@ -183,6 +189,13 @@ async function main() {
   const hotels = read<LegacyHotel>('Hotel.json');
   const kinds = read<LegacyRoomKind>('RoomKind.json');
   const rooms = read<LegacyRoom>('Room.json');
+  /* Аэропорт гостиницы: в старой системе ссылка на справочник, в PMS — код
+     IATA. Без него операторский каталог не может отобрать гостиницы под
+     аэропорт заявки, а это основной способ выбора при размещении экипажа. */
+  const airports = read<LegacyAirport>('Airport.json');
+  const airportCodeById = new Map(
+    airports.map((a) => [oid(a._id) ?? '', clean(a.code)?.toUpperCase() ?? null]),
+  );
 
   console.log(
     `Гостиниц ${hotels.length}, категорий ${kinds.length}, номеров ${rooms.length}` +
@@ -271,6 +284,7 @@ async function main() {
       // «Сколько ехать до аэропорта» в старой системе — свободное число без
       // единицы. Кладём в минуты: PMS считает время подачи, а не километраж.
       airportMinutes: intOf(h.airportDistance),
+      airportCode: airportCodeById.get(oid(h.airportId) ?? '') ?? null,
       mealBreakfast: mealWindow(h.breakfast),
       mealLunch: mealWindow(h.lunch),
       mealDinner: mealWindow(h.dinner),
