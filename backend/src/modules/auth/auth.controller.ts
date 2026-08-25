@@ -148,7 +148,10 @@ export class AuthController {
   @ApiResponse({ status: 200 })
   @ApiResponse({ status: 401 })
   async me(@CurrentUser() user: AuthenticatedRequestUser) {
-    return this.auth.me(user.userId, user.tenantId, user.impersonatedBy);
+    return this.auth.me(user.userId, user.tenantId, user.impersonatedBy, {
+      roleCode: user.roleCode,
+      permissions: user.permissions,
+    });
   }
 
   // ── helpers ────────────────────────────────────────────────────────────────

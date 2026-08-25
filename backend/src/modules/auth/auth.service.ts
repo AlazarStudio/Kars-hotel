@@ -295,13 +295,47 @@ export class AuthService implements OnModuleInit {
       .catch(() => undefined);
   }
 
-  async me(userId: string, tenantId: string, impersonatedBy?: string): Promise<AuthenticatedUser> {
+  async me(
+    userId: string,
+    tenantId: string,
+    impersonatedBy?: string,
+    /* Права и роль ИЗ ТОКЕНА — нужны только в одном случае: диспетчер работает
+     * в гостинице, у которой нет своих сотрудников, и его собственная учётка
+     * живёт в тенанте платформы. Тогда членство в гостинице подтверждать
+     * нечем, а область действия уже определена токеном, который мы сами и
+     * выдали. Для обычной учётки гостиницы всё остаётся как было — права
+     * читаются из её роли в базе. */
+    fromToken?: { roleCode: string; permissions: string[] },
+  ): Promise<AuthenticatedUser> {
     const user = await this.prisma.admin.user.findFirst({
       where: { id: userId, tenantId, isActive: true },
       include: {
         role: { include: { rolePermissions: { include: { permission: true } } } },
       },
     });
+
+    /* Диспетчер внутри гостиницы без сотрудников: сам он числится в тенанте
+     * платформы, поэтому проверка «пользователь принадлежит этой гостинице»
+     * его не находит. Раньше это давало 401 сразу после успешного входа —
+     * ссылка «Управлять в Hotel PMS» вела на экран «ссылка недействительна»,
+     * хотя недействительной она не была. */
+    if (!user && impersonatedBy && userId === impersonatedBy) {
+      const actor = await this.prisma.admin.user.findFirst({
+        where: { id: userId, isActive: true },
+        select: { id: true, email: true, fullName: true, isDispatcher: true },
+      });
+      if (!actor) throw new UnauthorizedException('User no longer exists');
+      return {
+        id: actor.id,
+        tenantId,
+        email: actor.email,
+        fullName: actor.fullName,
+        roleCode: fromToken?.roleCode ?? RoleCode.OWNER,
+        permissions: fromToken?.permissions ?? [],
+        isSuperAdmin: false,
+        isDispatcher: actor.isDispatcher,
+      };
+    }
     if (!user) throw new UnauthorizedException('User no longer exists');
 
     // Display identity: when a Kars Avia dispatcher operates a hotel via SSO,
@@ -400,19 +434,46 @@ export class AuthService implements OnModuleInit {
       },
       orderBy: { createdAt: 'asc' },
     });
-    if (!owner) {
-      throw new ForbiddenException('No active user found in target tenant');
+
+    /* Гостиница БЕЗ СВОИХ СОТРУДНИКОВ — обычное дело, а не сбой: из 392
+     * перенесённых из старой системы логин был лишь у десяти, остальные ведёт
+     * оператор. Раньше вход в такую гостиницу запрещался («No active user
+     * found in target tenant»), то есть 391 карточка из PMS была недоступна.
+     *
+     * Заходим ОТ СВОЕГО ИМЕНИ внутрь тенанта: `sub` — тот, кто пришёл, `tid` —
+     * гостиница, права — по её роли «Владелец». Это честнее прежнего даже там,
+     * где сотрудник есть: занимать чужую учётку ради входа не нужно, а в
+     * журнале остаётся живой человек, а не «владелец гостиницы», которым
+     * действие сделал кто-то другой. */
+    const ownerRole = owner
+      ? null
+      : await this.prisma.admin.role.findFirst({
+          where: { tenantId: targetTenantId, code: RoleCode.OWNER },
+          include: { rolePermissions: { include: { permission: true } } },
+        });
+    const actor = await this.prisma.admin.user.findUnique({
+      where: { id: adminUserId },
+      select: { id: true, email: true },
+    });
+    if (!owner && !actor) {
+      throw new ForbiddenException('Operator account not found');
     }
 
-    const permissions = owner.role.rolePermissions.map((rp) => rp.permission.code);
+    const permissions = owner
+      ? owner.role.rolePermissions.map((rp) => rp.permission.code)
+      : /* Роли у тенанта может не быть только у совсем старого переноса —
+           тогда берём эталонный набор владельца, тот же, что раздаётся при
+           заведении гостиницы. */
+        (ownerRole?.rolePermissions.map((rp) => rp.permission.code) ??
+          (DEFAULT_ROLE_PERMISSIONS.OWNER as string[]));
 
-    // Issue a 1-hour access token for the owner user, tagged with the admin's userId.
+    // Issue a 1-hour access token, tagged with the admin's userId.
     const accessPayload: JwtAccessPayload = {
-      sub: owner.id,
+      sub: owner ? owner.id : actor!.id,
       tid: targetTenantId,
-      role: owner.role.code,
+      role: owner ? owner.role.code : RoleCode.OWNER,
       perms: permissions,
-      email: owner.email,
+      email: owner ? owner.email : actor!.email,
       imp: adminUserId,
     };
 
