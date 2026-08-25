@@ -1,7 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import * as authApi from '../api/auth';
 import * as superAdminApi from '../api/superadmin';
-import { setAccessToken, setImpersonatingFlag } from '../api/client';
+import {
+  clearStoredSession,
+  readStoredSession,
+  setAccessToken,
+  setImpersonatedTenant as persistImpersonatedTenant,
+  setImpersonatingFlag,
+} from '../api/client';
 
 const AuthContext = createContext(null);
 
@@ -16,10 +22,39 @@ export function AuthProvider({ children }) {
   const [status, setStatus] = useState(STATUS.LOADING);
   const [impersonatedTenant, setImpersonatedTenant] = useState(null);
 
-  // On mount: try refresh with the httpOnly cookie, then /me.
+  /* На старте — ДВА пути, и порядок важен.
+   *
+   * 1. Сессия этой вкладки (вход по ссылке из Kars Avia). Refresh-куки у неё
+   *    нет, поэтому запрос обновления вернёт 401 и уведёт на форму входа —
+   *    именно так перезагрузка и выбрасывала диспетчера из работающей
+   *    сессии. Сначала пробуем восстановленный токен: отвечает `/auth/me` —
+   *    сессия жива, и куки не нужны вовсе.
+   * 2. Обычный вход паролем: там кука есть, идём прежним путём.
+   */
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const stored = readStoredSession();
+      if (stored?.accessToken) {
+        setImpersonatingFlag(!!stored.impersonating);
+        setAccessToken(stored.accessToken);
+        if (stored.tenant) persistImpersonatedTenant(stored.tenant);
+        try {
+          const profile = await authApi.me();
+          if (!cancelled) {
+            setUser(profile);
+            setImpersonatedTenant(stored.tenant ?? null);
+            setStatus(STATUS.AUTHENTICATED);
+          }
+          return;
+        } catch {
+          /* Токен просрочен (у ссылки из Avia час жизни) или отозван —
+             чистим и пробуем обычный путь с кукой. */
+          setAccessToken(null);
+          setImpersonatingFlag(false);
+          clearStoredSession();
+        }
+      }
       try {
         await authApi.refresh();
         const profile = await authApi.me();
@@ -57,6 +92,8 @@ export function AuthProvider({ children }) {
       setAccessToken(null);
       setUser(null);
       setImpersonatedTenant(null);
+      persistImpersonatedTenant(null);
+      clearStoredSession();
       setStatus(STATUS.UNAUTHENTICATED);
     }
   }, []);
@@ -77,6 +114,7 @@ export function AuthProvider({ children }) {
     setImpersonatingFlag(true);        // block auto-refresh from this point
     setAccessToken(result.accessToken);
     setImpersonatedTenant(tenant);
+    persistImpersonatedTenant(tenant);
   }, []);
 
   /**
@@ -93,7 +131,9 @@ export function AuthProvider({ children }) {
     // Hotel mode is an impersonation session — drive the same banner the
     // super-admin impersonation uses so the dispatcher always sees whose hotel
     // they're operating.
-    setImpersonatedTenant(result.mode === 'hotel' ? result.tenant : null);
+    const tenant = result.mode === 'hotel' ? result.tenant : null;
+    setImpersonatedTenant(tenant);
+    persistImpersonatedTenant(tenant);
     return result;
   }, []);
 
@@ -114,6 +154,7 @@ export function AuthProvider({ children }) {
       setImpersonatingFlag(!!profile.isDispatcher);
     } finally {
       setImpersonatedTenant(null);
+      persistImpersonatedTenant(null);
     }
   }, []);
 
