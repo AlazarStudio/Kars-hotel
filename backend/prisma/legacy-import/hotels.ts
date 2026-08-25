@@ -59,11 +59,19 @@ interface LegacyHotel {
   name?: string | null;
   nameFull?: string | null;
   stars?: string | number | null;
+  /** Класс гостиницы (звёзды). В `stars` у старой системы лежит ОЦЕНКА. */
+  usStars?: string | number | null;
   active?: boolean;
   show?: boolean;
   capacity?: number | null;
   airportDistance?: string | number | null;
-  information?: { city?: string | null; address?: string | null } | null;
+  information?: {
+    city?: string | null;
+    address?: string | null;
+    /* Описание — HTML из визуального редактора старой системы: инфраструктура,
+       оснащение номеров, услуги прачечной. Заполнено у 364 гостиниц из 392. */
+    description?: string | null;
+  } | null;
   breakfast?: { start?: string; end?: string } | null;
   lunch?: { start?: string; end?: string } | null;
   dinner?: { start?: string; end?: string } | null;
@@ -169,6 +177,47 @@ const mealWindow = (w: { start?: string; end?: string } | null | undefined) => {
   return s && e ? `${s}–${e}` : (s ?? e);
 };
 
+/** Класс гостиницы: 1..5, всё остальное («0», «Нет», пусто) — «не указано». */
+function starClass(v: unknown): number | null {
+  const n = intOf(v);
+  return n != null && n >= 1 && n <= 5 ? n : null;
+}
+
+/** Оценка гостей: дробная, в старой системе записана и через запятую. */
+function guestRating(v: unknown): number | null {
+  const raw = String(v ?? '').trim().replace(',', '.');
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 && n <= 5 ? n : null;
+}
+
+/** HTML визуального редактора → читаемый текст с переносами. */
+function htmlToText(html: string | null | undefined): string | null {
+  const raw = (html ?? '').trim();
+  if (!raw) return null;
+  const NL = String.fromCharCode(10);
+  const text = raw
+    // Абзацы и переносы становятся переносами строк, а не слипаются в кашу.
+    .replace(/<[/](p|div|li|h[1-6])>/gi, NL)
+    .replace(/<br\s*[/]?>/gi, NL)
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    // Схлопываем подряд идущие пробелы, не трогая переносы строк.
+    .replace(/[ 	 ]+/g, ' ')
+    .split(NL)
+    .map((l) => l.trim())
+    .filter((l, i, arr) => l.length > 0 || (i > 0 && arr[i - 1].length > 0))
+    .join(NL)
+    .trim();
+  return text.length > 0 ? text : null;
+}
+
 const prisma = new PrismaClient({
   datasources: { db: { url: loadDatabaseUrl() } },
 });
@@ -270,13 +319,23 @@ async function main() {
       name,
       city,
       address: clean(h.information?.address),
-      /* Звёзды: в PMS колонка ограничена 1..5, а в старой системе встречаются
-         «0» и мусор — это «не указано», а не «ноль звёзд». Иначе импорт падает
-         на CHECK посреди прогона. */
-      stars: (() => {
-        const n = intOf(h.stars);
-        return n != null && n >= 1 && n <= 5 ? n : null;
-      })(),
+      /* КЛАСС гостиницы — это `usStars`, а НЕ `stars`.
+       *
+       * Имена полей старой системы обманывают: в `stars` лежит оценка (66
+       * гостиниц имеют там «4,5», «4,8», «4,9» — звёздностью такое не бывает),
+       * а класс — в `usStars`, где встречаются «0» и «Нет», то есть «класс не
+       * присвоен». Первый прогон переноса взял `stars`, и «Сити Бизнес» с
+       * оценкой 4.9 и классом 3 приехал в PMS как пятизвёздочный.
+       *
+       * Колонка класса в PMS ограничена 1..5, поэтому «0», «Нет» и мусор
+       * читаются как «не указано». */
+      stars: starClass(h.usStars),
+      // Оценка гостей — дробная, отсюда и запятая в исходных данных.
+      guestRating: guestRating(h.stars),
+      /* Описание в старой системе — HTML из визуального редактора
+         (инфраструктура, оснащение, услуги). Разворачиваем в текст: PMS
+         показывает описание как текст, а сырые теги человек читать не должен. */
+      description: htmlToText(h.information?.description),
       capacity: (() => {
         const n = intOf(h.capacity);
         return n != null && n > 0 ? n : null;
