@@ -208,6 +208,11 @@ model RefreshToken {
   userId    String    @map("user_id") @db.Uuid
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   tokenHash String    @unique @map("token_hash")
+  /// Сессия «от имени»: кто её открыл (диспетчер Kars Avia или супер-админ).
+  /// Пусто — обычный вход. Хранится, чтобы обновление токена вернуло ТУ ЖЕ
+  /// сессию: диспетчер числится в тенанте платформы, и без этой отметки
+  /// обновление вернуло бы его в общую панель вместо гостиницы.
+  impersonatedBy String? @map("impersonated_by") @db.Uuid
   expiresAt DateTime  @map("expires_at")
   revokedAt DateTime? @map("revoked_at")
   ip        String?

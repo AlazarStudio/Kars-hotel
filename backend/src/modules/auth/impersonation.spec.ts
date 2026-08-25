@@ -29,13 +29,15 @@ function makeService(overrides: {
 }) {
   const prisma = {
     admin: {
-      tenant: { findUnique: fn().mockResolvedValue(overrides.tenant ?? { id: TENANT, isActive: true }) },
+      tenant: {
+        findUnique: fn().mockResolvedValue(overrides.tenant ?? { id: TENANT, isActive: true }),
+      },
       user: {
         // `findFirst` обслуживает и «владелец тенанта», и «актор глобально»:
         // различаем по наличию tenantId в условии.
         findFirst: jest.fn(async (args: { where?: { tenantId?: string } }) =>
           args?.where?.tenantId
-            ? ((overrides.ownerInTenant ?? overrides.userInTenant) ?? null)
+            ? (overrides.ownerInTenant ?? overrides.userInTenant ?? null)
             : (overrides.actor ?? null),
         ),
         findUnique: jest.fn(async () => overrides.actor ?? null),
@@ -121,5 +123,102 @@ describe('вход диспетчера в гостиницу', () => {
     await expect(
       service.me('33333333-3333-3333-3333-333333333333', TENANT, DISPATCHER),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+});
+
+describe('продление сессии «от имени»', () => {
+  /* Продление обязано вернуть ТУ ЖЕ сессию. Диспетчер числится в тенанте
+     платформы, поэтому запись «пользователь + тенант» без отметки вернула бы
+     ему токен платформы — то есть тихо выкинула бы из гостиницы в общую
+     панель, с другими правами. */
+  function serviceForRefresh(tokenRow: unknown) {
+    const prisma = {
+      admin: {
+        refreshToken: {
+          findUnique: jest.fn(async () => tokenRow),
+          update: jest.fn(async () => ({})),
+          create: jest.fn(async () => ({})),
+        },
+        tenant: {
+          findUnique: jest.fn(async () => ({ id: TENANT, isActive: true })),
+        },
+        user: {
+          findFirst: jest.fn(async (args: { where?: { tenantId?: string } }) =>
+            args?.where?.tenantId ? null : { id: DISPATCHER, email: 'dispatcher@kars.ru' },
+          ),
+          findUnique: jest.fn(async () => ({
+            id: DISPATCHER,
+            email: 'dispatcher@kars.ru',
+          })),
+        },
+        role: {
+          findFirst: jest.fn(async () => ({
+            rolePermissions: [{ permission: { code: 'room.read' } }],
+          })),
+        },
+      },
+    };
+    const signed: Record<string, unknown>[] = [];
+    const jwtService = {
+      verifyAsync: jest.fn(async () => ({ sub: DISPATCHER, tid: TENANT })),
+      signAsync: jest.fn(async (payload: Record<string, unknown>) => {
+        signed.push(payload);
+        return 'token';
+      }),
+    };
+    const service = Object.create(AuthService.prototype) as AuthService;
+    Object.assign(service, {
+      prisma,
+      jwt: jwtService,
+      config: { getOrThrow: (k: string) => (k.includes('TTL') ? '3600s' : 'secret') },
+    });
+    return { service, signed, prisma };
+  }
+
+  const ROW = {
+    id: 'row-1',
+    userId: DISPATCHER,
+    tenantId: TENANT,
+    impersonatedBy: DISPATCHER,
+    revokedAt: null,
+    expiresAt: new Date(Date.now() + 86_400_000),
+    user: {
+      id: DISPATCHER,
+      isActive: true,
+      email: 'dispatcher@kars.ru',
+      role: { code: 'SUPER_ADMIN', rolePermissions: [] },
+    },
+  };
+
+  it('возвращает ту же гостиницу и ту же метку «от имени»', async () => {
+    const { service, signed } = serviceForRefresh(ROW);
+
+    await service.refresh('refresh-token');
+
+    const access = signed[0] as { tid: string; imp?: string; perms: string[] };
+    expect(access.tid).toBe(TENANT);
+    expect(access.imp).toBe(DISPATCHER);
+    expect(access.perms).toEqual(['room.read']);
+  });
+
+  it('обычную сессию (без отметки) продлевает по учётке, а не по гостинице', async () => {
+    const { service, signed } = serviceForRefresh({
+      ...ROW,
+      impersonatedBy: null,
+      user: {
+        ...ROW.user,
+        tenantId: 'platform-tenant',
+        role: {
+          code: 'SUPER_ADMIN',
+          rolePermissions: [{ permission: { code: 'user.read' } }],
+        },
+      },
+    });
+
+    await service.refresh('refresh-token');
+
+    const access = signed[0] as { imp?: string; perms: string[] };
+    expect(access.imp).toBeUndefined();
+    expect(access.perms).toEqual(['user.read']);
   });
 });

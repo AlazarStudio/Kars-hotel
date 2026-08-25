@@ -269,6 +269,23 @@ export class AuthService implements OnModuleInit {
       data: { revokedAt: new Date() },
     });
 
+    /* Сессия «от имени»: восстанавливаем ту же личность и ту же гостиницу,
+       что были при входе, а не учётку из записи. Иначе продление тихо
+       переносило бы человека в другой тенант с другими правами. */
+    if (tokenRow.impersonatedBy) {
+      const who = await this.resolveImpersonation(tokenRow.tenantId, tokenRow.impersonatedBy);
+      return this.issueTokens({
+        userId: who.userId,
+        tenantId: tokenRow.tenantId,
+        email: who.email,
+        roleCode: who.roleCode,
+        permissions: who.permissions,
+        impersonatedBy: tokenRow.impersonatedBy,
+        ip,
+        userAgent,
+      });
+    }
+
     const permissions = tokenRow.user.role.rolePermissions.map((rp) => rp.permission.code);
     const isSuperAdmin = (tokenRow.user.role.code as string) === 'SUPER_ADMIN';
 
@@ -378,10 +395,17 @@ export class AuthService implements OnModuleInit {
    * super-admin exit (avoids rotating the refresh cookie on every toggle). The
    * re-issued token restores admin-panel access (isa) and the dispatcher flag.
    */
-  async exitImpersonation(operatorUserId: string): Promise<{
-    accessToken: string;
-    accessTtlSeconds: number;
-  }> {
+  /* Выход из режима «от имени» перевыпускает и продление.
+   *
+   * Кука одна на браузер: пока идёт работа в гостинице, в ней лежит сессия
+   * гостиницы. Если при выходе её не заменить, то через час обновление
+   * вернуло бы человека обратно в гостиницу — из режима, из которого он
+   * только что вышел. */
+  async exitImpersonation(
+    operatorUserId: string,
+    ip?: string,
+    userAgent?: string,
+  ): Promise<AuthTokens> {
     const user = await this.prisma.admin.user.findUnique({
       where: { id: operatorUserId },
       include: {
@@ -392,21 +416,17 @@ export class AuthService implements OnModuleInit {
       throw new UnauthorizedException('Operator account is inactive');
     }
     const isSuperAdmin = (user.role.code as string) === 'SUPER_ADMIN';
-    const accessPayload: JwtAccessPayload = {
-      sub: user.id,
-      tid: user.tenantId,
-      role: user.role.code,
-      perms: user.role.rolePermissions.map((rp) => rp.permission.code),
+    return this.issueTokens({
+      userId: user.id,
+      tenantId: user.tenantId,
       email: user.email,
-      ...(isSuperAdmin ? { isa: true } : {}),
-      ...(user.isDispatcher ? { disp: true } : {}),
-    };
-    const accessTtlSeconds = 3600;
-    const accessToken = await this.jwt.signAsync(accessPayload, {
-      secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
-      expiresIn: accessTtlSeconds,
+      roleCode: user.role.code,
+      permissions: user.role.rolePermissions.map((rp) => rp.permission.code),
+      isSuperAdmin,
+      isDispatcher: user.isDispatcher,
+      ip,
+      userAgent,
     });
-    return { accessToken, accessTtlSeconds };
   }
 
   /**
@@ -414,10 +434,20 @@ export class AuthService implements OnModuleInit {
    * gives the caller OWNER-level access to a specific tenant. Only callable
    * by super-admin users. Returns just the access token string.
    */
-  async issueImpersonationToken(
+  /* Личность, от которой идёт работа ВНУТРИ гостиницы.
+   *
+   * Одна на два входа: открытие сессии и её продление. Раньше это жило только
+   * в выдаче токена, и продление пошло бы другим путём — а разойтись этим двум
+   * ответам нельзя: по ним считаются права внутри чужой гостиницы. */
+  private async resolveImpersonation(
     targetTenantId: string,
     adminUserId: string,
-  ): Promise<{ accessToken: string; accessTtlSeconds: number }> {
+  ): Promise<{
+    userId: string;
+    email: string;
+    roleCode: string;
+    permissions: string[];
+  }> {
     const tenant = await this.prisma.admin.tenant.findUnique({
       where: { id: targetTenantId },
       select: { id: true, isActive: true },
@@ -426,7 +456,7 @@ export class AuthService implements OnModuleInit {
       throw new ForbiddenException('Tenant not found or inactive');
     }
 
-    // Find the OWNER user in the target tenant.
+    // Владелец гостиницы, если он есть.
     const owner = await this.prisma.admin.user.findFirst({
       where: { tenantId: targetTenantId, isActive: true },
       include: {
@@ -434,55 +464,67 @@ export class AuthService implements OnModuleInit {
       },
       orderBy: { createdAt: 'asc' },
     });
+    if (owner) {
+      return {
+        userId: owner.id,
+        email: owner.email,
+        roleCode: owner.role.code,
+        permissions: owner.role.rolePermissions.map((rp) => rp.permission.code),
+      };
+    }
 
     /* Гостиница БЕЗ СВОИХ СОТРУДНИКОВ — обычное дело, а не сбой: из 392
      * перенесённых из старой системы логин был лишь у десяти, остальные ведёт
-     * оператор. Раньше вход в такую гостиницу запрещался («No active user
-     * found in target tenant»), то есть 391 карточка из PMS была недоступна.
-     *
-     * Заходим ОТ СВОЕГО ИМЕНИ внутрь тенанта: `sub` — тот, кто пришёл, `tid` —
-     * гостиница, права — по её роли «Владелец». Это честнее прежнего даже там,
-     * где сотрудник есть: занимать чужую учётку ради входа не нужно, а в
-     * журнале остаётся живой человек, а не «владелец гостиницы», которым
-     * действие сделал кто-то другой. */
-    const ownerRole = owner
-      ? null
-      : await this.prisma.admin.role.findFirst({
-          where: { tenantId: targetTenantId, code: RoleCode.OWNER },
-          include: { rolePermissions: { include: { permission: true } } },
-        });
+     * оператор. Заходим ОТ СВОЕГО ИМЕНИ: `sub` — тот, кто пришёл, права — по
+     * роли «Владелец» этой гостиницы. Это честнее и там, где сотрудник есть:
+     * занимать чужую учётку ради входа не нужно, а в журнале остаётся живой
+     * человек, а не «владелец», которым действовал кто-то другой. */
+    const ownerRole = await this.prisma.admin.role.findFirst({
+      where: { tenantId: targetTenantId, code: RoleCode.OWNER },
+      include: { rolePermissions: { include: { permission: true } } },
+    });
     const actor = await this.prisma.admin.user.findUnique({
       where: { id: adminUserId },
       select: { id: true, email: true },
     });
-    if (!owner && !actor) {
-      throw new ForbiddenException('Operator account not found');
-    }
+    if (!actor) throw new ForbiddenException('Operator account not found');
+    return {
+      userId: actor.id,
+      email: actor.email,
+      roleCode: RoleCode.OWNER,
+      /* Роли у тенанта может не быть только у совсем старого переноса — тогда
+         берём эталонный набор владельца, тот же, что раздаётся при заведении
+         гостиницы. */
+      permissions:
+        ownerRole?.rolePermissions.map((rp) => rp.permission.code) ??
+        (DEFAULT_ROLE_PERMISSIONS.OWNER as string[]),
+    };
+  }
 
-    const permissions = owner
-      ? owner.role.rolePermissions.map((rp) => rp.permission.code)
-      : /* Роли у тенанта может не быть только у совсем старого переноса —
-           тогда берём эталонный набор владельца, тот же, что раздаётся при
-           заведении гостиницы. */
-        (ownerRole?.rolePermissions.map((rp) => rp.permission.code) ??
-          (DEFAULT_ROLE_PERMISSIONS.OWNER as string[]));
-
-    // Issue a 1-hour access token, tagged with the admin's userId.
+  /**
+   * Короткоживущий токен «от имени гостиницы» БЕЗ продления — им пользуется
+   * супер-админ из панели платформы: у него есть собственная сессия с кукой,
+   * и вторая кука её бы затёрла, сделав выход из режима невозможным.
+   * Вход диспетчера по ссылке из Kars Avia продлевается (см. `exchangeSsoCode`).
+   */
+  async issueImpersonationToken(
+    targetTenantId: string,
+    adminUserId: string,
+  ): Promise<{ accessToken: string; accessTtlSeconds: number }> {
+    const who = await this.resolveImpersonation(targetTenantId, adminUserId);
     const accessPayload: JwtAccessPayload = {
-      sub: owner ? owner.id : actor!.id,
+      sub: who.userId,
       tid: targetTenantId,
-      role: owner ? owner.role.code : RoleCode.OWNER,
-      perms: permissions,
-      email: owner ? owner.email : actor!.email,
+      role: who.roleCode,
+      perms: who.permissions,
+      email: who.email,
       imp: adminUserId,
     };
-
-    const accessTtlSeconds = 3600; // 1 hour
+    const accessTtlSeconds = 3600;
     const accessToken = await this.jwt.signAsync(accessPayload, {
       secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
       expiresIn: accessTtlSeconds,
     });
-
     return { accessToken, accessTtlSeconds };
   }
 
@@ -584,9 +626,21 @@ export class AuthService implements OnModuleInit {
     return { code, expiresInSeconds: AuthService.SSO_CODE_TTL_MS / 1000 };
   }
 
-  async exchangeSsoCode(code: string): Promise<{
+  /* Вход по ссылке выдаёт И продление тоже.
+   *
+   * Раньше отдавался только access-токен на час: сессия жила ровно час, а
+   * перезагрузка страницы обрывала её и раньше. Диспетчеру, который ведёт
+   * гостиницу полдня, это возвращало форму входа посреди работы. Кука
+   * ставится контроллером, как и при обычном входе. */
+  async exchangeSsoCode(
+    code: string,
+    ip?: string,
+    userAgent?: string,
+  ): Promise<{
     accessToken: string;
+    refreshToken: string;
     accessTtlSeconds: number;
+    refreshTtlSeconds: number;
     // 'admin' → landed in the platform admin panel as the dispatcher;
     // 'hotel' → impersonating a specific hotel (banner «от имени <name>»).
     mode: 'admin' | 'hotel';
@@ -601,20 +655,22 @@ export class AuthService implements OnModuleInit {
 
     // Hotel mode: dispatcher works inside one hotel, tagged with their id.
     if (entry.tenantId) {
-      const { accessToken, accessTtlSeconds } = await this.issueImpersonationToken(
-        entry.tenantId,
-        entry.dispatcherUserId,
-      );
+      const who = await this.resolveImpersonation(entry.tenantId, entry.dispatcherUserId);
+      const tokens = await this.issueTokens({
+        userId: who.userId,
+        tenantId: entry.tenantId,
+        email: who.email,
+        roleCode: who.roleCode,
+        permissions: who.permissions,
+        impersonatedBy: entry.dispatcherUserId,
+        ip,
+        userAgent,
+      });
       const tenant = await this.prisma.admin.tenant.findUnique({
         where: { id: entry.tenantId },
         select: { id: true, name: true },
       });
-      return {
-        accessToken,
-        accessTtlSeconds,
-        mode: 'hotel',
-        tenant: tenant ?? undefined,
-      };
+      return { ...tokens, mode: 'hotel', tenant: tenant ?? undefined };
     }
 
     // Admin mode: sign in as the dispatcher's own account.
@@ -629,21 +685,18 @@ export class AuthService implements OnModuleInit {
     if (!dispatcher || !dispatcher.isActive) {
       throw new ForbiddenException('Dispatcher account is inactive');
     }
-    const accessPayload: JwtAccessPayload = {
-      sub: dispatcher.id,
-      tid: dispatcher.tenantId,
-      role: dispatcher.role.code,
-      perms: dispatcher.role.rolePermissions.map((rp) => rp.permission.code),
+    const tokens = await this.issueTokens({
+      userId: dispatcher.id,
+      tenantId: dispatcher.tenantId,
       email: dispatcher.email,
-      isa: true,
-      disp: true,
-    };
-    const accessTtlSeconds = 3600;
-    const accessToken = await this.jwt.signAsync(accessPayload, {
-      secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
-      expiresIn: accessTtlSeconds,
+      roleCode: dispatcher.role.code,
+      permissions: dispatcher.role.rolePermissions.map((rp) => rp.permission.code),
+      isSuperAdmin: true,
+      isDispatcher: true,
+      ip,
+      userAgent,
     });
-    return { accessToken, accessTtlSeconds, mode: 'admin' };
+    return { ...tokens, mode: 'admin' };
   }
 
   // ─── Internals ──────────────────────────────────────────────────────────────
@@ -735,6 +788,7 @@ export class AuthService implements OnModuleInit {
     roleCode: string;
     permissions: string[];
     isSuperAdmin?: boolean;
+    isDispatcher?: boolean;
     impersonatedBy?: string;
     ip?: string;
     userAgent?: string;
@@ -749,6 +803,7 @@ export class AuthService implements OnModuleInit {
       perms: args.permissions,
       email: args.email,
       ...(args.isSuperAdmin ? { isa: true } : {}),
+      ...(args.isDispatcher ? { disp: true } : {}),
       ...(args.impersonatedBy ? { imp: args.impersonatedBy } : {}),
     };
 
@@ -774,6 +829,11 @@ export class AuthService implements OnModuleInit {
         tenantId: args.tenantId,
         userId: args.userId,
         tokenHash: this.hashToken(refreshToken),
+        /* Продление должно вернуть ТУ ЖЕ сессию. Для входа «от имени»
+           этого не выразить парой «пользователь + тенант»: диспетчер
+           числится в тенанте платформы, и без отметки обновление вернуло бы
+           его в общую панель вместо гостиницы. */
+        impersonatedBy: args.impersonatedBy ?? null,
         expiresAt: new Date(Date.now() + refreshTtlSeconds * 1000),
         ip: args.ip ?? null,
         userAgent: args.userAgent ?? null,

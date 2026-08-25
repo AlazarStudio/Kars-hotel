@@ -84,9 +84,21 @@ export class AuthController {
   })
   @ApiResponse({ status: 200, description: 'Access token issued' })
   @ApiResponse({ status: 401, description: 'Code invalid or expired' })
-  async ssoExchange(@Body() body: { code?: string }) {
+  async ssoExchange(
+    @Body() body: { code?: string },
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     if (!body?.code) throw new UnauthorizedException('SSO code is required');
-    return this.auth.exchangeSsoCode(body.code);
+    const { refreshToken, refreshTtlSeconds, ...rest } = await this.auth.exchangeSsoCode(
+      body.code,
+      req.ip,
+      req.headers['user-agent'],
+    );
+    /* Кука ставится так же, как при обычном входе: иначе сессия жила ровно
+       час, а перезагрузка обрывала её и раньше. */
+    this.setRefreshCookie(res, refreshToken, refreshTtlSeconds);
+    return rest;
   }
 
   @Post('exit-impersonation')
@@ -99,11 +111,24 @@ export class AuthController {
   })
   @ApiResponse({ status: 200, description: 'Operator token re-issued' })
   @ApiResponse({ status: 400, description: 'Not in an impersonation session' })
-  async exitImpersonation(@CurrentUser() user: AuthenticatedRequestUser) {
+  async exitImpersonation(
+    @CurrentUser() user: AuthenticatedRequestUser,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     if (!user.impersonatedBy) {
       throw new BadRequestException('Not in an impersonation session');
     }
-    return this.auth.exitImpersonation(user.impersonatedBy);
+    const { refreshToken, refreshTtlSeconds, ...rest } = await this.auth.exitImpersonation(
+      user.impersonatedBy,
+      req.ip,
+      req.headers['user-agent'],
+    );
+    /* Кука одна на браузер: пока шла работа в гостинице, в ней лежала сессия
+       гостиницы. Заменяем — иначе через час обновление вернуло бы человека в
+       режим, из которого он только что вышел. */
+    this.setRefreshCookie(res, refreshToken, refreshTtlSeconds);
+    return rest;
   }
 
   @Public()

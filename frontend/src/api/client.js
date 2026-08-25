@@ -1,6 +1,7 @@
-import axios from 'axios';
+import axios from "axios";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
 
 let accessToken = null;
 const accessListeners = new Set();
@@ -23,7 +24,7 @@ let impersonating = false;
  * закрытие вкладки сессию заканчивает. В `localStorage` такой токен жил бы
  * во всех вкладках и после ухода человека с рабочего места.
  */
-const SESSION_KEY = 'kars-pms.session';
+const SESSION_KEY = "kars-pms.session";
 
 function persistSession() {
   try {
@@ -33,7 +34,11 @@ function persistSession() {
     }
     sessionStorage.setItem(
       SESSION_KEY,
-      JSON.stringify({ accessToken, impersonating, tenant: impersonatedTenant }),
+      JSON.stringify({
+        accessToken,
+        impersonating,
+        tenant: impersonatedTenant,
+      }),
     );
   } catch {
     // Приватный режим и запрет хранилища не должны ронять вход: без
@@ -75,7 +80,9 @@ export function setAccessToken(token) {
   for (const cb of accessListeners) cb(token);
 }
 
-export function getAccessToken() { return accessToken; }
+export function getAccessToken() {
+  return accessToken;
+}
 
 export function onAccessTokenChange(cb) {
   accessListeners.add(cb);
@@ -116,7 +123,9 @@ async function performRefresh() {
       setAccessToken(null);
       throw err;
     })
-    .finally(() => { refreshInFlight = null; });
+    .finally(() => {
+      refreshInFlight = null;
+    });
   return refreshInFlight;
 }
 
@@ -125,10 +134,10 @@ api.interceptors.response.use(
   async (err) => {
     const original = err.config;
     if (!original || original._retried) return Promise.reject(err);
-    const url = original.url || '';
+    const url = original.url || "";
     const status = err.response?.status;
 
-    if (status === 401 && !url.includes('/auth/') && !impersonating) {
+    if (status === 401 && !url.includes("/auth/") && !impersonating) {
       try {
         const newToken = await performRefresh();
         original._retried = true;
