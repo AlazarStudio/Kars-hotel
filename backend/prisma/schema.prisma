@@ -108,6 +108,7 @@ model Tenant {
   roles     Role[]
   auditLogs AuditLog[]
   partnerServices PartnerService[]
+  contractPrices  PartnerContractPrice[]
 
   @@map("tenant")
 }
@@ -239,6 +240,43 @@ enum PartnerServiceGroup {
 /// категории. Но диспетчеру нужно знать и цену обеда, и «сколько стоит поздний
 /// выезд»: это отдельные строки в заявке и в расчёте с авиакомпанией. Раньше
 /// такие цены жили только в заглушке hotel-mock, то есть нигде.
+/// Закупочные цены ДОГОВОРА С ОПЕРАТОРОМ — снапшот, присланный Kars Avia.
+///
+/// Гостиница видит, по какой цене её посчитает оператор, и не ведёт вторую
+/// копию: цена вводится ОДИН раз, в реестре договоров Авии, и оттуда
+/// зеркалится сюда. Правится она там же — здесь запись только читается.
+///
+/// Почему снапшот, а не полноценные тарифы: договор — документ ДВУХ сторон, и
+/// его срок, ДС и история живут у того, кто его ведёт. Гостиница, работающая
+/// без оператора, таких строк просто не имеет — и правильно, что не имеет.
+///
+/// Строки — JSON: это снимок чужого документа для показа, а не сущность, по
+/// которой PMS считает. Считает она по СВОИМ тарифам; корпоративный тариф
+/// заводится отдельно, руками или «заполнить по договору».
+model PartnerContractPrice {
+  id              String    @id @default(uuid()) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Номер договора и ДС — как назвать источник цены в кабинете.
+  contractNumber  String    @map("contract_number")
+  amendmentNumber String?   @map("amendment_number")
+  /// ACCOMMODATION | MEAL — что именно тарифицируется.
+  service         String
+  validFrom       DateTime  @map("valid_from")
+  validTo         DateTime? @map("valid_to")
+  /// Ставка НДС, %; null — без НДС.
+  vatRate         Decimal?  @map("vat_rate") @db.Decimal(5, 2)
+  /// Снимок строк приложения: категория/приём пищи, цена (копейки), «по запросу».
+  rows            Json
+  /// Когда пришёл снапшот — чтобы видеть, насколько он свежий.
+  receivedAt      DateTime  @default(now()) @map("received_at")
+
+  /// Полная замена по документу: приложение одно на (договор, ДС, услугу).
+  @@unique([tenantId, contractNumber, amendmentNumber, service])
+  @@index([tenantId])
+  @@map("partner_contract_price")
+}
+
 model PartnerService {
   id        String              @id @default(uuid()) @db.Uuid
   tenantId  String              @map("tenant_id") @db.Uuid

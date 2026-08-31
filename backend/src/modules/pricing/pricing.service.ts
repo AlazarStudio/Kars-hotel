@@ -165,8 +165,40 @@ export class PricingService {
       });
     });
   }
+
+  /**
+   * Э6 · Цены договора с оператором — для кабинета гостиницы.
+   *
+   * Гостиница видит, по какой цене её посчитает оператор, и не спорит по акту
+   * задним числом. Только чтение: цену вводят в реестре договоров оператора,
+   * договор подписан двумя, и односторонняя правка снимка сделала бы его
+   * ложью. Считает PMS по СВОИМ тарифам — этот список к расчёту не
+   * подключён и подключён не будет.
+   *
+   * Свежие сверху: спорят обычно по последнему приложению.
+   */
+  async operatorContractPrices() {
+    return this.prisma.forTenant(async (tx) => {
+      const rows = await tx.partnerContractPrice.findMany({
+        orderBy: [{ validFrom: 'desc' }, { receivedAt: 'desc' }],
+      });
+      return rows.map((r) => ({
+        id: r.id,
+        contractNumber: r.contractNumber,
+        amendmentNumber: r.amendmentNumber,
+        service: r.service,
+        validFrom: r.validFrom.toISOString(),
+        validTo: r.validTo?.toISOString() ?? null,
+        vatRate: r.vatRate == null ? null : Number(r.vatRate),
+        rows: r.rows,
+        receivedAt: r.receivedAt.toISOString(),
+      }));
+    });
+  }
 }
 
 function startOfUTC(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
+
+

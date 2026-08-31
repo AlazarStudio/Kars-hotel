@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PricingService } from './pricing.service';
 import { QuotePricingDto } from './dto/quote-pricing.dto';
@@ -39,5 +39,16 @@ export class PricingController {
         price: n.price.toFixed(2),
       })),
     };
+  }
+
+  /* Цены договора с оператором — читает тот же, кто читает тарифы: это
+     справка к ним, а не отдельная область прав. */
+  @Get('operator-contract-prices')
+  @RequirePermissions('rate.read')
+  @ApiOperation({
+    summary: 'Operator contract prices mirrored from Kars Avia (read-only)',
+  })
+  operatorContractPrices() {
+    return this.service.operatorContractPrices();
   }
 }

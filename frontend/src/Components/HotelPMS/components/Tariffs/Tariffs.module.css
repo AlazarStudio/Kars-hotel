@@ -1031,3 +1031,55 @@
   font-family: inherit;
 }
 .btnDelete:hover { background: #FEF2F2; }
+
+/* Э6 · Цены договора с оператором — справка рядом со своими тарифами.
+   Приглушённая рамка, а не карточка тарифа: это чужой документ, который
+   гостиница читает, а не ведёт, и путать его со своими планами нельзя. */
+.sectionCard {
+  margin-top: 24px;
+  padding: 16px 18px;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  background: #F8FAFC;
+}
+.sectionTitle {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0F172A;
+  margin-bottom: 6px;
+}
+.emptyHint {
+  font-size: 13px;
+  color: #64748B;
+  line-height: 1.5;
+}
+.contractSheet {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #E2E8F0;
+}
+.contractHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.contractHead b { font-size: 14px; color: #0F172A; }
+.contractHead span { font-size: 12.5px; color: #64748B; }
+.contractTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.contractTable td {
+  padding: 5px 0;
+  border-bottom: 1px solid #EEF2F7;
+  color: #334155;
+}
+.contractTable td:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}

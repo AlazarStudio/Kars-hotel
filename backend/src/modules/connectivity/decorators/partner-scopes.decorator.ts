@@ -12,6 +12,10 @@ export const PARTNER_SCOPES = {
   ReservationsWrite: 'reservations:write',
   // Mint one-time SSO entry codes (dispatcher «open in PMS» buttons).
   SsoCreate: 'sso:create',
+  /* Зеркало закупочных цен договора. Отдельно от `hotels:write`: заводить
+     гостиницу и присылать её договорные цены умеют разные стороны, и держать
+     это одним правом значит однажды выдать одно вместе с другим. */
+  ContractPricesWrite: 'contract-prices:write',
 } as const;
 
 export type PartnerScope = (typeof PARTNER_SCOPES)[keyof typeof PARTNER_SCOPES];

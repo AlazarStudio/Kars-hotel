@@ -13,6 +13,7 @@ import {
   useStandardRates, useSetStandardRates,
   useSeasons, useReplaceSeasons,
 } from '../../../../hooks/api/useRates';
+import { useOperatorContractPrices } from '../../../../hooks/api/useOperatorContractPrices';
 
 const MEAL_PLAN_LABELS = {
   NONE: 'Без питания',
@@ -926,6 +927,89 @@ function PlanPanel({ plan, roomTypes, onEditPlan }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Tariffs (main)
 // ─────────────────────────────────────────────────────────────────────────────
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Э6 · Цены договора с оператором.
+ *
+ * Гостиница видит, по какой цене её посчитает оператор, — и не узнаёт об этом
+ * из акта задним числом. Только чтение, и это не ограничение интерфейса:
+ * договор подписан двумя, и править его снимок в одностороннем порядке
+ * нельзя. Свои тарифы гостиница ведёт рядом, как вела.
+ *
+ * Расчёт брони по этому списку НЕ идёт: PMS считает по своим тарифам. Чтобы
+ * оператор считался по договору, заводится отдельный корпоративный тариф.
+ * ───────────────────────────────────────────────────────────────────────── */
+function OperatorContractPrices() {
+  const { data, isLoading, isError } = useOperatorContractPrices();
+  const sheets = data ?? [];
+
+  if (isLoading) return null;
+  if (isError) {
+    return (
+      <div className={classes.sectionCard}>
+        <div className={classes.sectionTitle}>Цены по договору с оператором</div>
+        <div className={classes.emptyHint}>Не удалось загрузить — попробуйте обновить страницу.</div>
+      </div>
+    );
+  }
+  if (!sheets.length) {
+    return (
+      <div className={classes.sectionCard}>
+        <div className={classes.sectionTitle}>Цены по договору с оператором</div>
+        <div className={classes.emptyHint}>
+          Договорных цен пока нет. Они появятся здесь, когда оператор заведёт
+          ценовое приложение к договору с вами.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={classes.sectionCard}>
+      <div className={classes.sectionTitle}>Цены по договору с оператором</div>
+      <div className={classes.emptyHint}>
+        Так вас посчитает оператор. Цены ведутся в его реестре договоров и здесь
+        только показываются; ваши собственные тарифы — выше и не меняются.
+      </div>
+      {sheets.map((s) => (
+        <div key={s.id} className={classes.contractSheet}>
+          <div className={classes.contractHead}>
+            <b>
+              {s.amendmentNumber
+                ? `${s.amendmentNumber} к договору ${s.contractNumber}`
+                : `Договор ${s.contractNumber}`}
+            </b>
+            <span>
+              {s.service === 'MEAL' ? 'Питание' : 'Проживание'}
+              {' · с '}
+              {format(parseISO(s.validFrom), 'd MMM yyyy', { locale: ru })}
+              {s.validTo
+                ? ` по ${format(parseISO(s.validTo), 'd MMM yyyy', { locale: ru })}`
+                : ' — бессрочно'}
+              {s.vatRate != null ? ` · НДС ${s.vatRate}%` : ' · без НДС'}
+            </span>
+          </div>
+          <table className={classes.contractTable}>
+            <tbody>
+              {(s.rows ?? []).map((r, i) => (
+                <tr key={i}>
+                  <td>{r.categoryName || r.mealKind || '—'}</td>
+                  <td>
+                    {/* «По запросу» — не ноль: цена есть, но называется в
+                        переписке. Ноль читался бы как «бесплатно». */}
+                    {r.onRequest || r.priceNet == null
+                      ? 'по запросу'
+                      : `${fmtRub(r.priceNet / 100)} ₽`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Tariffs() {
   const { data: plans = [], isLoading } = useRatePlans();
   const { data: roomTypes = [] } = useRoomTypes();
@@ -1049,6 +1133,8 @@ function Tariffs() {
           )}
         </>
       )}
+
+      <OperatorContractPrices />
 
       {showForm && (
         <RatePlanForm

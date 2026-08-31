@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext, RequestContext } from '../../common/context/tenant-context';
 import { AuthService } from '../auth/auth.service';
@@ -7,6 +8,7 @@ import { ReservationsService } from '../reservations/reservations.service';
 import { ConnectAvailabilityDto } from './dto/connect-availability.dto';
 import { ConnectCreateReservationDto } from './dto/connect-create-reservation.dto';
 import { ConnectRegisterHotelDto } from './dto/connect-register-hotel.dto';
+import { ConnectContractPricesDto } from './dto/connect-contract-prices.dto';
 import { slugifyHotelName } from '../auth/slug.util';
 
 /**
@@ -562,6 +564,84 @@ export class ConnectivityService {
       action: r.action,
       actorName: r.user?.fullName ?? null,
       occurredAt: r.createdAt.toISOString(),
+    }));
+  }
+
+  /**
+   * Э6 · Приём зеркала закупочных цен договора с оператором.
+   *
+   * Гостиница видит, по какой цене её посчитает оператор, и не ведёт вторую
+   * копию: цена вводится один раз — в реестре договоров Авии. Здесь она
+   * ТОЛЬКО ХРАНИТСЯ и показывается; править её в PMS нельзя, потому что
+   * договор подписан двумя, и односторонняя правка снимка сделала бы его
+   * ложью.
+   *
+   * Полная замена по документу: присланный набор строк заменяет предыдущий
+   * целиком. Частичных правок нет намеренно — снимок, который дополняют по
+   * кусочкам, разъезжается с оригиналом незаметно.
+   *
+   * Никакого пересчёта брони отсюда НЕ происходит: PMS считает по своим
+   * тарифам, а корпоративный тариф для оператора гостиница заводит отдельно —
+   * руками или «заполнить по договору», — и оператор его подтверждает.
+   */
+  async putContractPrices(slug: string, dto: ConnectContractPricesDto) {
+    const tenant = await this.resolveTenant(slug);
+    const key = {
+      tenantId: tenant.id,
+      contractNumber: dto.contractNumber,
+      amendmentNumber: dto.amendmentNumber ?? null,
+      service: dto.service,
+    };
+    const data = {
+      ...key,
+      validFrom: new Date(dto.validFrom),
+      validTo: dto.validTo ? new Date(dto.validTo) : null,
+      vatRate: dto.vatRate ?? null,
+      rows: dto.rows as unknown as Prisma.InputJsonValue,
+      receivedAt: new Date(),
+    };
+    /* Не `upsert`: составной ключ содержит НУЛЛИРУЕМЫЙ номер ДС, а Prisma в
+       compound-where null не принимает — приложение к самому договору (без
+       ДС) через upsert не найти вовсе. Уникальность при этом обеспечена
+       индексом с NULLS NOT DISTINCT, поэтому гонка двух зеркал упрётся в
+       базу, а не создаст дубль. */
+    const existing = await this.prisma.admin.partnerContractPrice.findFirst({
+      where: key,
+      select: { id: true },
+    });
+    if (existing) {
+      await this.prisma.admin.partnerContractPrice.update({
+        where: { id: existing.id },
+        data,
+      });
+    } else {
+      await this.prisma.admin.partnerContractPrice.create({ data });
+    }
+    return { ok: true as const };
+  }
+
+  /**
+   * Цены договоров, присланные оператором, — для кабинета гостиницы.
+   *
+   * Свежие сверху: спорят обычно по последнему приложению. Отдаётся как есть,
+   * без пересчёта: это чужой документ, и толковать его здесь не наше дело.
+   */
+  async listContractPrices(slug: string) {
+    const tenant = await this.resolveTenant(slug);
+    const rows = await this.prisma.admin.partnerContractPrice.findMany({
+      where: { tenantId: tenant.id },
+      orderBy: [{ validFrom: 'desc' }, { receivedAt: 'desc' }],
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      contractNumber: r.contractNumber,
+      amendmentNumber: r.amendmentNumber,
+      service: r.service,
+      validFrom: r.validFrom.toISOString(),
+      validTo: r.validTo?.toISOString() ?? null,
+      vatRate: r.vatRate == null ? null : Number(r.vatRate),
+      rows: r.rows,
+      receivedAt: r.receivedAt.toISOString(),
     }));
   }
 

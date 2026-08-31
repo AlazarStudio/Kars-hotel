@@ -57,8 +57,15 @@ const arg = (name: string): string | null => {
   return raw ? raw.slice(name.length + 3).replace(/^["']|["']$/g, '') : null;
 };
 
-const DATA = arg('data');
-const MEDIA = arg('media');
+/* Пустая строка вместо null НЕ ради краткости: `process.exit` обрывает
+ * выполнение, но сужение типа модульной константы внутрь тела функции
+ * TypeScript не переносит — и `join(DATA, …)` ниже видит `string | null`.
+ * Скрипт запускается через `tsx`, который типы не проверяет, поэтому ошибка
+ * лежала молча и всплыла только на сборке всего бэкенда: `npm run start:dev`
+ * переставал подниматься вовсе. Проверка ниже остаётся: она про запуск без
+ * ключей, а не про типы. */
+const DATA = arg('data') ?? '';
+const MEDIA = arg('media') ?? '';
 if (!DATA || !MEDIA) {
   console.error('Нужны --data=<airlines-export> и --media=<media-old-system>');
   process.exit(1);

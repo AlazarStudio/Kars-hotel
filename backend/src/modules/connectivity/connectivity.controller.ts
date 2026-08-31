@@ -8,6 +8,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -19,6 +20,7 @@ import { PARTNER_SCOPES, RequireScopes } from './decorators/partner-scopes.decor
 import { ConnectAvailabilityDto } from './dto/connect-availability.dto';
 import { ConnectCreateReservationDto } from './dto/connect-create-reservation.dto';
 import { ConnectCancelDto } from './dto/connect-cancel.dto';
+import { ConnectContractPricesDto } from './dto/connect-contract-prices.dto';
 import { ConnectRegisterHotelDto } from './dto/connect-register-hotel.dto';
 
 /**
@@ -138,6 +140,33 @@ export class ConnectivityController {
   @ApiOperation({ summary: 'Stay facts for reconciliation' })
   getFacts(@Param('slug') slug: string, @Param('id') id: string) {
     return this.connectivity.getFacts(slug, id);
+  }
+
+  /* Э6 · Зеркало закупочных цен договора. PUT, а не POST: приложение одно на
+     пару «договор + ДС» и услугу, и присланный набор заменяет предыдущий
+     целиком — повторный вызов теми же данными ничего не меняет. */
+  @Put('hotels/:slug/contract-prices')
+  @HttpCode(HttpStatus.OK)
+  @RequireScopes(PARTNER_SCOPES.ContractPricesWrite)
+  @ApiOperation({
+    summary: 'Mirror the operator contract price list for a hotel',
+    description:
+      'Цена вводится один раз — в реестре договоров оператора; сюда приезжает ' +
+      'снимок, чтобы гостиница видела, по какой цене её посчитают, и не вела ' +
+      'вторую копию. Полная замена по документу.',
+  })
+  putContractPrices(
+    @Param('slug') slug: string,
+    @Body() dto: ConnectContractPricesDto,
+  ) {
+    return this.connectivity.putContractPrices(slug, dto);
+  }
+
+  @Get('hotels/:slug/contract-prices')
+  @RequireScopes(PARTNER_SCOPES.HotelsRead)
+  @ApiOperation({ summary: 'Contract price snapshots mirrored for a hotel' })
+  getContractPrices(@Param('slug') slug: string) {
+    return this.connectivity.listContractPrices(slug);
   }
 
   // В7 · история изменений гостиницы: оператор видит, что и когда поменял
