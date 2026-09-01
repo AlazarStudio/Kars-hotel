@@ -88,3 +88,19 @@ export class ConnectContractPricesDto {
   @Type(() => ConnectContractPriceRowDto)
   rows!: ConnectContractPriceRowDto[];
 }
+
+/* Набор документов, действующих у оператора ПРЯМО СЕЙЧАС.
+ *
+ * Полная картина, а не добавка: чего в наборе нет, того у гостиницы быть не
+ * должно. Так чинится обратный ход, которого у одиночной отправки не было —
+ * скрытый в Авии договор оставался здесь навсегда.
+ *
+ * Пустой набор законен и означает ровно то, что означает: действующих
+ * договорных цен у оператора для этой гостиницы нет. */
+export class ConnectContractPricesSyncDto {
+  @ApiProperty({ type: [ConnectContractPricesDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ConnectContractPricesDto)
+  documents!: ConnectContractPricesDto[];
+}

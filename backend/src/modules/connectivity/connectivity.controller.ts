@@ -21,7 +21,10 @@ import { ConnectAvailabilityDto } from './dto/connect-availability.dto';
 import { ConnectCreateReservationDto } from './dto/connect-create-reservation.dto';
 import { ConnectCancelDto } from './dto/connect-cancel.dto';
 import { ReviewCorporateTariffDto } from './dto/review-corporate-tariff.dto';
-import { ConnectContractPricesDto } from './dto/connect-contract-prices.dto';
+import {
+  ConnectContractPricesDto,
+  ConnectContractPricesSyncDto,
+} from './dto/connect-contract-prices.dto';
 import { ConnectRegisterHotelDto } from './dto/connect-register-hotel.dto';
 
 /**
@@ -161,6 +164,27 @@ export class ConnectivityController {
     @Body() dto: ConnectContractPricesDto,
   ) {
     return this.connectivity.putContractPrices(slug, dto);
+  }
+
+  /* Э6 · Синхронизация зеркала целиком. Объявлена ДО одиночного PUT не по
+     необходимости, а по смыслу: это основной путь, одиночная отправка
+     осталась совместимостью. */
+  @Put('hotels/:slug/contract-prices/sync')
+  @HttpCode(HttpStatus.OK)
+  @RequireScopes(PARTNER_SCOPES.ContractPricesWrite)
+  @ApiOperation({
+    summary: 'Replace the whole set of mirrored contract price lists',
+    description:
+      'Присланный набор — полная картина действующих документов оператора. ' +
+      'Чего в нём нет, то удаляется: у оператора документ перестал ' +
+      'действовать, и показывать его гостинице значит обещать цену, которой ' +
+      'больше нет. Пустой набор законен.',
+  })
+  syncContractPrices(
+    @Param('slug') slug: string,
+    @Body() dto: ConnectContractPricesSyncDto,
+  ) {
+    return this.connectivity.syncContractPrices(slug, dto.documents);
   }
 
   @Get('hotels/:slug/contract-prices')

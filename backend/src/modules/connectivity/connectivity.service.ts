@@ -694,6 +694,63 @@ export class ConnectivityService {
     return { ok: true as const };
   }
 
+  /* СИНХРОНИЗАЦИЯ ЗЕРКАЛА: присланный набор — полная картина.
+   *
+   * Всё, чего в наборе нет, удаляется: у оператора этот документ перестал
+   * действовать, и показывать его гостинице значит обещать цену, которой уже
+   * нет. Раньше обратного хода не было вовсе.
+   *
+   * Одной транзакцией: между удалением лишнего и записью нового кабинет не
+   * должен показывать полупустую картину — по ней как раз и спорят о деньгах. */
+  async syncContractPrices(slug: string, documents: ConnectContractPricesDto[]) {
+    const tenant = await this.resolveTenant(slug);
+    const keyOf = (d: {
+      contractNumber: string;
+      amendmentNumber?: string | null;
+      service: string;
+    }) => `${d.contractNumber}|${d.amendmentNumber ?? ''}|${d.service}`;
+
+    return this.prisma.admin.$transaction(async (tx) => {
+      const existing = await tx.partnerContractPrice.findMany({
+        where: { tenantId: tenant.id },
+        select: {
+          id: true,
+          contractNumber: true,
+          amendmentNumber: true,
+          service: true,
+        },
+      });
+      const incoming = new Map(documents.map((d) => [keyOf(d), d]));
+
+      const stale = existing.filter((e) => !incoming.has(keyOf(e)));
+      if (stale.length) {
+        await tx.partnerContractPrice.deleteMany({
+          where: { id: { in: stale.map((e) => e.id) } },
+        });
+      }
+
+      const byKey = new Map(existing.map((e) => [keyOf(e), e.id]));
+      for (const [key, dto] of incoming) {
+        const data = {
+          tenantId: tenant.id,
+          contractNumber: dto.contractNumber,
+          amendmentNumber: dto.amendmentNumber ?? null,
+          service: dto.service,
+          validFrom: new Date(dto.validFrom),
+          validTo: dto.validTo ? new Date(dto.validTo) : null,
+          vatRate: dto.vatRate ?? null,
+          rows: dto.rows as unknown as Prisma.InputJsonValue,
+          receivedAt: new Date(),
+        };
+        const id = byKey.get(key);
+        if (id) await tx.partnerContractPrice.update({ where: { id }, data });
+        else await tx.partnerContractPrice.create({ data });
+      }
+
+      return { kept: incoming.size, removed: stale.length };
+    });
+  }
+
   /**
    * Цены договоров, присланные оператором, — для кабинета гостиницы.
    *
