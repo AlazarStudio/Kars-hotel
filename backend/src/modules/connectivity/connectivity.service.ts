@@ -308,6 +308,8 @@ export class ConnectivityService {
         perNight: Array<{ date: string; price: number | null }>;
         total: number | null;
         nightlyFrom: number | null;
+        /** Тот самый корпоративный тариф — оператор платит по нему. */
+        forOperator: boolean;
       };
       type OfferRoom = {
         id: string;
@@ -318,6 +320,21 @@ export class ConnectivityService {
         view: string;
         available: boolean;
       };
+      /* КОРПОРАТИВНЫЙ ТАРИФ РЕШАЕТ, ПО КАКОЙ ЦЕНЕ СПРАШИВАЕТ ОПЕРАТОР.
+       *
+       * Раньше «ценой предложения» была самая дешёвая из всех тарифов отеля.
+       * Для витрины это разумно, для нас — нет: платим мы по договору, а не по
+       * тому, что сегодня дешевле, и случайно дешёвый тариф выходного дня
+       * показал бы оператору цену, по которой ему счёт не выставят.
+       *
+       * Подтверждённый корпоративный тариф становится ценой предложения.
+       * Неподтверждённый из списка убирается совсем: предложить его значило бы
+       * дать выбрать цену, которую никто не сверял, — а подтверждение ровно
+       * для того и заведено. Причину оператор получает отдельным полем и
+       * показывает диспетчеру, вместо того чтобы гадать, куда делся тариф. */
+      const corporate = await this.ratePlans.operatorTariff();
+      const corporateApplies = corporate?.operatorStatus?.applies === true;
+
       const offers: Array<{
         categoryId: string;
         categoryName: string;
@@ -349,28 +366,35 @@ export class ConnectivityService {
           dto.checkOut,
           rt.basePrice as never,
         );
-        const ratePlans: OfferRatePlan[] = planPrices.map((p) => ({
-          ratePlanId: p.ratePlanId,
-          code: p.code,
-          name: p.name,
-          mealPlan: p.mealPlan,
-          nights: p.nights,
-          perNight: p.perNight.map((n) => ({
-            date: n.date,
-            price: n.price != null ? Number(n.price) : null,
-          })),
-          total: p.total != null ? Number(p.total) : null,
-          nightlyFrom: p.nightlyFrom != null ? Number(p.nightlyFrom) : null,
-        }));
+        const ratePlans: OfferRatePlan[] = planPrices
+          .filter((p) => !corporate || p.ratePlanId !== corporate.id || corporateApplies)
+          .map((p) => ({
+            ratePlanId: p.ratePlanId,
+            code: p.code,
+            name: p.name,
+            mealPlan: p.mealPlan,
+            nights: p.nights,
+            perNight: p.perNight.map((n) => ({
+              date: n.date,
+              price: n.price != null ? Number(n.price) : null,
+            })),
+            total: p.total != null ? Number(p.total) : null,
+            nightlyFrom: p.nightlyFrom != null ? Number(p.nightlyFrom) : null,
+            forOperator: corporate?.id === p.ratePlanId,
+          }));
 
         // Back-compat nightly rate: cheapest plan's nightly, else cheapest
         // configured rate on the first night, else the category base price.
+        const corporateNightly = corporateApplies
+          ? (ratePlans.find((p) => p.forOperator)?.nightlyFrom ?? null)
+          : null;
         const cheapestPlanNightly = ratePlans
           .map((p) => p.nightlyFrom)
           .filter((n): n is number => n != null)
           .reduce<number | null>((min, n) => (min === null || n < min ? n : min), null);
         const firstNight = avail.days[0];
         const nightlyRate =
+          corporateNightly ??
           cheapestPlanNightly ??
           (firstNight.minPrice != null ? Number(firstNight.minPrice) : Number(rt.basePrice));
 
@@ -399,6 +423,17 @@ export class ConnectivityService {
         nights,
         currency: tenant.currency,
         offers,
+        /* Почему предложение выглядит так. Убрать тариф молча значило бы
+           оставить диспетчера гадать, отчего цена не договорная. */
+        corporateTariff: corporate
+          ? {
+              ratePlanId: corporate.id,
+              name: corporate.name,
+              state: corporate.operatorStatus?.state ?? 'DRAFT',
+              applies: corporateApplies,
+              reason: corporate.operatorStatus?.reason ?? '',
+            }
+          : null,
       };
     });
   }
