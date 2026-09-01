@@ -14,6 +14,7 @@ import {
   useSeasons, useReplaceSeasons,
 } from '../../../../hooks/api/useRates';
 import { useOperatorContractPrices } from '../../../../hooks/api/useOperatorContractPrices';
+import { STATE_LABEL, accommodationRows, matchContractRows } from './corporateTariff';
 
 const MEAL_PLAN_LABELS = {
   NONE: 'Без питания',
@@ -74,7 +75,7 @@ function buildResolver(standardRates, seasons) {
 // ─────────────────────────────────────────────────────────────────────────────
 // RatePlanForm modal
 // ─────────────────────────────────────────────────────────────────────────────
-function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error }) {
+function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error, contracts }) {
   const isNew = !plan?.id;
   const [form, setForm] = useState({
     code:               plan?.code               ?? '',
@@ -85,6 +86,8 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
     parentRatePlanId:   plan?.parentRatePlanId    ?? '',
     priceModifierType:  plan?.priceModifierType   ?? 'PERCENT',
     priceModifierValue: plan?.priceModifierValue  ?? 0,
+    forOperator:        plan?.forOperator          ?? false,
+    operatorContract:   plan?.operatorContract      ?? '',
     _autoCode: isNew,
   });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -97,6 +100,12 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
   };
 
   const parentOptions = allPlans.filter(p => p.id !== plan?.id);
+  /* Корпоративный тариф не наследуется: правка родителя меняла бы уже
+     подтверждённые цены молча. Поэтому признак и базовый план — исключающие
+     друг друга, и включение первого гасит второй прямо в форме, а не отказом
+     сервера после «Сохранить». */
+  const setCorporate = (on) =>
+    setForm(f => ({ ...f, forOperator: on, parentRatePlanId: on ? '' : f.parentRatePlanId }));
 
   return (
     <div className={classes.overlay} onClick={onClose}>
@@ -142,7 +151,43 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
             </select>
           </div>
 
-          {parentOptions.length > 0 && (
+          <div className={classes.formGroup} style={{ gridColumn: '1/-1' }}>
+            <label className={classes.checkRow}>
+              <input
+                type="checkbox"
+                checked={form.forOperator}
+                onChange={e => setCorporate(e.target.checked)}
+              />
+              <span>Корпоративный тариф для оператора</span>
+            </label>
+            <div className={classes.fieldHint}>
+              По этому тарифу оператор селит своих гостей — если сверит его с
+              договором и подтвердит. До подтверждения он не применяется.
+            </div>
+          </div>
+
+          {form.forOperator && (
+            <div className={classes.formGroup} style={{ gridColumn: '1/-1' }}>
+              <label>Договор с оператором *</label>
+              <select
+                className={classes.input}
+                value={form.operatorContract}
+                onChange={e => set('operatorContract', e.target.value)}
+              >
+                <option value="">— выберите договор —</option>
+                {contracts.map(c => (
+                  <option key={c} value={c}>Договор {c}</option>
+                ))}
+              </select>
+              <div className={classes.fieldHint}>
+                {contracts.length
+                  ? 'С ценами этого договора оператор и будет сверять тариф.'
+                  : 'Оператор ещё не прислал ни одного ценового приложения — сверять будет не с чем.'}
+              </div>
+            </div>
+          )}
+
+          {!form.forOperator && parentOptions.length > 0 && (
             <div className={classes.formGroup} style={{ gridColumn: '1/-1' }}>
               <label>Базовый план (наследование цен)</label>
               <select className={classes.input} value={form.parentRatePlanId} onChange={e => set('parentRatePlanId', e.target.value)}>
@@ -154,7 +199,7 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
             </div>
           )}
 
-          {form.parentRatePlanId && (
+          {!form.forOperator && form.parentRatePlanId && (
             <>
               <div className={classes.formGroup}>
                 <label>Тип модификатора</label>
@@ -201,7 +246,10 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
           <button className={classes.btnCancel} onClick={onClose}>Отмена</button>
           <button
             className={classes.btnSave}
-            disabled={saving || !form.name || !form.code}
+            disabled={
+              saving || !form.name || !form.code ||
+              (form.forOperator && !form.operatorContract)
+            }
             onClick={() => onSave(form)}
           >
             {saving ? 'Сохранение...' : 'Сохранить'}
@@ -215,7 +263,7 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
 // ─────────────────────────────────────────────────────────────────────────────
 // StandardPrices — baseline price per category (the "everyday" price)
 // ─────────────────────────────────────────────────────────────────────────────
-function StandardPrices({ plan, roomTypes }) {
+function StandardPrices({ plan, roomTypes, contractSheets }) {
   const { data: standard = [], isLoading } = useStandardRates(plan.id);
   const save = useSetStandardRates();
 
@@ -227,7 +275,21 @@ function StandardPrices({ plan, roomTypes }) {
 
   const [draft, setDraft] = useState(stdMap);
   const [error, setError] = useState(null);
-  useEffect(() => { setDraft(stdMap); setError(null); }, [stdMap, plan.id]);
+  const [filled, setFilled] = useState(null);
+  useEffect(() => { setDraft(stdMap); setError(null); setFilled(null); }, [stdMap, plan.id]);
+
+  /* «Заполнить по договору» — только раскладка цен по полям, без сохранения.
+     Ставки свои, отвечает за них гостиница; подставить и записать за неё
+     значило бы расписаться её рукой. */
+  const contractRows = useMemo(
+    () => (plan.forOperator ? accommodationRows(contractSheets, plan.operatorContract) : []),
+    [contractSheets, plan.forOperator, plan.operatorContract],
+  );
+  const fillFromContract = () => {
+    const { prices, unmatched, uncovered } = matchContractRows(contractRows, roomTypes);
+    setDraft(d => ({ ...d, ...prices }));
+    setFilled({ count: Object.keys(prices).length, unmatched, uncovered });
+  };
 
   const dirty = roomTypes.some((rt) => (draft[rt.id] ?? '') !== (stdMap[rt.id] ?? ''));
 
@@ -280,6 +342,29 @@ function StandardPrices({ plan, roomTypes }) {
           ))}
         </div>
       )}
+      {filled && (
+        <div className={classes.fillReport}>
+          <div>
+            Подставлено цен из договора: <b>{filled.count}</b>. Проверьте и сохраните —
+            записываются они только по вашей кнопке.
+          </div>
+          {/* Что НЕ легло — говорим сразу и поимённо. Молча пропущенная строка
+              договора это категория, которую посчитают не по договору. */}
+          {filled.unmatched.length > 0 && (
+            <div className={classes.fillWarn}>
+              Не удалось сопоставить строки договора:{' '}
+              {filled.unmatched.map(r => r.categoryName || '(без названия)').join(', ')}.
+              Проверьте названия категорий.
+            </div>
+          )}
+          {filled.uncovered.length > 0 && (
+            <div className={classes.fillWarn}>
+              В договоре нет цены для категорий:{' '}
+              {filled.uncovered.map(rt => rt.name).join(', ')}.
+            </div>
+          )}
+        </div>
+      )}
       {error && <div style={{ padding: '8px 22px', color: '#DC2626', fontSize: 13 }}>{error}</div>}
       {roomTypes.length > 0 && (
         <div className={classes.sectionActions}>
@@ -287,6 +372,18 @@ function StandardPrices({ plan, roomTypes }) {
             {save.isPending ? 'Сохранение...' : 'Сохранить базовые цены'}
           </button>
           {dirty && <button className={classes.btnGhost} onClick={() => setDraft(stdMap)}>Сбросить</button>}
+          {plan.forOperator && (
+            <button
+              className={classes.btnGhost}
+              onClick={fillFromContract}
+              disabled={!contractRows.length}
+              title={contractRows.length
+                ? 'Подставить цены из ценового приложения договора'
+                : 'Оператор не присылал цен по этому договору'}
+            >
+              Заполнить по договору
+            </button>
+          )}
           <span style={{ fontSize: 12, color: '#9CA3AF' }}>Пустое поле или 0 — без базовой цены</span>
         </div>
       )}
@@ -866,7 +963,50 @@ function MonthPicker({ year, onYearChange, onSelect, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // PlanPanel — sub-tabs: базовые цены / сезоны / календарь
 // ─────────────────────────────────────────────────────────────────────────────
-function PlanPanel({ plan, roomTypes, onEditPlan }) {
+/* Статус сверки — первое, что должна видеть гостиница на корпоративном тарифе.
+ *
+ * «Не подтверждён» без причины — отказ, который нечем исполнить: звонить
+ * диспетчеру и выяснять, какая строка не сошлась, это работа, которой не
+ * должно быть. Поэтому причина показывается построчно, как её прислал
+ * оператор. */
+function CorporateStatus({ plan }) {
+  const st = plan.operatorStatus;
+  if (!st) return null;
+  const notes = Array.isArray(plan.reviewNotes) ? plan.reviewNotes : [];
+  return (
+    <div className={`${classes.corpBanner} ${classes['corp_' + st.state]}`}>
+      <div className={classes.corpHead}>
+        <b>{STATE_LABEL[st.state] ?? st.state}</b>
+        <span>{st.reason}</span>
+      </div>
+      {plan.reviewedAt && (
+        <div className={classes.corpMeta}>
+          {plan.reviewedBy ? `${plan.reviewedBy}, ` : ''}
+          {format(parseISO(plan.reviewedAt), 'd MMM yyyy, HH:mm', { locale: ru })}
+          {plan.reviewDocuments ? ` · сверяли: ${plan.reviewDocuments}` : ''}
+        </div>
+      )}
+      {notes.length > 0 && (
+        <ul className={classes.corpNotes}>
+          {notes.map((n, i) => (
+            <li key={i}>
+              {/* Обе суммы в КОПЕЙКАХ — как всё в контракте с оператором.
+                  Держать «ожидали» в копейках, а «в тарифе» в рублях значило бы
+                  однажды показать расхождение в сто раз и не заметить. */}
+              {typeof n === 'string'
+                ? n
+                : `${n.categoryName ?? n.category ?? '—'}: ${
+                    n.expected != null ? `по договору ${fmtRub(n.expected / 100)} ₽` : 'нет цены в договоре'
+                  }${n.actual != null ? `, в тарифе ${fmtRub(n.actual / 100)} ₽` : ''}`}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function PlanPanel({ plan, roomTypes, onEditPlan, contractSheets }) {
   const [tab, setTab] = useState('standard');
   const { data: seasons = [] } = useSeasons(plan.id);
   const seasonCount = useMemo(() => {
@@ -885,6 +1025,7 @@ function PlanPanel({ plan, roomTypes, onEditPlan }) {
             <code>{plan.code}</code>
             {' · '}{MEAL_PLAN_LABELS[plan.mealPlan] ?? plan.mealPlan}
             {plan.parentRatePlanId && ' · наследует цены'}
+            {plan.forOperator && ` · для оператора, договор ${plan.operatorContract ?? '—'}`}
             {!plan.isActive && <span style={{ marginLeft: 8, color: '#EF4444' }}>Неактивен</span>}
           </div>
         </div>
@@ -915,7 +1056,11 @@ function PlanPanel({ plan, roomTypes, onEditPlan }) {
         </div>
       )}
 
-      {tab === 'standard' && <StandardPrices plan={plan} roomTypes={roomTypes} />}
+      {plan.forOperator && <CorporateStatus plan={plan} />}
+
+      {tab === 'standard' && (
+        <StandardPrices plan={plan} roomTypes={roomTypes} contractSheets={contractSheets} />
+      )}
       {tab === 'seasons' && <Seasons plan={plan} roomTypes={roomTypes} />}
       {tab === 'calendar' && (
         <RateCalendar plan={plan} roomTypes={roomTypes} />
@@ -1017,6 +1162,12 @@ function Tariffs() {
   const updatePlan = useUpdateRatePlan();
   const deletePlan = useDeleteRatePlan();
 
+  const { data: contractSheets = [] } = useOperatorContractPrices();
+  const contracts = useMemo(
+    () => [...new Set(contractSheets.map((s) => s.contractNumber))].sort(),
+    [contractSheets],
+  );
+
   const [selectedPlanId, setSelectedPlanId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState(null);
@@ -1035,9 +1186,11 @@ function Tariffs() {
       description:        form.description || undefined,
       mealPlan:           form.mealPlan,
       isActive:           form.isActive,
-      parentRatePlanId:   form.parentRatePlanId || undefined,
+      parentRatePlanId:   form.forOperator ? null : (form.parentRatePlanId || undefined),
       priceModifierType:  form.parentRatePlanId ? form.priceModifierType  : undefined,
       priceModifierValue: form.parentRatePlanId ? form.priceModifierValue : undefined,
+      forOperator:        form.forOperator,
+      operatorContract:   form.forOperator ? form.operatorContract : null,
     };
     try {
       if (formData?.id) {
@@ -1111,6 +1264,14 @@ function Tariffs() {
                   <div className={classes.planTabHead}>
                     <span className={classes.planTabName}>{p.name}</span>
                     {p.parentRatePlanId && <span className={classes.planTabInherits}>Inherited</span>}
+                    {p.forOperator && (
+                      <span
+                        className={`${classes.planTabCorp} ${classes['corpDot_' + (p.operatorStatus?.state ?? 'DRAFT')]}`}
+                        title={p.operatorStatus?.reason ?? ''}
+                      >
+                        Оператор
+                      </span>
+                    )}
                     <span style={{ width: 7, height: 7, borderRadius: '50%', background: p.isActive ? '#22C55E' : '#D1D5DB', flexShrink: 0, marginLeft: 'auto' }} />
                   </div>
                   <div className={classes.planTabMeta}>{p.code} · {MEAL_PLAN_LABELS[p.mealPlan] ?? p.mealPlan}</div>
@@ -1128,6 +1289,7 @@ function Tariffs() {
               key={selectedPlan.id}
               plan={selectedPlan}
               roomTypes={roomTypes}
+              contractSheets={contractSheets}
               onEditPlan={() => openEdit(selectedPlan)}
             />
           )}
@@ -1140,6 +1302,7 @@ function Tariffs() {
         <RatePlanForm
           plan={formData}
           allPlans={plans}
+          contracts={contracts}
           onSave={handleSave}
           onDelete={handleDelete}
           onClose={() => { setShowForm(false); setFormError(null); }}

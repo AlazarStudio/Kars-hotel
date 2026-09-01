@@ -11,6 +11,7 @@ import { CreateRatePlanDto } from './dto/create-rate-plan.dto';
 import { UpdateRatePlanDto } from './dto/update-rate-plan.dto';
 import {
   ContractPriceDoc,
+  PlanPriceRow,
   TariffStatus,
   docsOfContract,
   documentsLabel,
@@ -183,11 +184,11 @@ export class RatePlansService {
         'Нет ценового приложения договора — сверять не с чем',
       );
     }
-    const rates = await this.planRates([id]);
+    const prices = await this.planPrices([id]);
     const fingerprint = tariffFingerprint({
       docs: mine,
       plan,
-      rates: rates.get(id) ?? [],
+      prices: prices.get(id) ?? [],
     });
 
     /* Решение относится к тем цифрам, которые человек видел на экране.
@@ -269,25 +270,74 @@ export class RatePlansService {
     }));
   }
 
-  private async planRates(ids: string[]) {
-    const rows = await this.prisma.forTenant((tx) =>
-      tx.rate.findMany({
-        where: { ratePlanId: { in: ids } },
-        select: {
-          ratePlanId: true,
-          date: true,
-          roomTypeId: true,
-          occupancy: true,
-          price: true,
-          currency: true,
-        },
-      }),
+  /* Все три источника цены разом: день, сезон, базовая цена категории.
+   * PMS считает ночь именно в этом порядке, значит и сверять надо всё. */
+  private async planPrices(ids: string[]) {
+    const [days, seasons, standard] = await this.prisma.forTenant((tx) =>
+      Promise.all([
+        tx.rate.findMany({
+          where: { ratePlanId: { in: ids } },
+          select: {
+            ratePlanId: true,
+            date: true,
+            roomTypeId: true,
+            occupancy: true,
+            price: true,
+            currency: true,
+          },
+        }),
+        tx.rateSeason.findMany({
+          where: { ratePlanId: { in: ids } },
+          select: {
+            ratePlanId: true,
+            roomTypeId: true,
+            dateFrom: true,
+            dateTo: true,
+            price: true,
+            currency: true,
+          },
+        }),
+        tx.standardRate.findMany({
+          where: { ratePlanId: { in: ids } },
+          select: { ratePlanId: true, roomTypeId: true, price: true, currency: true },
+        }),
+      ]),
     );
-    const byPlan = new Map<string, typeof rows>();
-    for (const r of rows) {
-      const list = byPlan.get(r.ratePlanId) ?? [];
-      list.push(r);
-      byPlan.set(r.ratePlanId, list);
+
+    const byPlan = new Map<string, PlanPriceRow[]>();
+    const push = (planId: string, row: PlanPriceRow) => {
+      const list = byPlan.get(planId) ?? [];
+      list.push(row);
+      byPlan.set(planId, list);
+    };
+    for (const r of days) {
+      push(r.ratePlanId, {
+        kind: 'DAY',
+        roomTypeId: r.roomTypeId,
+        occupancy: r.occupancy,
+        dateFrom: r.date,
+        dateTo: r.date,
+        price: r.price,
+        currency: r.currency,
+      });
+    }
+    for (const r of seasons) {
+      push(r.ratePlanId, {
+        kind: 'SEASON',
+        roomTypeId: r.roomTypeId,
+        dateFrom: r.dateFrom,
+        dateTo: r.dateTo,
+        price: r.price,
+        currency: r.currency,
+      });
+    }
+    for (const r of standard) {
+      push(r.ratePlanId, {
+        kind: 'STANDARD',
+        roomTypeId: r.roomTypeId,
+        price: r.price,
+        currency: r.currency,
+      });
     }
     return byPlan;
   }
@@ -302,9 +352,9 @@ export class RatePlansService {
     if (!corporate.length) {
       return plans.map((p) => ({ ...p, operatorStatus: null, fingerprint: null }));
     }
-    const [docs, rates] = await Promise.all([
+    const [docs, prices] = await Promise.all([
       this.contractDocs(),
-      this.planRates(corporate.map((p) => p.id)),
+      this.planPrices(corporate.map((p) => p.id)),
     ]);
     return plans.map((p) => {
       if (!p.forOperator) return { ...p, operatorStatus: null, fingerprint: null };
@@ -313,7 +363,7 @@ export class RatePlansService {
       const fingerprint = tariffFingerprint({
         docs: mine,
         plan,
-        rates: rates.get(p.id) ?? [],
+        prices: prices.get(p.id) ?? [],
       });
       return {
         ...p,

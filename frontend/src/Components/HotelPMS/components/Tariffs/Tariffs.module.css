@@ -1083,3 +1083,63 @@
   font-weight: 600;
   white-space: nowrap;
 }
+
+/* ── Корпоративный тариф для оператора ─────────────────────────────────── */
+
+.checkRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  cursor: pointer;
+}
+.checkRow input { width: 15px; height: 15px; accent-color: #2563EB; cursor: pointer; }
+
+.fieldHint { margin-top: 5px; font-size: 12px; color: #9CA3AF; line-height: 1.45; }
+
+/* Цвет здесь несёт СОСТОЯНИЕ сверки, а не украшает: подтверждён / ждёт /
+   не сошлось. Ровно поэтому он один на баннер и на точку во вкладке. */
+.corpBanner {
+  margin: 0 22px 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid;
+  font-size: 13px;
+}
+.corpHead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.corpHead b { font-size: 13.5px; }
+.corpHead span { color: #4B5563; }
+.corpMeta { margin-top: 6px; font-size: 12px; color: #6B7280; }
+.corpNotes { margin: 8px 0 0; padding-left: 18px; color: #4B5563; line-height: 1.6; }
+
+.corp_CONFIRMED { background: #F0FDF4; border-color: #BBF7D0; }
+.corp_DRAFT     { background: #F8FAFC; border-color: #E2E8F0; }
+.corp_STALE     { background: #FFFBEB; border-color: #FDE68A; }
+.corp_REJECTED  { background: #FEF2F2; border-color: #FECACA; }
+
+.planTabCorp {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+.corpDot_CONFIRMED { background: #DCFCE7; color: #15803D; }
+.corpDot_DRAFT     { background: #F1F5F9; color: #64748B; }
+.corpDot_STALE     { background: #FEF3C7; color: #B45309; }
+.corpDot_REJECTED  { background: #FEE2E2; color: #B91C1C; }
+
+.fillReport {
+  margin: 10px 22px 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  font-size: 12.5px;
+  color: #475569;
+  line-height: 1.55;
+}
+.fillWarn { margin-top: 6px; color: #B45309; }

@@ -1,4 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+/* Правка ЛЮБОЙ цены роняет подтверждение корпоративного тарифа: статус сверки
+   считает сервер по всем трём источникам цены. Не сбросить список тарифов
+   значит оставить на экране зелёное «подтверждён» под цифрой, которую только
+   что поменяли, — а верят именно экрану. */
+import { RATE_PLANS_KEY } from './useRatePlans';
 import * as api from '../../api/rates';
 
 const KEY = ['rates'];
@@ -16,7 +21,10 @@ export function useBulkUpsertRates() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: api.bulkUpsertRates,
-    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: KEY });
+      qc.invalidateQueries({ queryKey: RATE_PLANS_KEY });
+    },
   });
 }
 
@@ -24,7 +32,10 @@ export function useFillRates() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: api.fillRates,
-    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: KEY });
+      qc.invalidateQueries({ queryKey: RATE_PLANS_KEY });
+    },
   });
 }
 
@@ -48,6 +59,7 @@ export function useSetStandardRates() {
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: STANDARD_KEY });
       qc.invalidateQueries({ queryKey: KEY });
+      qc.invalidateQueries({ queryKey: RATE_PLANS_KEY });
       if (vars?.ratePlanId) qc.invalidateQueries({ queryKey: [...STANDARD_KEY, vars.ratePlanId] });
     },
   });
@@ -73,6 +85,7 @@ export function useReplaceSeasons() {
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: SEASONS_KEY });
       qc.invalidateQueries({ queryKey: KEY });
+      qc.invalidateQueries({ queryKey: RATE_PLANS_KEY });
       if (vars?.ratePlanId) qc.invalidateQueries({ queryKey: [...SEASONS_KEY, vars.ratePlanId] });
     },
   });

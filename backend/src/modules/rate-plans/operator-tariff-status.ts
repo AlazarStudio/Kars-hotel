@@ -30,11 +30,20 @@ export interface ContractPriceDoc {
   rows: unknown;
 }
 
-/** Ставка тарифа — то, по чему гостиница выставит счёт. */
-export interface PlanRate {
-  date: Date | string;
+/* Цена тарифа приходит из ТРЁХ источников, и все три обязаны быть в отпечатке.
+ *
+ * PMS считает ночь так: цена на день, иначе сезон, иначе базовая цена
+ * категории. Взять в отпечаток только календарь — оставить две открытые двери:
+ * гостиница правит базовую цену, счёт меняется, а подтверждение висит. Это не
+ * умозрительная дыра — ровно так и вышло при живой проверке 01.09.2026:
+ * базовая цена 2 800 → 3 200, сервер продолжал говорить «подтверждён». */
+export interface PlanPriceRow {
+  kind: 'STANDARD' | 'SEASON' | 'DAY';
   roomTypeId: string;
-  occupancy: number;
+  /** У базовой цены и сезона размещения нет — цена одна на категорию. */
+  occupancy?: number | null;
+  dateFrom?: Date | string | null;
+  dateTo?: Date | string | null;
   price: unknown;
   /** Валюта — часть цены: 2800 ₽ и 2800 $ это разные деньги. */
   currency: string;
@@ -83,7 +92,7 @@ const iso = (v: Date | string): string =>
 export function tariffFingerprint(input: {
   docs: ContractPriceDoc[];
   plan: PlanPricingShape;
-  rates: PlanRate[];
+  prices: PlanPriceRow[];
 }): string {
   const docs = [...input.docs]
     .map((d) => ({
@@ -101,17 +110,22 @@ export function tariffFingerprint(input: {
       ),
     );
 
-  const rates = [...input.rates]
+  const day = (v: Date | string | null | undefined) =>
+    v == null ? '' : iso(v).slice(0, 10);
+
+  const prices = [...input.prices]
     .map((r) => ({
-      date: iso(r.date).slice(0, 10),
+      kind: r.kind,
       roomTypeId: r.roomTypeId,
-      occupancy: r.occupancy,
+      occupancy: r.occupancy ?? null,
+      dateFrom: day(r.dateFrom),
+      dateTo: day(r.dateTo),
       price: String(r.price),
       currency: r.currency,
     }))
     .sort((a, b) =>
-      `${a.date}|${a.roomTypeId}|${a.occupancy}`.localeCompare(
-        `${b.date}|${b.roomTypeId}|${b.occupancy}`,
+      `${a.kind}|${a.roomTypeId}|${a.dateFrom}|${a.dateTo}|${a.occupancy ?? ''}`.localeCompare(
+        `${b.kind}|${b.roomTypeId}|${b.dateFrom}|${b.dateTo}|${b.occupancy ?? ''}`,
       ),
     );
 
@@ -123,7 +137,7 @@ export function tariffFingerprint(input: {
   };
 
   return createHash('sha256')
-    .update(JSON.stringify({ docs, plan, rates }))
+    .update(JSON.stringify({ docs, plan, prices }))
     .digest('hex');
 }
 

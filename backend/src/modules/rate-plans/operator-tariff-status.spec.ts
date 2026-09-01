@@ -1,5 +1,6 @@
 import {
   ContractPriceDoc,
+  PlanPriceRow,
   documentsLabel,
   operatorTariffStatus,
   tariffFingerprint,
@@ -29,28 +30,47 @@ const shape = {
   priceModifierValue: 0,
 };
 
-const rate = (price: number, date = '2026-09-01') => ({
-  date,
+/* Цена ночи в PMS берётся из трёх мест: день → сезон → базовая цена.
+   Тесты работают со всеми тремя видами строк, потому что дыра нашлась именно
+   там, где вид был один. */
+const day = (price: number, date = '2026-09-01') => ({
+  kind: 'DAY' as const,
   roomTypeId: 'rt-1',
   occupancy: 2,
+  dateFrom: date,
+  dateTo: date,
+  price,
+  currency: 'RUB',
+});
+const standard = (price: number) => ({
+  kind: 'STANDARD' as const,
+  roomTypeId: 'rt-1',
+  price,
+  currency: 'RUB',
+});
+const season = (price: number, from = '2026-12-25', to = '2027-01-10') => ({
+  kind: 'SEASON' as const,
+  roomTypeId: 'rt-1',
+  dateFrom: from,
+  dateTo: to,
   price,
   currency: 'RUB',
 });
 
-const fp = (docs: ContractPriceDoc[], rates = [rate(2800)]) =>
-  tariffFingerprint({ docs, plan: shape, rates });
+const fp = (docs: ContractPriceDoc[], prices: PlanPriceRow[] = [day(2800)]) =>
+  tariffFingerprint({ docs, plan: shape, prices });
 
 describe('отпечаток сверки', () => {
   it('не зависит от порядка ключей и строк', () => {
     const a = tariffFingerprint({
       docs: [doc({ rows: [{ price: 280000, categoryName: 'Двухместный' }] })],
       plan: shape,
-      rates: [rate(2800, '2026-09-02'), rate(2800, '2026-09-01')],
+      prices: [day(2800, '2026-09-02'), day(2800, '2026-09-01')],
     });
     const b = tariffFingerprint({
       docs: [doc({ rows: [{ categoryName: 'Двухместный', price: 280000 }] })],
       plan: shape,
-      rates: [rate(2800, '2026-09-01'), rate(2800, '2026-09-02')],
+      prices: [day(2800, '2026-09-01'), day(2800, '2026-09-02')],
     });
     // Тот же документ, пересланный заново, не должен ронять подтверждение:
     // иначе «устарел» загорается на пустом месте и его перестают читать.
@@ -63,15 +83,30 @@ describe('отпечаток сверки', () => {
     );
   });
 
-  it('меняется, когда меняется СТАВКА тарифа', () => {
-    expect(fp([doc()])).not.toBe(fp([doc()], [rate(3200)]));
+  it('меняется, когда меняется цена на ДЕНЬ', () => {
+    expect(fp([doc()])).not.toBe(fp([doc()], [day(3200)]));
+  });
+
+  /* Дыра, найденная живой проверкой: базовая цена лежит в другой таблице, и
+     отпечаток её не видел. Гостиница правила 2 800 → 3 200, счёт менялся, а
+     сервер продолжал отвечать «подтверждён». */
+  it('меняется, когда меняется БАЗОВАЯ цена категории', () => {
+    expect(fp([doc()], [standard(2800)])).not.toBe(fp([doc()], [standard(3200)]));
+  });
+
+  it('меняется, когда меняется цена СЕЗОНА', () => {
+    expect(fp([doc()], [season(4000)])).not.toBe(fp([doc()], [season(4500)]));
+  });
+
+  it('различает источники: та же цифра базовой ценой и ценой на день — разное', () => {
+    // Иначе перенос цены из базовой в календарь прошёл бы незамеченным, а это
+    // разные правила применения: день бьёт сезон, сезон бьёт базовую.
+    expect(fp([doc()], [standard(2800)])).not.toBe(fp([doc()], [day(2800)]));
   });
 
   it('меняется при смене ВАЛЮТЫ той же ставки', () => {
     // 2800 ₽ и 2800 $ — разные деньги; подтверждение первого не годится второму.
-    expect(fp([doc()])).not.toBe(
-      fp([doc()], [{ ...rate(2800), currency: 'USD' }]),
-    );
+    expect(fp([doc()])).not.toBe(fp([doc()], [{ ...day(2800), currency: 'USD' }]));
   });
 
   it('меняется, когда выходит новая ДС', () => {
@@ -147,7 +182,7 @@ describe('состояние корпоративного тарифа', () => {
     const s = operatorTariffStatus(
       confirmed(wasConfirmedWith),
       [doc()],
-      fp([doc()], [rate(3200)]),
+      fp([doc()], [day(3200)]),
     );
     expect(s.state).toBe('STALE');
     expect(s.applies).toBe(false);
@@ -162,7 +197,7 @@ describe('состояние корпоративного тарифа', () => {
         reviewFingerprint: fp([doc()]),
       },
       [doc()],
-      fp([doc()], [rate(2800)]),
+      fp([doc()], [day(2800)]),
     );
     expect(s.state).toBe('REJECTED');
     expect(s.applies).toBe(false);
