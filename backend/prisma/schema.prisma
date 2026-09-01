@@ -372,6 +372,19 @@ enum MealPlan {
   AI     // All Inclusive
 }
 
+/// Вердикт оператора по корпоративному тарифу.
+///
+/// Хранится только РЕШЕНИЕ человека. Свежесть решения (не вышло ли новое
+/// приложение, не изменилось ли старое) не хранится — она вычисляется, иначе
+/// пришлось бы помнить сбрасывать статус из каждого места, куда приезжают
+/// цены, и однажды не сбросить.
+enum OperatorReviewVerdict {
+  CONFIRMED
+  REJECTED
+
+  @@map("operator_review_verdict")
+}
+
 enum PriceModifierType {
   /// Add/subtract a fixed amount from the parent rate.
   ABSOLUTE
@@ -448,6 +461,29 @@ model RatePlan {
   isActive             Boolean            @default(true) @map("is_active")
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
+
+  /// КОРПОРАТИВНЫЙ ТАРИФ ДЛЯ ОПЕРАТОРА.
+  ///
+  /// Гостиница живёт по своим тарифам; для оператора (Kars Avia) она заводит
+  /// отдельный — по подписанному договору. Признак булев, а не ссылка на
+  /// партнёра, ровно как и у `PartnerContractPrice`: оператор в системе один,
+  /// и если он однажды станет не один — меняться этим двум местам вместе.
+  forOperator          Boolean            @default(false) @map("for_operator")
+  /// Номер договора, который этот тариф воплощает — чтобы знать, с ЧЕМ сверять.
+  operatorContract     String?            @map("operator_contract")
+
+  /// Решение оператора: подтверждено или отклонено. null — ещё не смотрели.
+  reviewVerdict        OperatorReviewVerdict? @map("review_verdict")
+  reviewedAt           DateTime?          @map("reviewed_at")
+  /// Кто смотрел — строкой: это сотрудник ОПЕРАТОРА, в пользователях PMS его нет.
+  reviewedBy           String?            @map("reviewed_by")
+  /// Какие документы сверяли, словами для человека: «договор 18, ДС 2».
+  reviewDocuments      String?            @map("review_documents")
+  /// Отпечаток набора приложений на момент сверки. Изменились цены договора —
+  /// отпечаток разойдётся, и подтверждение слетит САМО: сверяли с другим.
+  reviewFingerprint    String?            @map("review_fingerprint")
+  /// Расхождения построчно — чтобы гостиница чинила сама, без звонка.
+  reviewNotes          Json?              @map("review_notes")
 
   rates         Rate[]
   restrictions  Restriction[]

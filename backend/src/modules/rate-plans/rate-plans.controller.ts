@@ -18,6 +18,15 @@ export class RatePlansController {
     return this.service.list();
   }
 
+  /* Объявлен ДО ':id' намеренно: иначе путь съест параметрический маршрут и
+     ответит 400 на нечисловой uuid. */
+  @Get('operator-tariff')
+  @RequirePermissions('rate.read')
+  @ApiOperation({ summary: 'Корпоративный тариф для оператора со статусом сверки' })
+  operatorTariff() {
+    return this.service.operatorTariff();
+  }
+
   @Get(':id')
   @RequirePermissions('rate.read')
   get(@Param('id', new ParseUUIDPipe()) id: string) {

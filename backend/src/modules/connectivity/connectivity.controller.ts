@@ -20,6 +20,7 @@ import { PARTNER_SCOPES, RequireScopes } from './decorators/partner-scopes.decor
 import { ConnectAvailabilityDto } from './dto/connect-availability.dto';
 import { ConnectCreateReservationDto } from './dto/connect-create-reservation.dto';
 import { ConnectCancelDto } from './dto/connect-cancel.dto';
+import { ReviewCorporateTariffDto } from './dto/review-corporate-tariff.dto';
 import { ConnectContractPricesDto } from './dto/connect-contract-prices.dto';
 import { ConnectRegisterHotelDto } from './dto/connect-register-hotel.dto';
 
@@ -167,6 +168,33 @@ export class ConnectivityController {
   @ApiOperation({ summary: 'Contract price snapshots mirrored for a hotel' })
   getContractPrices(@Param('slug') slug: string) {
     return this.connectivity.listContractPrices(slug);
+  }
+
+  /* Э3 · Корпоративный тариф гостиницы для оператора.
+     Читает оператор ту же картину, что видит гостиница у себя: один расчёт
+     статуса на обе стороны, иначе спор «у меня подтверждён» неразрешим. */
+  @Get('hotels/:slug/corporate-tariff')
+  @RequireScopes(PARTNER_SCOPES.HotelsRead)
+  @ApiOperation({ summary: 'Corporate rate plan for the operator, with review status' })
+  getCorporateTariff(@Param('slug') slug: string) {
+    return this.connectivity.getCorporateTariff(slug);
+  }
+
+  @Post('hotels/:slug/corporate-tariff/review')
+  @HttpCode(HttpStatus.OK)
+  @RequireScopes(PARTNER_SCOPES.CorporateTariffReview)
+  @ApiOperation({
+    summary: 'Confirm or reject the corporate rate plan',
+    description:
+      'Подтверждение — шлюз: неподтверждённый тариф к заявкам оператора не ' +
+      'применяется. Отпечаток сверяется с текущим, чтобы решение относилось ' +
+      'к тем цифрам, которые человек видел.',
+  })
+  reviewCorporateTariff(
+    @Param('slug') slug: string,
+    @Body() dto: ReviewCorporateTariffDto,
+  ) {
+    return this.connectivity.reviewCorporateTariff(slug, dto);
   }
 
   // В7 · история изменений гостиницы: оператор видит, что и когда поменял

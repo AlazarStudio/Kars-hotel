@@ -9,6 +9,8 @@ import { ConnectAvailabilityDto } from './dto/connect-availability.dto';
 import { ConnectCreateReservationDto } from './dto/connect-create-reservation.dto';
 import { ConnectRegisterHotelDto } from './dto/connect-register-hotel.dto';
 import { ConnectContractPricesDto } from './dto/connect-contract-prices.dto';
+import { ReviewCorporateTariffDto } from './dto/review-corporate-tariff.dto';
+import { RatePlansService } from '../rate-plans/rate-plans.service';
 import { slugifyHotelName } from '../auth/slug.util';
 
 /**
@@ -35,6 +37,7 @@ export class ConnectivityService {
     private readonly availability: AvailabilityService,
     private readonly reservations: ReservationsService,
     private readonly auth: AuthService,
+    private readonly ratePlans: RatePlansService,
   ) {}
 
   // ─── Catalog (cross-tenant) ────────────────────────────────────────────────
@@ -549,6 +552,42 @@ export class ConnectivityService {
    * чужой системы; ip сотрудника отеля — вообще не его дело. Имя автора
    * отдаём: без него запись «тариф изменён» не с кем обсуждать.
    */
+  /* КОРПОРАТИВНЫЙ ТАРИФ — обе стороны читают ОДИН расчёт.
+   *
+   * Соблазн — посчитать статус на стороне Авии: там и договор, и цены. Но
+   * тогда «подтверждён» в кабинете гостиницы и «подтверждён» у оператора стали
+   * бы двумя разными вычислениями, и однажды разошлись бы. Спорить о том, чей
+   * экран прав, стороны договора не должны: считает тот, у кого тариф. */
+  async getCorporateTariff(slug: string) {
+    const tenant = await this.resolveTenant(slug);
+    return this.runAsTenant(tenant.id, () => this.ratePlans.operatorTariff());
+  }
+
+  async reviewCorporateTariff(slug: string, dto: ReviewCorporateTariffDto) {
+    const tenant = await this.resolveTenant(slug);
+    return this.runAsTenant(tenant.id, async () => {
+      const current = await this.ratePlans.operatorTariff();
+      if (!current) {
+        throw new NotFoundException(
+          `У гостиницы ${slug} нет корпоративного тарифа для оператора`,
+        );
+      }
+      /* Решают по тому тарифу, который смотрели. Гостиница вправе выключить
+         один и включить другой — и тогда решение уехало бы на чужие цифры. */
+      if (current.id !== dto.ratePlanId) {
+        throw new ConflictException(
+          'Гостиница сменила корпоративный тариф — откройте его заново',
+        );
+      }
+      return this.ratePlans.applyOperatorReview(current.id, {
+        verdict: dto.verdict,
+        reviewedBy: dto.reviewedBy,
+        seenFingerprint: dto.seenFingerprint,
+        notes: dto.notes,
+      });
+    });
+  }
+
   async getHotelHistory(slug: string, take = 50) {
     const tenant = await this.resolveTenant(slug);
     const rows = await this.prisma.admin.auditLog.findMany({

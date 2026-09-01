@@ -79,4 +79,18 @@ export class CreateRatePlanDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    default: false,
+    description: 'Корпоративный тариф для оператора (Kars Avia)',
+  })
+  @IsOptional()
+  @IsBoolean()
+  forOperator?: boolean;
+
+  @ApiPropertyOptional({ description: 'Номер договора с оператором, который тариф воплощает' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  operatorContract?: string | null;
 }

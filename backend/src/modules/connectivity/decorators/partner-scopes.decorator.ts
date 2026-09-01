@@ -16,6 +16,10 @@ export const PARTNER_SCOPES = {
      гостиницу и присылать её договорные цены умеют разные стороны, и держать
      это одним правом значит однажды выдать одно вместе с другим. */
   ContractPricesWrite: 'contract-prices:write',
+  /* Подтверждение корпоративного тарифа гостиницы. Отдельно от зеркала цен:
+     прислать свой договор и вынести решение по ЧУЖОМУ тарифу — разные права.
+     Первое делает интеграция, второе — человек, который отвечает деньгами. */
+  CorporateTariffReview: 'corporate-tariff:review',
 } as const;
 
 export type PartnerScope = (typeof PARTNER_SCOPES)[keyof typeof PARTNER_SCOPES];
