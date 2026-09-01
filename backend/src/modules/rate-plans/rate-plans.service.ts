@@ -149,7 +149,42 @@ export class RatePlansService {
     if (!plan) return null;
     const [decorated] = await this.withOperatorStatus([plan]);
     const docs = docsOfContract(await this.contractDocs(), plan.operatorContract);
-    return { ...decorated, contractDocs: docs };
+
+    /* Сверять оператор будет ЦИФРЫ, а не наличие тарифа, — значит их и надо
+       отдать. Базовая цена по категориям это то, с чем сопоставляется строка
+       приложения; про сезоны и цены на день говорится отдельной сводкой, а не
+       умалчивается: «всё по 2 800» при сорока днях по 4 500 в календаре —
+       ровно та полуправда, из-за которой потом спорят по акту. */
+    const [roomTypes, prices] = await Promise.all([
+      this.prisma.forTenant((tx) =>
+        tx.roomType.findMany({
+          where: { isActive: true },
+          orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+          select: { id: true, name: true },
+        }),
+      ),
+      this.planPrices([plan.id]).then((m) => m.get(plan.id) ?? []),
+    ]);
+    const standardBy = new Map(
+      prices.filter((r) => r.kind === 'STANDARD').map((r) => [r.roomTypeId, r]),
+    );
+    const categories = roomTypes.map((rt) => {
+      const std = standardBy.get(rt.id);
+      const others = prices.filter((r) => r.kind !== 'STANDARD' && r.roomTypeId === rt.id);
+      const amounts = others.map((r) => Number(r.price));
+      return {
+        categoryId: rt.id,
+        categoryName: rt.name,
+        /** Рубли — как всё наружу из PMS; в копейки переводит адаптер Авии. */
+        price: std ? Number(std.price) : null,
+        currency: std?.currency ?? 'RUB',
+        overrides: amounts.length
+          ? { count: amounts.length, min: Math.min(...amounts), max: Math.max(...amounts) }
+          : null,
+      };
+    });
+
+    return { ...decorated, contractDocs: docs, categories };
   }
 
   /* ЗАПИСЬ ВЕРДИКТА ЖИВЁТ ЗДЕСЬ, рядом с правилом.
