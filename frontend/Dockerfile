@@ -5,6 +5,7 @@ ARG NODE_VERSION=22-alpine
 
 FROM node:${NODE_VERSION} AS builder
 WORKDIR /app
+ENV CI=true
 RUN corepack enable
 COPY package.json pnpm-lock.yaml ./
 # --dangerously-allow-all-builds: свежий pnpm блокирует postinstall-скрипты

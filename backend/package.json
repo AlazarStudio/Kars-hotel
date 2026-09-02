@@ -4,6 +4,7 @@
   "description": "KarsHotel PMS — Backend API (NestJS 10 + Prisma + PostgreSQL)",
   "author": "",
   "private": true,
+  "packageManager": "pnpm@10.33.2",
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",

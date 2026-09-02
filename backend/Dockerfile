@@ -6,6 +6,7 @@ ARG NODE_VERSION=22-alpine
 # --- сборка: полный набор зависимостей, компиляция, клиент Prisma ---
 FROM node:${NODE_VERSION} AS builder
 WORKDIR /app
+ENV CI=true
 RUN corepack enable
 COPY package.json pnpm-lock.yaml ./
 # --dangerously-allow-all-builds: свежий pnpm блокирует postinstall-скрипты
@@ -22,6 +23,7 @@ RUN pnpm run build
 FROM node:${NODE_VERSION} AS runner
 ENV NODE_ENV=production
 WORKDIR /app
+ENV CI=true
 RUN corepack enable
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --prod --frozen-lockfile --dangerously-allow-all-builds
