@@ -30,7 +30,10 @@ RUN pnpm install --prod --frozen-lockfile --dangerously-allow-all-builds
 # Схема нужна в образе: миграции накатываются `prisma migrate deploy` при
 # развёртывании, и без неё команда не соберёт историю.
 COPY prisma ./prisma
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+# Клиент генерируется здесь же, в runner: под pnpm сгенерированный клиент
+# живёт внутри виртуального стора (.pnpm/…), и копирование node_modules/.prisma
+# из builder-стадии — npm-раскладка, которой у pnpm просто нет.
+RUN pnpm exec prisma generate
 COPY --from=builder /app/dist ./dist
 EXPOSE 3001
 CMD ["node", "dist/main"]
