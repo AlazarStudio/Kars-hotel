@@ -7,7 +7,9 @@ FROM node:${NODE_VERSION} AS builder
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+# --dangerously-allow-all-builds: свежий pnpm блокирует postinstall-скрипты
+# (Prisma без них не скачает движок) и считает это ошибкой сборки.
+RUN pnpm install --frozen-lockfile --dangerously-allow-all-builds
 COPY . .
 # Адрес API вшивается в СБОРКУ: Vite подставляет переменные на этапе сборки, а
 # не в браузере. На своём VPS кабинет и API живут на одном домене, поэтому

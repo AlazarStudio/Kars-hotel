@@ -8,7 +8,9 @@ FROM node:${NODE_VERSION} AS builder
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+# --dangerously-allow-all-builds: свежий pnpm блокирует postinstall-скрипты
+# (Prisma без них не скачает движок) и считает это ошибкой сборки.
+RUN pnpm install --frozen-lockfile --dangerously-allow-all-builds
 COPY . .
 # Клиент генерируется НА СБОРКЕ и уезжает в образ: генерация на старте
 # контейнера требовала бы прав на запись в node_modules и добавляла отказ в
@@ -22,7 +24,7 @@ ENV NODE_ENV=production
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --prod --frozen-lockfile
+RUN pnpm install --prod --frozen-lockfile --dangerously-allow-all-builds
 # Схема нужна в образе: миграции накатываются `prisma migrate deploy` при
 # развёртывании, и без неё команда не соберёт историю.
 COPY prisma ./prisma
