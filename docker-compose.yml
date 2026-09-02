@@ -1,0 +1,112 @@
+# Kars Hotel PMS — боевой контур на СВОЁМ VPS.
+#
+# Отдельный сервер от Kars Avia: системы разные, и общая машина означала бы,
+# что падение одной уносит другую. Связь между ними — только по HTTP, ключом
+# партнёрского API.
+#
+# Первый запуск:
+#   cp .env.example .env   # задать пароли, домен, ключ партнёра
+#   docker compose up -d --build
+#   docker compose exec api pnpm exec prisma migrate deploy
+#
+# Порты 80/443 наружу открывает только Caddy. База, Redis и MinIO во внешний
+# мир не смотрят вовсе — им незачем.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?нужен пароль базы}
+      POSTGRES_DB: ${POSTGRES_DB:-kars_hotel}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-kars_hotel}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?нужен секрет токенов}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Относительный адрес: кабинет и API на одном домене, и смена домена
+        # не требует пересборки.
+        VITE_API_BASE_URL: /api
+    restart: unless-stopped
+    depends_on:
+      - api
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:-admin@karsavia.ru}
+      PMS_DOMAIN: ${PMS_DOMAIN:-pms.karsavia.ru}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - caddy_logs:/var/log/caddy
+    depends_on:
+      - api
+      - web
+
+  # Суточные резервные копии базы. Своим сервисом, а не задачей в системном
+  # cron: контур переезжает на новый VPS целиком одним `docker compose up`, и
+  # копирование должно переезжать вместе с ним, а не оставаться настройкой
+  # машины, о которой вспомнят после первой потери.
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-postgres}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-kars_hotel}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_AT_HOUR: ${BACKUP_AT_HOUR:-3}
+    volumes:
+      - ./backup:/backup:ro
+      - backups:/backups
+    entrypoint: ['/bin/sh', '/backup/run.sh']
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:
+  caddy_data:
+  caddy_config:
+  caddy_logs:
+  backups:
