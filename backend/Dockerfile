@@ -22,6 +22,9 @@ RUN pnpm run build
 # --- запуск: только собранное и рабочие зависимости ---
 FROM node:${NODE_VERSION} AS runner
 ENV NODE_ENV=production
+# Движку Prisma на Alpine нужны системные библиотеки — без них
+# libquery_engine-linux-musl не загружается (поймано первым запуском).
+RUN apk add --no-cache openssl libc6-compat
 WORKDIR /app
 ENV CI=true
 RUN corepack enable
