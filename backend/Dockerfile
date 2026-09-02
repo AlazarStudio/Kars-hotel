@@ -36,4 +36,6 @@ COPY prisma ./prisma
 RUN pnpm exec prisma generate
 COPY --from=builder /app/dist ./dist
 EXPOSE 3001
-CMD ["node", "dist/main"]
+# Вход — dist/src/main.js: tsconfig захватывает prisma/ и scripts/, поэтому
+# rootDir поднимается до корня и сборка вкладывается в dist/src.
+CMD ["node", "dist/src/main"]
