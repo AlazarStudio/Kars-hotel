@@ -45,6 +45,10 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-kars_hotel}
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:?нужен секрет токенов}
+      # Вебхуки партнёру (Kars Avia): куда слать события и общий секрет
+      # X-Webhook-Secret. Пусто — вебхуки выключены, это штатно.
+      PARTNER_WEBHOOK_URL: ${PARTNER_WEBHOOK_URL:-}
+      PARTNER_WEBHOOK_SECRET: ${PARTNER_WEBHOOK_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy
