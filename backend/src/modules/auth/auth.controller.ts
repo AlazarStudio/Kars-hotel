@@ -181,10 +181,21 @@ export class AuthController {
 
   // ── helpers ────────────────────────────────────────────────────────────────
 
+  /* Кука с флагом Secure над голым HTTP молча выбрасывается браузером: вход
+   * проходит, а обновление токена приходит без куки — сессия отваливается.
+   * Признак поэтому выводится из PUBLIC_URL (compose передаёт туда PMS_DOMAIN):
+   * адрес со схемой http:// — переходный режим без TLS, кука обычная; голое
+   * доменное имя — боевой HTTPS, кука защищённая. Та же починка, что в Kars
+   * Avia 02.09.2026. */
+  private static cookieSecure(): boolean {
+    if (process.env.NODE_ENV !== 'production') return false;
+    return !(process.env.PUBLIC_URL ?? '').startsWith('http://');
+  }
+
   private setRefreshCookie(res: Response, token: string, ttlSeconds: number) {
     res.cookie(REFRESH_COOKIE, token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: AuthController.cookieSecure(),
       sameSite: 'lax',
       maxAge: ttlSeconds * 1000,
       path: '/api/auth',

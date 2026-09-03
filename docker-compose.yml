@@ -51,6 +51,9 @@ services:
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
       JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-7d}
       CORS_ORIGIN: ${CORS_ORIGIN:-}
+      # Схема адреса решает судьбу Secure-флага refresh-куки: http:// — режим
+      # без TLS (кука обычная), голый домен — боевой HTTPS (кука защищённая).
+      PUBLIC_URL: ${PMS_DOMAIN:-}
       # Вебхуки партнёру (Kars Avia): куда слать события и общий секрет
       # X-Webhook-Secret. Пусто — вебхуки выключены, это штатно.
       PARTNER_WEBHOOK_URL: ${PARTNER_WEBHOOK_URL:-}
