@@ -42,7 +42,14 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-kars_hotel}
+      # ДВА подключения — это граница изоляции гостиниц, а не украшение.
+      # Рантайм ходит под app_user БЕЗ BYPASSRLS: фильтр по гостинице держит
+      # Row-Level Security, запросы по tenant не фильтруют сами. Суперпользователь
+      # в DATABASE_URL обходит RLS молча — каждая гостиница видит чужие строки
+      # (поймано на первом развёртывании 03.09.2026: у всех гостиниц оказались
+      # все номера системы). Суперпользователь остаётся только миграциям.
+      DATABASE_URL: postgresql://app_user:${APP_DB_PASSWORD:?нужен пароль app_user}@postgres:5432/${POSTGRES_DB:-kars_hotel}
+      DATABASE_URL_MIGRATIONS: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-kars_hotel}
       REDIS_URL: redis://redis:6379
       # Код читает пару секретов (access/refresh), а не единый JWT_SECRET —
       # это выяснил первый реальный запуск образа.
