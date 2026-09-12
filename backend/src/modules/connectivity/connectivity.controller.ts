@@ -117,6 +117,21 @@ export class ConnectivityController {
     return this.connectivity.getHotel(slug);
   }
 
+  /* Номерной фонд: перечень номеров гостиницы. Право то же, что у карточки
+     гостиницы, — это её справочные данные, а не доступность на даты. */
+  @Get('hotels/:slug/rooms')
+  @RequireScopes(PARTNER_SCOPES.HotelsRead)
+  @ApiOperation({
+    summary: 'Room fund: numbers, floors, categories',
+    description:
+      'Статический перечень активных номеров. Партнёру он нужен, чтобы ' +
+      'диспетчер выбирал номер из списка, а не печатал его руками: иначе ' +
+      'номера в отчёте и в счёте гостиницы расходятся.',
+  })
+  listRooms(@Param('slug') slug: string) {
+    return this.connectivity.listRooms(slug);
+  }
+
   @Get('hotels/:slug/availability')
   @RequireScopes(PARTNER_SCOPES.AvailabilityRead)
   @ApiOperation({ summary: 'Availability + nightly rates for a stay period' })

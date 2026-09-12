@@ -283,6 +283,44 @@ export class ConnectivityService {
 
   // ─── Availability (tenant-scoped) ──────────────────────────────────────────
 
+  /**
+   * НОМЕРНОЙ ФОНД гостиницы — статический список номеров.
+   *
+   * Зачем партнёру: в сбойной заявке диспетчер расселяет людей ПО НОМЕРАМ и
+   * вводит номер руками. Без фонда он печатает «12» там, где в гостинице
+   * «112», и отчёт с гостиничным счётом потом не сходится. Доступность на
+   * даты этого не решает: она отвечает «сколько свободно по категориям», а
+   * нужен сам перечень — номер, этаж, категория, вместимость.
+   *
+   * Отдаём ВСЕ активные номера, включая занятые: заселение в сбойной заявке
+   * ведётся вручную и задним числом, и «занят сейчас» ничего не говорит о
+   * ночи, которая уже прошла. Состояние уборки не отдаём вовсе — это
+   * внутренняя кухня гостиницы.
+   */
+  async listRooms(slug: string) {
+    const tenant = await this.resolveTenant(slug);
+    const rooms = await this.prisma.forTenantExplicit(tenant.id, (tx) =>
+      tx.room.findMany({
+        where: { isActive: true },
+        orderBy: [{ floor: 'asc' }, { number: 'asc' }],
+        include: { roomType: { select: { id: true, code: true, name: true } } },
+      }),
+    );
+    return {
+      hotel: { slug: tenant.slug, name: tenant.name },
+      rooms: rooms.map((r) => ({
+        id: r.id,
+        number: r.number,
+        floor: r.floor,
+        capacity: r.capacity,
+        bedType: r.bedType,
+        categoryId: r.roomType?.id ?? null,
+        categoryCode: r.roomType?.code ?? null,
+        categoryName: r.roomType?.name ?? null,
+      })),
+    };
+  }
+
   async availabilityFor(slug: string, dto: ConnectAvailabilityDto) {
     const tenant = await this.resolveTenant(slug);
 
