@@ -7,6 +7,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Put,
   Query,
@@ -19,6 +20,8 @@ import { PartnerApiKeyGuard } from './guards/partner-api-key.guard';
 import { PARTNER_SCOPES, RequireScopes } from './decorators/partner-scopes.decorator';
 import { ConnectAvailabilityDto } from './dto/connect-availability.dto';
 import { ConnectCreateReservationDto } from './dto/connect-create-reservation.dto';
+import { ConnectUpdateReservationDto } from './dto/connect-update-reservation.dto';
+import { ConnectReservationMealsDto } from './dto/connect-reservation-meals.dto';
 import { ConnectCancelDto } from './dto/connect-cancel.dto';
 import { ReviewCorporateTariffDto } from './dto/review-corporate-tariff.dto';
 import {
@@ -152,6 +155,54 @@ export class ConnectivityController {
   @ApiOperation({ summary: 'Fetch a reservation' })
   getReservation(@Param('slug') slug: string, @Param('id') id: string) {
     return this.connectivity.getReservation(slug, id);
+  }
+
+  /* Правка брони партнёра. PATCH, а не PUT: партнёр присылает только то, что
+     изменилось в заявке, — сдвинулись даты, сменился член экипажа, переселили
+     в другой номер. Полная замена заставила бы его знать и присылать поля, до
+     которых ему нет дела. */
+  @Patch('hotels/:slug/reservations/:id')
+  @RequireScopes(PARTNER_SCOPES.ReservationsWrite)
+  @ApiOperation({
+    summary: 'Update a partner reservation in place',
+    description:
+      'Даты, номер, гость, число гостей и комментарий. Статус здесь не ' +
+      'меняется: заезд, выезд и отмена — отдельные события. Правится только ' +
+      'бронь, созданная партнёром.',
+  })
+  updateReservation(
+    @Param('slug') slug: string,
+    @Param('id') id: string,
+    @Body() dto: ConnectUpdateReservationDto,
+  ) {
+    return this.connectivity.updateReservation(slug, id, dto);
+  }
+
+  /* Раскладка питания по дням. PUT — присланный набор заменяет прежний
+     целиком: у брони одна раскладка, и оператор пересчитывает её каждый раз,
+     когда меняются даты, число людей или набор приёмов. */
+  @Put('hotels/:slug/reservations/:id/meals')
+  @HttpCode(HttpStatus.OK)
+  @RequireScopes(PARTNER_SCOPES.ReservationsWrite)
+  @ApiOperation({
+    summary: 'Set the meal plan of a reservation, day by day',
+    description:
+      'Порции завтраков, обедов и ужинов на каждый день заезда. Дни вне ' +
+      'периода проживания отклоняются: это ошибка счёта на стороне партнёра.',
+  })
+  setReservationMeals(
+    @Param('slug') slug: string,
+    @Param('id') id: string,
+    @Body() dto: ConnectReservationMealsDto,
+  ) {
+    return this.connectivity.setReservationMeals(slug, id, dto);
+  }
+
+  @Get('hotels/:slug/reservations/:id/meals')
+  @RequireScopes(PARTNER_SCOPES.ReservationsRead)
+  @ApiOperation({ summary: 'Read the meal plan of a reservation' })
+  getReservationMeals(@Param('slug') slug: string, @Param('id') id: string) {
+    return this.connectivity.getReservationMeals(slug, id);
   }
 
   @Get('hotels/:slug/reservations/:id/facts')

@@ -1,4 +1,10 @@
-import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext, RequestContext } from '../../common/context/tenant-context';
@@ -7,11 +13,14 @@ import { AvailabilityService } from '../inventory/availability.service';
 import { ReservationsService } from '../reservations/reservations.service';
 import { ConnectAvailabilityDto } from './dto/connect-availability.dto';
 import { ConnectCreateReservationDto } from './dto/connect-create-reservation.dto';
+import { ConnectUpdateReservationDto } from './dto/connect-update-reservation.dto';
+import { ConnectReservationMealsDto } from './dto/connect-reservation-meals.dto';
 import { ConnectRegisterHotelDto } from './dto/connect-register-hotel.dto';
 import { ConnectContractPricesDto } from './dto/connect-contract-prices.dto';
 import { ReviewCorporateTariffDto } from './dto/review-corporate-tariff.dto';
 import { RatePlansService } from '../rate-plans/rate-plans.service';
 import { slugifyHotelName } from '../auth/slug.util';
+import { PartnerWebhookService } from './partner-webhook.service';
 
 /**
  * Cross-tenant connectivity service backing the partner API.
@@ -38,6 +47,7 @@ export class ConnectivityService {
     private readonly reservations: ReservationsService,
     private readonly auth: AuthService,
     private readonly ratePlans: RatePlansService,
+    private readonly partnerWebhooks: PartnerWebhookService,
   ) {}
 
   // ─── Catalog (cross-tenant) ────────────────────────────────────────────────
@@ -587,6 +597,81 @@ export class ConnectivityService {
     return this.mapReservation(tenant, row);
   }
 
+  /**
+   * Правка брони партнёра: даты, номер, гость, число гостей, комментарий.
+   *
+   * ЗАЧЕМ. До этого у партнёра был один способ изменить бронь — отменить и
+   * создать заново. Для смены фамилии члена экипажа или сдвига дат на сутки
+   * это значит потерять номер: между отменой и новой бронью его может занять
+   * кто угодно. Отсюда же в Авии стояло «перенести даты нельзя» и бронь
+   * молча расходилась с заявкой.
+   *
+   * ВСЯ РАБОТА УЖЕ ЕСТЬ ВНУТРИ: `reservations.update` проверяет наложения,
+   * свободные места в номере, принадлежность номера гостинице и поднимает
+   * версию под замком. Здесь только граница: чья это бронь и можно ли её
+   * трогать снаружи.
+   *
+   * ТРОГАТЬ МОЖНО ТОЛЬКО СВОИ БРОНИ. Гостиница заводит и свои — их партнёру
+   * не сопоставить ни с одной заявкой, и править их снаружи он не вправе.
+   * Признак тот же, по которому работает отмена: `channelManaged`.
+   */
+  async updateReservation(slug: string, id: string, dto: ConnectUpdateReservationDto) {
+    const tenant = await this.resolveTenant(slug);
+    /* Заодно убеждаемся, что бронь принадлежит ЭТОЙ гостинице: RLS не пустит
+       к чужой, и `getReservation` бросит «не найдено» раньше правки. */
+    const before = await this.getReservation(slug, id);
+
+    const row = await this.prisma.forTenantExplicit(tenant.id, (tx) =>
+      tx.reservation.findUnique({
+        where: { id },
+        select: { channelManaged: true, version: true },
+      }),
+    );
+    if (!row?.channelManaged) {
+      throw new ForbiddenException(
+        `Reservation ${id} belongs to the hotel, not to the partner channel — it cannot be changed through this API`,
+      );
+    }
+
+    await this.runAsTenant(tenant.id, () =>
+      this.reservations.update(id, {
+        // Версию партнёр может не знать — тогда работаем от текущей.
+        version: dto.version ?? row.version,
+        checkIn: dto.checkIn,
+        checkOut: dto.checkOut,
+        roomId: dto.roomId,
+        guestName: dto.guestName,
+        phone: dto.phone,
+        email: dto.email,
+        adults: dto.adults,
+        children: dto.children,
+        notes: dto.comment,
+      } as never),
+    );
+
+    const after = await this.getReservation(slug, id);
+    this.logger.log(
+      `Partner reservation updated in hotel ${slug}: ${id} (${before.checkIn}…${before.checkOut} → ${after.checkIn}…${after.checkOut})`,
+    );
+    /* Партнёр узнаёт об изменении и тем же путём, что о заезде и отмене:
+       ответ на запрос он получит и так, но вебхук закрывает случай, когда
+       правку сделали НЕ через него — например, гостиница переселила гостя. */
+    await this.partnerWebhooks.emitForReservation('reservation.changed', id, {
+      reservationId: id,
+      hotelSlug: slug,
+      checkIn: after.checkIn,
+      checkOut: after.checkOut,
+      roomId: after.roomId,
+      roomNumber: after.roomNumber,
+      guestName: after.guestName,
+      adults: after.adults,
+      children: after.children,
+      status: after.status,
+      version: after.version,
+    });
+    return after;
+  }
+
   async cancelReservation(slug: string, id: string, reason?: string) {
     const tenant = await this.resolveTenant(slug);
     // Ensure it belongs to this hotel before touching it.
@@ -596,6 +681,101 @@ export class ConnectivityService {
     return this.runAsTenant(tenant.id, () =>
       this.reservations.cancel(id, undefined as unknown as string, reason, { fromChannel: true }),
     );
+  }
+
+  /**
+   * Заказ питания по дням у брони: полная замена раскладки.
+   *
+   * ЗАЧЕМ. Раньше питание жило только у оператора, а гостиница узнавала о нём
+   * голосом или из комментария к брони свободным текстом — и считала дни
+   * второй раз по-своему. Расхождение всплывало в акте, когда спорить поздно.
+   *
+   * ЗАМЕНА, А НЕ ДОПОЛНЕНИЕ. Раскладка у брони одна: оператор пересчитывает её
+   * целиком всякий раз, когда меняются даты, число людей или набор приёмов.
+   * Дописывание превратило бы её в ленту версий, по которой не понять, что
+   * готовить.
+   *
+   * ДНИ ВНЕ ПЕРИОДА НЕ ПРИНИМАЕМ. Заказать завтрак на день, когда гость уже
+   * уехал, нельзя — это не заказ, а ошибка счёта на стороне партнёра, и
+   * молчаливо её принять значит однажды приготовить эти порции.
+   */
+  async setReservationMeals(
+    slug: string,
+    id: string,
+    dto: ConnectReservationMealsDto,
+  ) {
+    const tenant = await this.resolveTenant(slug);
+    const reservation = await this.getReservation(slug, id);
+
+    const from = reservation.checkIn;
+    const to = reservation.checkOut;
+    const outside = dto.days
+      .map((d) => d.date.slice(0, 10))
+      .filter((day) => day < from || day > to);
+    if (outside.length) {
+      throw new ConflictException(
+        `Meal days outside the stay ${from}…${to}: ${outside.join(', ')}`,
+      );
+    }
+    /* Один день — одна строка. Дубль в присланном наборе означает, что у
+       партнёра разъехался расчёт: принять и «последний побеждает» — значит
+       спрятать его ошибку до самого счёта. */
+    const seen = new Set<string>();
+    for (const d of dto.days) {
+      const day = d.date.slice(0, 10);
+      if (seen.has(day)) {
+        throw new ConflictException(`Duplicate meal day ${day}`);
+      }
+      seen.add(day);
+    }
+
+    await this.prisma.forTenantExplicit(tenant.id, async (tx) => {
+      await tx.reservationMealDay.deleteMany({ where: { reservationId: id } });
+      /* Дни без единой порции не храним: «ноль завтраков» и «завтрака нет» —
+         одно и то же, а строка-ноль заставила бы гостиницу их различать. */
+      const rows = dto.days
+        .filter((d) => d.breakfast + d.lunch + d.dinner > 0)
+        .map((d) => ({
+          tenantId: tenant.id,
+          reservationId: id,
+          date: new Date(`${d.date.slice(0, 10)}T00:00:00.000Z`),
+          breakfast: d.breakfast,
+          lunch: d.lunch,
+          dinner: d.dinner,
+        }));
+      if (rows.length) await tx.reservationMealDay.createMany({ data: rows });
+    });
+
+    this.logger.log(
+      `Partner meals set for reservation ${id} in hotel ${slug}: ${dto.days.length} day(s)`,
+    );
+    return this.getReservationMeals(slug, id);
+  }
+
+  /** Раскладка питания брони — то, что гостиница готовит по дням. */
+  async getReservationMeals(slug: string, id: string) {
+    const tenant = await this.resolveTenant(slug);
+    await this.getReservation(slug, id);
+    const rows = await this.prisma.forTenantExplicit(tenant.id, (tx) =>
+      tx.reservationMealDay.findMany({
+        where: { reservationId: id },
+        orderBy: { date: 'asc' },
+      }),
+    );
+    return {
+      reservationId: id,
+      days: rows.map((r) => ({
+        date: r.date.toISOString().slice(0, 10),
+        breakfast: r.breakfast,
+        lunch: r.lunch,
+        dinner: r.dinner,
+      })),
+      totals: {
+        breakfast: rows.reduce((n, r) => n + r.breakfast, 0),
+        lunch: rows.reduce((n, r) => n + r.lunch, 0),
+        dinner: rows.reduce((n, r) => n + r.dinner, 0),
+      },
+    };
   }
 
   /** Stay facts for reconciliation on the partner side. */

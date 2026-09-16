@@ -654,11 +654,39 @@ model Reservation {
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
 
+  mealDays    ReservationMealDay[]
+
   @@index([tenantId])
   @@index([tenantId, roomId, checkIn, checkOut])
   @@index([tenantId, checkIn, checkOut])
   @@index([tenantId, status])
   @@map("reservation")
+}
+
+/// Заказ питания по дням у брони партнёра.
+///
+/// Оператор просит завтраки, обеды и ужины на конкретные дни заезда — набор
+/// внутри одного заезда неровный: в день прилёта завтрака не будет, в день
+/// вылета не будет ужина. Раньше это жило только у оператора, и гостиница
+/// считала дни второй раз по-своему.
+///
+/// Хранятся ПОРЦИИ, а не признак «включено»: в номере двое, а завтрак заказан
+/// одному. Что из этого уже входит в тарифный план брони, решает расчёт.
+model ReservationMealDay {
+  id            String      @id @default(uuid())
+  tenantId      String      @map("tenant_id") @db.Uuid
+  reservationId String      @map("reservation_id") @db.Uuid
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  date          DateTime    @db.Date
+  breakfast     Int         @default(0)
+  lunch         Int         @default(0)
+  dinner        Int         @default(0)
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  @@unique([reservationId, date])
+  @@index([tenantId])
+  @@index([tenantId, date])
+  @@map("reservation_meal_day")
 }
 
 // ─── Phase F — Inventory + Availability ──────────────────────────────────────
