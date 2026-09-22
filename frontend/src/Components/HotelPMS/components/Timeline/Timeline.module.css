@@ -930,6 +930,90 @@
   color: #1B2A47;
 }
 
+/* Вкладка «Питание» окна брони: три плитки итогов в языке .priceRow и
+   таблица по дням с фиксированными колонками — заголовок не должен
+   «слипаться» при узком окне, ноль читается как прочерк. */
+.mealsTiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.mealsTile {
+  background: #F7FAFC;
+  border-radius: 8px;
+  padding: 9px 14px;
+}
+
+.mealsTileLabel {
+  font-size: 12px;
+  color: #8896AB;
+}
+
+.mealsTileValue {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1B2A47;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+}
+
+.mealsCard {
+  border: 1px solid #E0E7F0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.mealsTable {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
+  color: #1B2A47;
+}
+
+.mealsTable th {
+  background: #F7FAFC;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4A5568;
+  text-align: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid #E8EDF3;
+}
+
+.mealsTable th:first-child { text-align: left; width: 40%; }
+
+.mealsTable td {
+  padding: 8px 12px;
+  text-align: center;
+  border-bottom: 1px solid #E8EDF3;
+  font-variant-numeric: tabular-nums;
+}
+
+.mealsTable td:first-child { text-align: left; }
+.mealsTable tbody tr:last-child td { border-bottom: none; }
+
+.mealsDay { font-weight: 500; }
+.mealsWeekday { color: #8896AB; margin-left: 4px; }
+.mealsNone { color: #B0BEC5; }
+
+.mealsNote {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #8896AB;
+}
+
+.mealsEmpty {
+  background: #F7FAFC;
+  border-radius: 8px;
+  padding: 24px 14px;
+  text-align: center;
+  font-size: 13px;
+  color: #8896AB;
+}
+
 .modalFooter {
   padding: 12px 20px;
   border-top: 1px solid #E8EDF3;

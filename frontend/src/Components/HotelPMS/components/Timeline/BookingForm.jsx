@@ -8,6 +8,19 @@ import { useReservationMeals } from '../../../../hooks/api/useMeals';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 
+/* Месяц словом без точки — так дата пишется у партнёра («21 сен»), и так её
+   читает диспетчер, который звонит на кухню. date-fns даёт «сент.». */
+const MONTH_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+const fmtMealDay = (iso) => {
+  const d = parseISO(iso);
+  return `${d.getDate()} ${MONTH_SHORT[d.getMonth()]}`;
+};
+const MEALS = [
+  { key: 'breakfast', label: 'Завтрак', plural: 'Завтраки' },
+  { key: 'lunch', label: 'Обед', plural: 'Обеды' },
+  { key: 'dinner', label: 'Ужин', plural: 'Ужины' },
+];
+
 /* Питание по дням — то, что заказал партнёр (Kars Avia) для этой брони.
    Гостиница здесь только читает: заказ — слово заказчика, и меняется он там же,
    где сделан. Ради этой таблицы всё и хранилось — чтобы кухня знала порции на
@@ -15,44 +28,45 @@ import { ru } from 'date-fns/locale';
 function MealsTab({ reservationId }) {
   const { data, isLoading } = useReservationMeals(reservationId);
 
-  if (isLoading) return <div className="p-4 text-sm text-gray-500">Загрузка питания...</div>;
+  if (isLoading) return <div className={classes.mealsEmpty}>Загрузка питания…</div>;
   if (!data) return null;
   if (!data.days.length) {
-    return <p className="p-1 text-sm text-gray-400">Питание не заказано</p>;
+    return <div className={classes.mealsEmpty}>Питание по этой брони не заказано</div>;
   }
-  const fmtDay = (d) => format(parseISO(d), 'd MMM, EEEEEE', { locale: ru });
+  const cell = (n) => (n ? n : <span className={classes.mealsNone}>—</span>);
 
   return (
-    <div className="space-y-2 p-1">
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="text-gray-500 border-b">
-            <th className="py-1 text-left font-medium">День</th>
-            <th className="py-1 text-right font-medium">Завтрак</th>
-            <th className="py-1 text-right font-medium">Обед</th>
-            <th className="py-1 text-right font-medium">Ужин</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.days.map((d) => (
-            <tr key={d.date} className="border-b">
-              <td className="py-1">{fmtDay(d.date)}</td>
-              <td className="py-1 text-right">{d.breakfast || '—'}</td>
-              <td className="py-1 text-right">{d.lunch || '—'}</td>
-              <td className="py-1 text-right">{d.dinner || '—'}</td>
+    <div>
+      <div className={classes.mealsTiles}>
+        {MEALS.map((m) => (
+          <div key={m.key} className={classes.mealsTile}>
+            <div className={classes.mealsTileLabel}>{m.plural}</div>
+            <div className={classes.mealsTileValue}>{data.totals[m.key]}</div>
+          </div>
+        ))}
+      </div>
+      <div className={classes.mealsCard}>
+        <table className={classes.mealsTable}>
+          <thead>
+            <tr>
+              <th>День</th>
+              {MEALS.map((m) => <th key={m.key}>{m.label}</th>)}
             </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr className="font-medium">
-            <td className="py-1">Итого порций</td>
-            <td className="py-1 text-right">{data.totals.breakfast}</td>
-            <td className="py-1 text-right">{data.totals.lunch}</td>
-            <td className="py-1 text-right">{data.totals.dinner}</td>
-          </tr>
-        </tfoot>
-      </table>
-      <p className="text-xs text-gray-400">Заказ ведёт партнёр — изменения приходят от него.</p>
+          </thead>
+          <tbody>
+            {data.days.map((d) => (
+              <tr key={d.date}>
+                <td>
+                  <span className={classes.mealsDay}>{fmtMealDay(d.date)}</span>
+                  <span className={classes.mealsWeekday}>{format(parseISO(d.date), 'EEEEEE', { locale: ru })}</span>
+                </td>
+                {MEALS.map((m) => <td key={m.key}>{cell(d[m.key])}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className={classes.mealsNote}>Заказ ведёт партнёр — изменения приходят от него.</p>
     </div>
   );
 }
