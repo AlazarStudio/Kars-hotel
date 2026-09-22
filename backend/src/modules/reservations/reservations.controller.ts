@@ -44,6 +44,23 @@ export class ReservationsController {
     return this.reservationsService.getDepartures(date);
   }
 
+  @Get('meals')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('reservation.read')
+  @ApiOperation({ summary: 'Meals to prepare on a given date, by reservation' })
+  @ApiQuery({ name: 'date', required: true, example: '2026-09-23' })
+  getMealsForDay(@Query('date') date: string) {
+    return this.reservationsService.getMealsForDay(date);
+  }
+
+  @Get(':id/meals')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('reservation.read')
+  @ApiOperation({ summary: 'Meal plan of a reservation, day by day' })
+  getMeals(@Param('id') id: string) {
+    return this.reservationsService.getMeals(id);
+  }
+
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @RequirePermissions('reservation.create')

@@ -857,4 +857,90 @@ export class ReservationsService {
 
     return { id: result.id, status: 'CANCELLED', version: result.version, cancelled: true };
   }
+
+  /* Раскладка питания брони — то, что кухня готовит по дням (KARV3-51).
+   *
+   * Данные пишет партнёр через connectivity-API (PUT …/meals), а читались они
+   * до сих пор только им же: у самой гостиницы экрана не было, и порции она
+   * считала второй раз по-своему. Форма ответа та же, что у партнёра, — один
+   * источник, две двери. */
+  async getMeals(id: string) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    return this.prisma.forTenant(async (tx) => {
+      const reservation = await tx.reservation.findFirst({
+        where: { id, tenantId },
+        select: { id: true },
+      });
+      if (!reservation) throw new NotFoundException('Reservation not found');
+      const rows = await tx.reservationMealDay.findMany({
+        where: { reservationId: id },
+        orderBy: { date: 'asc' },
+      });
+      return {
+        reservationId: id,
+        days: rows.map((r) => ({
+          date: r.date.toISOString().slice(0, 10),
+          breakfast: r.breakfast,
+          lunch: r.lunch,
+          dinner: r.dinner,
+        })),
+        totals: {
+          breakfast: rows.reduce((n, r) => n + r.breakfast, 0),
+          lunch: rows.reduce((n, r) => n + r.lunch, 0),
+          dinner: rows.reduce((n, r) => n + r.dinner, 0),
+        },
+      };
+    });
+  }
+
+  /* «Что готовить на день»: все порции по гостинице за дату, по броням.
+   * Отменённые и неявившиеся не считаем — их порции никто не съест; заказ у
+   * них может остаться (партнёр снимает его своим ходом), но кухне он не
+   * нужен. Индекс (tenant_id, date) под этот отбор заведён вместе с таблицей. */
+  async getMealsForDay(date: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw new ConflictException('date must be YYYY-MM-DD');
+    }
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    return this.prisma.forTenant(async (tx) => {
+      const rows = await tx.reservationMealDay.findMany({
+        where: {
+          tenantId,
+          date: new Date(`${date}T00:00:00.000Z`),
+          reservation: { status: { notIn: ['CANCELLED', 'NO_SHOW'] } },
+        },
+        include: {
+          reservation: {
+            select: {
+              id: true,
+              guestName: true,
+              status: true,
+              adults: true,
+              children: true,
+              room: { select: { number: true } },
+            },
+          },
+        },
+        orderBy: { reservation: { room: { number: 'asc' } } },
+      });
+      return {
+        date,
+        rows: rows.map((r) => ({
+          reservationId: r.reservation.id,
+          guestName: r.reservation.guestName,
+          roomNumber: r.reservation.room.number,
+          status: r.reservation.status.toLowerCase(),
+          guests: r.reservation.adults + r.reservation.children,
+          breakfast: r.breakfast,
+          lunch: r.lunch,
+          dinner: r.dinner,
+        })),
+        totals: {
+          breakfast: rows.reduce((n, r) => n + r.breakfast, 0),
+          lunch: rows.reduce((n, r) => n + r.lunch, 0),
+          dinner: rows.reduce((n, r) => n + r.dinner, 0),
+        },
+      };
+    });
+  }
 }

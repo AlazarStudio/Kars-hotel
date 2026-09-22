@@ -4,6 +4,58 @@ import classes from './Timeline.module.css';
 import { BOOKING_STATUS, BOOKING_SOURCE } from '../../constants';
 import { cancelReservation } from '../../../../api/reservations';
 import { useFolio, useAddPayment } from '../../../../hooks/api/useFolio';
+import { useReservationMeals } from '../../../../hooks/api/useMeals';
+import { format } from 'date-fns';
+import { ru } from 'date-fns/locale';
+
+/* Питание по дням — то, что заказал партнёр (Kars Avia) для этой брони.
+   Гостиница здесь только читает: заказ — слово заказчика, и меняется он там же,
+   где сделан. Ради этой таблицы всё и хранилось — чтобы кухня знала порции на
+   каждый день, а не считала их второй раз по-своему. */
+function MealsTab({ reservationId }) {
+  const { data, isLoading } = useReservationMeals(reservationId);
+
+  if (isLoading) return <div className="p-4 text-sm text-gray-500">Загрузка питания...</div>;
+  if (!data) return null;
+  if (!data.days.length) {
+    return <p className="p-1 text-sm text-gray-400">Питание не заказано</p>;
+  }
+  const fmtDay = (d) => format(parseISO(d), 'd MMM, EEEEEE', { locale: ru });
+
+  return (
+    <div className="space-y-2 p-1">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-gray-500 border-b">
+            <th className="py-1 text-left font-medium">День</th>
+            <th className="py-1 text-right font-medium">Завтрак</th>
+            <th className="py-1 text-right font-medium">Обед</th>
+            <th className="py-1 text-right font-medium">Ужин</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.days.map((d) => (
+            <tr key={d.date} className="border-b">
+              <td className="py-1">{fmtDay(d.date)}</td>
+              <td className="py-1 text-right">{d.breakfast || '—'}</td>
+              <td className="py-1 text-right">{d.lunch || '—'}</td>
+              <td className="py-1 text-right">{d.dinner || '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="font-medium">
+            <td className="py-1">Итого порций</td>
+            <td className="py-1 text-right">{data.totals.breakfast}</td>
+            <td className="py-1 text-right">{data.totals.lunch}</td>
+            <td className="py-1 text-right">{data.totals.dinner}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <p className="text-xs text-gray-400">Заказ ведёт партнёр — изменения приходят от него.</p>
+    </div>
+  );
+}
 
 function FolioTab({ reservationId }) {
   const { data: folio, isLoading } = useFolio(reservationId);
@@ -120,7 +172,7 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
   });
 
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState('booking'); // 'booking' | 'folio'
+  const [activeTab, setActiveTab] = useState('booking'); // 'booking' | 'folio' | 'meals'
 
   // In-app cancellation dialog (replaces native confirm/prompt)
   const [showCancel, setShowCancel] = useState(false);
@@ -261,11 +313,28 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
               >
                 Счёт
               </button>
+              <button
+                onClick={() => setActiveTab('meals')}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: activeTab === 'meals' ? '2px solid #2563EB' : '2px solid transparent',
+                  color: activeTab === 'meals' ? '#2563EB' : '#6B7280',
+                  cursor: 'pointer',
+                }}
+              >
+                Питание
+              </button>
             </div>
           )}
 
           {activeTab === 'folio' && !isNew ? (
             <FolioTab reservationId={booking.id} />
+          ) : activeTab === 'meals' && !isNew ? (
+            <MealsTab reservationId={booking.id} />
           ) : (
           <div className={classes.formGrid}>
             <div className={`${classes.formGroup} ${classes.formFull}`}>

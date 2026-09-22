@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react';
-import { parseISO, format, isToday } from 'date-fns';
+import React, { useMemo, useState } from 'react';
+import { parseISO, format, isToday, addDays } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import classes from './Dashboard.module.css';
 import { BOOKING_STATUS, HK_STATUS } from '../../constants';
 import { useDashboard } from '../../../../hooks/useDashboard';
+import { useMealsForDay } from '../../../../hooks/api/useMeals';
 
 const TODAY_STR = format(new Date(), 'yyyy-MM-dd');
 
@@ -53,6 +54,33 @@ function Dashboard() {
   }, [categories, rooms, bookings]);
 
   const formatDate = (d) => format(parseISO(d), 'd MMM', { locale: ru });
+
+  /* Кухне нужен ответ «сколько порций и кому» на завтра — заказ делается
+     накануне; сегодня — для сверки. Данные приходят от партнёра по броням
+     (KARV3-51), отдельным запросом: в окно шахматки они не входят. */
+  const [mealsDay, setMealsDay] = useState('tomorrow');
+  const mealsDate = mealsDay === 'today' ? TODAY_STR : format(addDays(new Date(), 1), 'yyyy-MM-dd');
+  const { data: meals } = useMealsForDay(mealsDate);
+  const mealRows = meals?.rows ?? [];
+  const mealTotals = meals?.totals ?? { breakfast: 0, lunch: 0, dinner: 0 };
+  const portions = mealTotals.breakfast + mealTotals.lunch + mealTotals.dinner;
+  const dayBtn = (key, label) => (
+    <button
+      type="button"
+      onClick={() => setMealsDay(key)}
+      style={{
+        background: 'none',
+        border: 'none',
+        padding: '0 6px',
+        fontSize: 12,
+        cursor: 'pointer',
+        color: mealsDay === key ? '#2563EB' : '#8896AB',
+        fontWeight: mealsDay === key ? 600 : 400,
+      }}
+    >
+      {label}
+    </button>
+  );
   const getInitials = (name) => name.split(' ').slice(0, 2).map(p => p[0]).join('');
   const getRoomNumber = (roomId) => rooms.find(r => r.id === roomId)?.number || '?';
 
@@ -116,6 +144,47 @@ function Dashboard() {
           <div className={classes.statLabel}>Свободных номеров</div>
           <div className={classes.statValue}>{stats.available}</div>
           <div className={classes.statSub}>из {stats.total} всего</div>
+        </div>
+      </div>
+
+      <div className={classes.row}>
+        <div className={classes.card}>
+          <div className={classes.cardHeader}>
+            <div className={classes.cardTitle}>
+              Питание {dayBtn('today', 'сегодня')}·{dayBtn('tomorrow', 'завтра')}
+            </div>
+            <div className={classes.cardBadge}>{portions}</div>
+          </div>
+          <div className={classes.cardBody}>
+            {mealRows.length === 0 && (
+              <div className={classes.empty}>
+                Порций на {formatDate(mealsDate)} не заказано
+              </div>
+            )}
+            {mealRows.length > 0 && (
+              <div className={classes.guestRow} style={{ fontWeight: 600 }}>
+                <div className={classes.guestInfo}>
+                  <div className={classes.guestMeta}>
+                    Завтрак {mealTotals.breakfast} · Обед {mealTotals.lunch} · Ужин {mealTotals.dinner}
+                  </div>
+                </div>
+              </div>
+            )}
+            {mealRows.map(r => (
+              <div key={r.reservationId} className={classes.guestRow}>
+                <div className={classes.guestAvatar} style={{ background: '#E8F5E9', color: '#2E7D32' }}>
+                  {getInitials(r.guestName)}
+                </div>
+                <div className={classes.guestInfo}>
+                  <div className={classes.guestName}>{r.guestName}</div>
+                  <div className={classes.guestMeta}>
+                    {r.guests} чел · З {r.breakfast || '—'} · О {r.lunch || '—'} · У {r.dinner || '—'}
+                  </div>
+                </div>
+                <div className={classes.guestRoom} style={{ background: '#2E7D32' }}>№{r.roomNumber}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
