@@ -5,6 +5,58 @@
  * ставки, и подставить их молча значит расписаться за неё.
  */
 
+/** Вид брони — условие тарифа партнёра (29.09.2026). */
+export const GUEST_KIND_LABELS = {
+  CREW: 'Экипаж — эстафета, командировка',
+  DISRUPTION: 'Сбойный рейс',
+};
+
+export const VAT_RATES = [0, 5, 7, 10, 20, 22];
+
+/** Ключ цены в формах: категория и число гостей (0 — на любое). */
+export const priceKey = (roomTypeId, occupancy) => `${roomTypeId}|${occupancy}`;
+
+export function occupancyLabel(n) {
+  if (n === 0) return 'любое число гостей';
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  const word = mod10 === 1 && mod100 !== 11
+    ? 'гостя'
+    : 'гостей';
+  return `${n} ${word}`;
+}
+
+/* Колонки цен тарифа. Свой тариф гостиницы — одна цена на категорию, как
+   было. Тариф партнёра — по числу гостей до вместимости самой большой
+   категории, плюс «на любое» для цены, от гостей не зависящей. */
+export function occupancyColumns(plan, roomTypes) {
+  if (!plan?.partnerId) return [0];
+  const max = Math.min(6, Math.max(1, ...roomTypes.map((rt) => rt.maxOccupancy ?? 2)));
+  return [0, ...Array.from({ length: max }, (_, i) => i + 1)];
+}
+
+/* Строки цен на выбранное число гостей — так, как их выбирает сервер:
+   точное число, иначе «на любое». Без числа гостей — все строки как есть. */
+export function pickOccupancy(rows, occupancy, groupKey) {
+  if (!occupancy) return rows;
+  const exact = new Set(rows.filter((r) => r.occupancy === occupancy).map(groupKey));
+  return rows.filter((r) => r.occupancy === occupancy || ((r.occupancy ?? 0) === 0 && !exact.has(groupKey(r))));
+}
+
+/** Условия тарифа партнёра — подписями для шапки. */
+export function partnerConditions(plan, partners) {
+  const partner = (partners ?? []).find((p) => p.id === plan.partnerId);
+  const account = partner?.accounts?.find((a) => a.id === plan.partnerAccountId);
+  const customer = partner?.customers?.find((c) => c.id === plan.partnerCustomerId);
+  return [
+    { label: 'Партнёр', value: partner?.name ?? '—' },
+    { label: 'Юрлицо', value: plan.partnerAccountId ? (account?.name ?? 'нет в справочнике') : 'любое' },
+    { label: 'Авиакомпания', value: plan.partnerCustomerId ? (customer?.name ?? 'нет в справочнике') : 'любая' },
+    { label: 'Бронь', value: plan.guestKind ? GUEST_KIND_LABELS[plan.guestKind] ?? plan.guestKind : 'любая' },
+    { label: 'НДС', value: plan.vatRate != null ? `${Number(plan.vatRate)}%` : 'без НДС' },
+  ];
+}
+
 export const STATE_LABEL = {
   DRAFT: 'Не проверен',
   CONFIRMED: 'Подтверждён оператором',

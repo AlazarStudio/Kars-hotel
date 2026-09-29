@@ -14,7 +14,12 @@ import {
   useSeasons, useReplaceSeasons,
 } from '../../../../hooks/api/useRates';
 import { useOperatorContractPrices } from '../../../../hooks/api/useOperatorContractPrices';
-import { STATE_LABEL, accommodationRows, matchContractRows } from './corporateTariff';
+import { usePartners } from '../../../../hooks/api/usePartners';
+import {
+  STATE_LABEL, GUEST_KIND_LABELS, VAT_RATES,
+  accommodationRows, matchContractRows,
+  occupancyColumns, occupancyLabel, priceKey, pickOccupancy, partnerConditions,
+} from './corporateTariff';
 
 const MEAL_PLAN_LABELS = {
   NONE: 'Без питания',
@@ -75,7 +80,7 @@ function buildResolver(standardRates, seasons) {
 // ─────────────────────────────────────────────────────────────────────────────
 // RatePlanForm modal
 // ─────────────────────────────────────────────────────────────────────────────
-function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error, contracts }) {
+function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error, contracts, partners }) {
   const isNew = !plan?.id;
   const [form, setForm] = useState({
     code:               plan?.code               ?? '',
@@ -88,6 +93,11 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
     priceModifierValue: plan?.priceModifierValue  ?? 0,
     forOperator:        plan?.forOperator          ?? false,
     operatorContract:   plan?.operatorContract      ?? '',
+    partnerId:          plan?.partnerId             ?? '',
+    partnerAccountId:   plan?.partnerAccountId      ?? '',
+    partnerCustomerId:  plan?.partnerCustomerId     ?? '',
+    guestKind:          plan?.guestKind             ?? '',
+    vatRate:            plan?.vatRate != null ? String(Number(plan.vatRate)) : '',
     _autoCode: isNew,
   });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -105,7 +115,18 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
      друг друга, и включение первого гасит второй прямо в форме, а не отказом
      сервера после «Сохранить». */
   const setCorporate = (on) =>
-    setForm(f => ({ ...f, forOperator: on, parentRatePlanId: on ? '' : f.parentRatePlanId }));
+    setForm(f => ({
+      ...f,
+      forOperator: on,
+      parentRatePlanId: on ? '' : f.parentRatePlanId,
+      // Партнёр у гостиницы чаще всего один — не заставлять выбирать очевидное.
+      partnerId: on ? (f.partnerId || (partners.length === 1 ? partners[0].id : '')) : '',
+    }));
+  /* Юрлица и заказчики — из справочника ВЫБРАННОГО партнёра; смена партнёра
+     сбрасывает их, иначе в тарифе осталось бы условие чужого справочника. */
+  const setPartner = (id) =>
+    setForm(f => ({ ...f, partnerId: id, partnerAccountId: '', partnerCustomerId: '' }));
+  const partner = partners.find(p => p.id === form.partnerId) ?? null;
 
   return (
     <div className={classes.overlay} onClick={onClose}>
@@ -158,17 +179,77 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
                 checked={form.forOperator}
                 onChange={e => setCorporate(e.target.checked)}
               />
-              <span>Корпоративный тариф для оператора</span>
+              <span>Корпоративный тариф партнёра</span>
             </label>
             <div className={classes.fieldHint}>
-              По этому тарифу оператор селит своих гостей — если сверит его с
+              По этому тарифу партнёр селит своих гостей — если сверит его с
               договором и подтвердит. До подтверждения он не применяется.
             </div>
           </div>
 
           {form.forOperator && (
+            <>
+              <div className={classes.formGroup}>
+                <label>Партнёр *</label>
+                <select className={classes.input} value={form.partnerId} onChange={e => setPartner(e.target.value)}>
+                  {partners.length !== 1 && <option value="">— выберите партнёра —</option>}
+                  {partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div className={classes.formGroup}>
+                <label>НДС</label>
+                <select className={classes.input} value={form.vatRate} onChange={e => set('vatRate', e.target.value)}>
+                  <option value="">Без НДС</option>
+                  {VAT_RATES.map(r => <option key={r} value={String(r)}>{r}%</option>)}
+                </select>
+              </div>
+              <div className={classes.formGroup}>
+                <label>Юрлицо партнёра</label>
+                <select
+                  className={classes.input}
+                  value={form.partnerAccountId}
+                  onChange={e => set('partnerAccountId', e.target.value)}
+                  disabled={!partner}
+                >
+                  <option value="">Любое</option>
+                  {(partner?.accounts ?? []).map(a => (
+                    <option key={a.id} value={a.id}>{a.name}{a.inn ? ` (ИНН ${a.inn})` : ''}</option>
+                  ))}
+                </select>
+              </div>
+              <div className={classes.formGroup}>
+                <label>Авиакомпания</label>
+                <select
+                  className={classes.input}
+                  value={form.partnerCustomerId}
+                  onChange={e => set('partnerCustomerId', e.target.value)}
+                  disabled={!partner}
+                >
+                  <option value="">Любая</option>
+                  {(partner?.customers ?? []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div className={classes.formGroup} style={{ gridColumn: '1/-1' }}>
+                <label>Вид брони</label>
+                <select className={classes.input} value={form.guestKind} onChange={e => set('guestKind', e.target.value)}>
+                  <option value="">Любой</option>
+                  {Object.entries(GUEST_KIND_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+                {/* Правило выбора — словами, как его исполняет сервер
+                    (partner-tariff-match): иначе гостиница заведёт общий и
+                    частный тарифы и не поймёт, почему бронь ушла по частному. */}
+                <div className={classes.fieldHint}>
+                  Пустое условие — для любого. Если броне подходят несколько тарифов,
+                  берётся самый точный: авиакомпания важнее юрлица, юрлицо важнее вида брони.
+                  Цены в тарифе — без НДС, за номер за ночь.
+                </div>
+              </div>
+            </>
+          )}
+
+          {form.forOperator && (
             <div className={classes.formGroup} style={{ gridColumn: '1/-1' }}>
-              <label>Договор с оператором *</label>
+              <label>Договор с партнёром{contracts.length > 0 ? ' *' : ''}</label>
               <select
                 className={classes.input}
                 value={form.operatorContract}
@@ -181,8 +262,8 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
               </select>
               <div className={classes.fieldHint}>
                 {contracts.length
-                  ? 'С ценами этого договора оператор и будет сверять тариф.'
-                  : 'Оператор ещё не прислал ни одного ценового приложения — сверять будет не с чем.'}
+                  ? 'С ценами этого договора партнёр и будет сверять тариф.'
+                  : 'Партнёр ещё не прислал ни одного ценового приложения — сверять будет не с чем.'}
               </div>
             </div>
           )}
@@ -248,7 +329,9 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
             className={classes.btnSave}
             disabled={
               saving || !form.name || !form.code ||
-              (form.forOperator && !form.operatorContract)
+              // Договоров ещё нет — тариф можно завести заранее; сверять его будет не с чем, пока не придут.
+              (form.forOperator && contracts.length > 0 && !form.operatorContract) ||
+              (form.forOperator && partners.length > 0 && !form.partnerId)
             }
             onClick={() => onSave(form)}
           >
@@ -261,15 +344,67 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// OccupancyGrid — цена по числу гостей: категория × «на любое», 1, 2, …
+// ─────────────────────────────────────────────────────────────────────────────
+function OccupancyGrid({ roomTypes, occs, values, onChange }) {
+  return (
+    <div className={classes.occWrap}>
+      <table className={classes.occTable}>
+        <thead>
+          <tr>
+            <th>Категория</th>
+            {occs.map((o) => <th key={o}>{o === 0 ? 'на любое число' : `на ${occupancyLabel(o)}`}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {roomTypes.map((rt) => (
+            <tr key={rt.id}>
+              <td>
+                <div className={classes.stdName}>{rt.name}</div>
+                <div className={classes.stdMeta}>до {rt.maxOccupancy ?? '?'} чел.</div>
+              </td>
+              {occs.map((o) => {
+                const k = priceKey(rt.id, o);
+                // Гостей больше, чем помещается в номер, не бывает — и цены на них тоже.
+                if (o > 0 && rt.maxOccupancy != null && o > rt.maxOccupancy) {
+                  return <td key={o} className={classes.occNone}>—</td>;
+                }
+                return (
+                  <td key={o}>
+                    <div className={classes.priceInputWrap}>
+                      <input
+                        className={classes.input}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={values[k] ?? ''}
+                        placeholder="—"
+                        onChange={(e) => onChange(k, e.target.value)}
+                      />
+                      <span className={classes.priceCurrency}>₽</span>
+                    </div>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // StandardPrices — baseline price per category (the "everyday" price)
 // ─────────────────────────────────────────────────────────────────────────────
 function StandardPrices({ plan, roomTypes, contractSheets }) {
   const { data: standard = [], isLoading } = useStandardRates(plan.id);
   const save = useSetStandardRates();
+  const occs = useMemo(() => occupancyColumns(plan, roomTypes), [plan, roomTypes]);
 
   const stdMap = useMemo(() => {
     const m = {};
-    standard.forEach((s) => { m[s.roomTypeId] = String(s.price); });
+    standard.forEach((s) => { m[priceKey(s.roomTypeId, s.occupancy ?? 0)] = String(s.price); });
     return m;
   }, [standard]);
 
@@ -287,17 +422,24 @@ function StandardPrices({ plan, roomTypes, contractSheets }) {
   );
   const fillFromContract = () => {
     const { prices, unmatched, uncovered } = matchContractRows(contractRows, roomTypes);
-    setDraft(d => ({ ...d, ...prices }));
+    // Договор пока не называет число гостей — цена ложится «на любое» (Э3 это исправит).
+    const keyed = Object.fromEntries(Object.entries(prices).map(([rtId, v]) => [priceKey(rtId, 0), v]));
+    setDraft(d => ({ ...d, ...keyed }));
     setFilled({ count: Object.keys(prices).length, unmatched, uncovered });
   };
 
-  const dirty = roomTypes.some((rt) => (draft[rt.id] ?? '') !== (stdMap[rt.id] ?? ''));
+  const cells = useMemo(
+    () => roomTypes.flatMap((rt) => occs.filter((o) => o === 0 || o <= (rt.maxOccupancy ?? o)).map((o) => [rt.id, o])),
+    [roomTypes, occs],
+  );
+  const dirty = cells.some(([rt, o]) => (draft[priceKey(rt, o)] ?? '') !== (stdMap[priceKey(rt, o)] ?? ''));
 
   const handleSave = async () => {
     setError(null);
-    const items = roomTypes.map((rt) => ({
-      roomTypeId: rt.id,
-      price: Number(draft[rt.id]) || 0,
+    const items = cells.map(([rt, o]) => ({
+      roomTypeId: rt,
+      occupancy: o,
+      price: Number(draft[priceKey(rt, o)]) || 0,
     }));
     try {
       await save.mutateAsync({ ratePlanId: plan.id, items });
@@ -312,9 +454,21 @@ function StandardPrices({ plan, roomTypes, contractSheets }) {
       <div className={classes.sectionHint}>
         Базовая цена за ночь применяется ко всем датам, если на этот день нет сезона
         или индивидуальной цены. Это самый быстрый способ задать цены — один раз на категорию.
+        {plan.partnerId && (
+          <> Цена задаётся по числу гостей в номере; «на любое» — когда от числа гостей она
+          не зависит, цена на конкретное число главнее. <b>Нет цены на нужное число гостей —
+          тариф к брони не применяется</b>: базовая цена категории вместо договорной не подставляется.</>
+        )}
       </div>
       {roomTypes.length === 0 ? (
         <div className={classes.seasonsEmpty}>Нет категорий номеров. Создайте их в разделе «Номера».</div>
+      ) : plan.partnerId ? (
+        <OccupancyGrid
+          roomTypes={roomTypes}
+          occs={occs}
+          values={draft}
+          onChange={(k, v) => setDraft((d) => ({ ...d, [k]: v }))}
+        />
       ) : (
         <div className={classes.stdTable}>
           {roomTypes.map((rt) => (
@@ -332,9 +486,9 @@ function StandardPrices({ plan, roomTypes, contractSheets }) {
                   type="number"
                   min="0"
                   step="0.01"
-                  value={draft[rt.id] ?? ''}
+                  value={draft[priceKey(rt.id, 0)] ?? ''}
                   placeholder="—"
-                  onChange={(e) => setDraft((d) => ({ ...d, [rt.id]: e.target.value }))}
+                  onChange={(e) => setDraft((d) => ({ ...d, [priceKey(rt.id, 0)]: e.target.value }))}
                 />
                 <span className={classes.priceCurrency}>₽</span>
               </div>
@@ -413,7 +567,7 @@ function Seasons({ plan, roomTypes }) {
           prices: {},
         });
       }
-      map.get(key).prices[r.roomTypeId] = String(r.price);
+      map.get(key).prices[priceKey(r.roomTypeId, r.occupancy ?? 0)] = String(r.price);
     });
     return [...map.values()].sort((a, b) => a.sortOrder - b.sortOrder);
   }, [seasonRows]);
@@ -424,9 +578,10 @@ function Seasons({ plan, roomTypes }) {
 
   const dirty = JSON.stringify(list) !== JSON.stringify(initial);
 
+  const occs = useMemo(() => occupancyColumns(plan, roomTypes), [plan, roomTypes]);
   const update = (idx, patch) => setList((l) => l.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
-  const updatePrice = (idx, rtId, v) =>
-    setList((l) => l.map((s, i) => (i === idx ? { ...s, prices: { ...s.prices, [rtId]: v } } : s)));
+  const updatePrice = (idx, k, v) =>
+    setList((l) => l.map((s, i) => (i === idx ? { ...s, prices: { ...s.prices, [k]: v } } : s)));
 
   const addSeason = () => {
     const today = format(new Date(), 'yyyy-MM-dd');
@@ -451,9 +606,11 @@ function Seasons({ plan, roomTypes }) {
         dateFrom: s.dateFrom,
         dateTo: s.dateTo,
         sortOrder: idx,
-        items: roomTypes
-          .filter((rt) => Number(s.prices[rt.id]) > 0)
-          .map((rt) => ({ roomTypeId: rt.id, price: Number(s.prices[rt.id]) })),
+        items: roomTypes.flatMap((rt) =>
+          occs
+            .filter((o) => (o === 0 || o <= (rt.maxOccupancy ?? o)) && Number(s.prices[priceKey(rt.id, o)]) > 0)
+            .map((o) => ({ roomTypeId: rt.id, occupancy: o, price: Number(s.prices[priceKey(rt.id, o)]) })),
+        ),
       })),
     };
     try {
@@ -500,6 +657,14 @@ function Seasons({ plan, roomTypes }) {
                 </div>
                 <button className={classes.seasonRemove} onClick={() => removeSeason(idx)}>Удалить</button>
               </div>
+              {plan.partnerId ? (
+                <OccupancyGrid
+                  roomTypes={roomTypes}
+                  occs={occs}
+                  values={s.prices}
+                  onChange={(k, v) => updatePrice(idx, k, v)}
+                />
+              ) : (
               <div className={classes.seasonPrices}>
                 {roomTypes.map((rt) => (
                   <div key={rt.id} className={classes.seasonPriceRow}>
@@ -510,15 +675,16 @@ function Seasons({ plan, roomTypes }) {
                         type="number"
                         min="0"
                         step="0.01"
-                        value={s.prices[rt.id] ?? ''}
+                        value={s.prices[priceKey(rt.id, 0)] ?? ''}
                         placeholder="—"
-                        onChange={(e) => updatePrice(idx, rt.id, e.target.value)}
+                        onChange={(e) => updatePrice(idx, priceKey(rt.id, 0), e.target.value)}
                       />
                       <span className={classes.priceCurrency}>₽</span>
                     </div>
                   </div>
                 ))}
               </div>
+              )}
             </div>
           ))}
         </div>
@@ -642,12 +808,28 @@ function RateCalendar({ plan, roomTypes }) {
   const fromStr = dayStrs[0];
   const toStr   = dayStrs[dayStrs.length - 1];
 
-  const { data: rates = [], isFetching } = useRates({ ratePlanId: plan.id, from: fromStr, to: toStr });
-  const { data: standard = [] } = useStandardRates(plan.id);
-  const { data: seasons = [] } = useSeasons(plan.id);
+  /* Тариф партнёра считается по числу гостей строго (29.09.2026), и цена дня
+     на двоих одному не достаётся. Календарь такого тарифа показывает и правит
+     цены на ВЫБРАННОЕ число гостей — смешать их в одной сетке значило бы
+     показать гостинице цифру, по которой бронь не посчитают. */
+  const partnerOccs = useMemo(
+    () => (plan.partnerId ? occupancyColumns(plan, roomTypes).filter((o) => o > 0) : []),
+    [plan, roomTypes],
+  );
+  const [occ, setOcc] = useState(1);
+  const occupancy = plan.partnerId ? occ : undefined;
+
+  const { data: rates = [], isFetching } = useRates({ ratePlanId: plan.id, from: fromStr, to: toStr, occupancy });
+  const { data: standardAll = [] } = useStandardRates(plan.id);
+  const { data: seasonsAll = [] } = useSeasons(plan.id);
   const bulkUpsert = useBulkUpsertRates();
   const fillMutation = useFillRates();
 
+  const standard = useMemo(() => pickOccupancy(standardAll, occupancy, (r) => r.roomTypeId), [standardAll, occupancy]);
+  const seasons = useMemo(
+    () => pickOccupancy(seasonsAll, occupancy, (r) => `${r.roomTypeId}|${r.sortOrder}|${r.name}|${day10(r.dateFrom)}|${day10(r.dateTo)}`),
+    [seasonsAll, occupancy],
+  );
   const resolve = useMemo(() => buildResolver(standard, seasons), [standard, seasons]);
 
   const SEP = '|';
@@ -666,13 +848,16 @@ function RateCalendar({ plan, roomTypes }) {
   const [fillError, setFillError] = useState(null);
   const inputRef = useRef(null);
 
-  useEffect(() => { setPending({}); setSaveError(null); }, [plan.id]);
+  useEffect(() => { setPending({}); setSaveError(null); }, [plan.id, occ]);
   useEffect(() => { if (editingCell && inputRef.current) inputRef.current.focus(); }, [editingCell]);
 
   const isDirty = Object.keys(pending).length > 0;
 
   // Effective info for a cell: override (pending or saved) wins, else baseline.
   const cellInfo = (rtId, date) => {
+    // Гостей больше вместимости номера не бывает — и цены на них тоже.
+    const cap = roomTypes.find((r) => r.id === rtId)?.maxOccupancy;
+    if (occupancy && cap != null && occupancy > cap) return { value: '', source: 'none' };
     const key = `${rtId}${SEP}${date}`;
     const override = key in pending ? pending[key] : overrideMap[key];
     if (override != null && override !== '') {
@@ -725,7 +910,13 @@ function RateCalendar({ plan, roomTypes }) {
     setSaveError(null);
     const items = Object.entries(pending).map(([key, priceStr]) => {
       const sepIdx = key.indexOf(SEP);
-      return { ratePlanId: plan.id, roomTypeId: key.slice(0, sepIdx), date: key.slice(sepIdx + 1), price: Number(priceStr) || 0 };
+      return {
+        ratePlanId: plan.id,
+        roomTypeId: key.slice(0, sepIdx),
+        date: key.slice(sepIdx + 1),
+        price: Number(priceStr) || 0,
+        ...(occupancy ? { occupancy } : {}),
+      };
     });
     try {
       await bulkUpsert.mutateAsync(items);
@@ -739,7 +930,7 @@ function RateCalendar({ plan, roomTypes }) {
   const handleFill = async (data) => {
     setFillError(null);
     try {
-      await fillMutation.mutateAsync({ ...data, ratePlanId: plan.id });
+      await fillMutation.mutateAsync({ ...data, ratePlanId: plan.id, ...(occupancy ? { occupancy } : {}) });
       setShowFill(false);
     } catch (err) {
       const msg = err?.response?.data?.message;
@@ -801,6 +992,16 @@ function RateCalendar({ plan, roomTypes }) {
             </div>
             <button className={classes.calNavBtn} onClick={nextPeriod}>›</button>
             <button className={classes.calTodayBtn} onClick={goToday}>Сегодня</button>
+            {partnerOccs.length > 0 && (
+              <select
+                className={`${classes.input} ${classes.calOccSelect}`}
+                value={occ}
+                onChange={(e) => setOcc(Number(e.target.value))}
+                title="Цены тарифа партнёра — по числу гостей в номере"
+              >
+                {partnerOccs.map((o) => <option key={o} value={o}>Цены на {occupancyLabel(o)}</option>)}
+              </select>
+            )}
             <div className={classes.calDaysToggle}>
               {[14, 30].map(n => (
                 <button
@@ -1006,7 +1207,7 @@ function CorporateStatus({ plan }) {
   );
 }
 
-function PlanPanel({ plan, roomTypes, onEditPlan, contractSheets }) {
+function PlanPanel({ plan, roomTypes, onEditPlan, contractSheets, partners }) {
   const [tab, setTab] = useState('standard');
   const { data: seasons = [] } = useSeasons(plan.id);
   const seasonCount = useMemo(() => {
@@ -1025,10 +1226,19 @@ function PlanPanel({ plan, roomTypes, onEditPlan, contractSheets }) {
             <code>{plan.code}</code>
             {' · '}{MEAL_PLAN_LABELS[plan.mealPlan] ?? plan.mealPlan}
             {plan.parentRatePlanId && ' · наследует цены'}
-            {plan.forOperator && ` · для оператора, договор ${plan.operatorContract ?? '—'}`}
+            {plan.forOperator && ` · договор ${plan.operatorContract ?? '—'}`}
             {!plan.isActive && <span style={{ marginLeft: 8, color: '#EF4444' }}>Неактивен</span>}
           </div>
         </div>
+        {plan.partnerId && (
+          <div className={classes.planConditions}>
+            {partnerConditions(plan, partners).map((c) => (
+              <span key={c.label} className={classes.planCondition}>
+                <span>{c.label}</span>{c.value}
+              </span>
+            ))}
+          </div>
+        )}
         <div className={classes.planPanelActions}>
           <button className={classes.iconBtn} title="Редактировать план" onClick={onEditPlan}>
             <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -1163,6 +1373,7 @@ function Tariffs() {
   const deletePlan = useDeleteRatePlan();
 
   const { data: contractSheets = [] } = useOperatorContractPrices();
+  const { data: partners = [] } = usePartners();
   const contracts = useMemo(
     () => [...new Set(contractSheets.map((s) => s.contractNumber))].sort(),
     [contractSheets],
@@ -1190,7 +1401,19 @@ function Tariffs() {
       priceModifierType:  form.parentRatePlanId ? form.priceModifierType  : undefined,
       priceModifierValue: form.parentRatePlanId ? form.priceModifierValue : undefined,
       forOperator:        form.forOperator,
-      operatorContract:   form.forOperator ? form.operatorContract : null,
+      operatorContract:   form.forOperator ? (form.operatorContract || null) : null,
+      /* Условия тарифа партнёра. Пустое — «для любого»; без партнёра всё
+         обнуляется на сервере. partnerId не шлём пустым: без него сервер
+         по старому признаку «для оператора» берёт Kars Avia. */
+      ...(form.forOperator
+        ? {
+            partnerId:         form.partnerId || undefined,
+            partnerAccountId:  form.partnerAccountId || null,
+            partnerCustomerId: form.partnerCustomerId || null,
+            guestKind:         form.guestKind || null,
+            vatRate:           form.vatRate !== '' ? Number(form.vatRate) : null,
+          }
+        : {}),
     };
     try {
       if (formData?.id) {
@@ -1269,7 +1492,7 @@ function Tariffs() {
                         className={`${classes.planTabCorp} ${classes['corpDot_' + (p.operatorStatus?.state ?? 'DRAFT')]}`}
                         title={p.operatorStatus?.reason ?? ''}
                       >
-                        Оператор
+                        {partners.find((x) => x.id === p.partnerId)?.name ?? 'Партнёр'}
                       </span>
                     )}
                     <span style={{ width: 7, height: 7, borderRadius: '50%', background: p.isActive ? '#22C55E' : '#D1D5DB', flexShrink: 0, marginLeft: 'auto' }} />
@@ -1290,6 +1513,7 @@ function Tariffs() {
               plan={selectedPlan}
               roomTypes={roomTypes}
               contractSheets={contractSheets}
+              partners={partners}
               onEditPlan={() => openEdit(selectedPlan)}
             />
           )}
@@ -1303,6 +1527,7 @@ function Tariffs() {
           plan={formData}
           allPlans={plans}
           contracts={contracts}
+          partners={partners}
           onSave={handleSave}
           onDelete={handleDelete}
           onClose={() => { setShowForm(false); setFormError(null); }}

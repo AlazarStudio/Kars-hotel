@@ -498,7 +498,8 @@ export class AvailabilityService {
         const list = dailyByPlanDay.get(`${planId}|${day}`);
         if (!list?.length) return null;
         if (guests) {
-          const exact = list.find((x) => x.occupancy === guests);
+          // Точное число гостей, иначе цена «на любое» (0) — как у базовых цен.
+          const exact = list.find((x) => x.occupancy === guests) ?? list.find((x) => x.occupancy === 0);
           if (exact) return exact.price;
           if (strict) return null;
         }

@@ -1143,3 +1143,43 @@
   line-height: 1.55;
 }
 .fillWarn { margin-top: 6px; color: #B45309; }
+
+/* ── Тариф партнёра: условия и цены по числу гостей (29.09.2026) ───────── */
+
+.planConditions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  justify-content: flex-end;
+  margin: 0 12px;
+}
+.planCondition {
+  display: inline-flex;
+  gap: 5px;
+  align-items: baseline;
+  padding: 3px 9px;
+  border: 1px solid #E2E8F0;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #0F172A;
+  background: #F8FAFC;
+}
+.planCondition > span { color: #94A3B8; }
+
+.occWrap { padding: 14px 22px 4px; overflow-x: auto; }
+.occTable { width: 100%; border-collapse: collapse; }
+.occTable th {
+  text-align: left;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #64748B;
+  padding: 0 8px 8px;
+  white-space: nowrap;
+}
+.occTable th:first-child, .occTable td:first-child { padding-left: 0; min-width: 160px; }
+.occTable td { padding: 8px; border-top: 1px solid #F1F5F9; vertical-align: middle; }
+.occTable td .priceInputWrap { min-width: 110px; }
+.occNone { color: #CBD5E1; text-align: center; }
+
+.calOccSelect { width: auto; height: 32px; padding: 0 10px; font-size: 13px; }
