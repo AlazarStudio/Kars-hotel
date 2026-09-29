@@ -1,4 +1,4 @@
-import { IsDateString, IsInt, IsOptional, IsUUID, Min } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -25,4 +25,23 @@ export class ConnectAvailabilityDto {
   @IsOptional()
   @IsUUID()
   categoryId?: string;
+
+  /* Кого селят (29.09.2026) — по этим условиям выбирается корпоративный
+     тариф партнёра: юрлицо партнёра и заказчик — коды из его справочника. */
+  @ApiPropertyOptional({ description: 'Код юрлица партнёра' })
+  @IsOptional()
+  @IsString()
+  @Length(1, 64)
+  account?: string;
+
+  @ApiPropertyOptional({ description: 'Код заказчика партнёра (авиакомпании)' })
+  @IsOptional()
+  @IsString()
+  @Length(1, 64)
+  customer?: string;
+
+  @ApiPropertyOptional({ enum: ['CREW', 'DISRUPTION'] })
+  @IsOptional()
+  @IsIn(['CREW', 'DISRUPTION'])
+  guestKind?: 'CREW' | 'DISRUPTION';
 }

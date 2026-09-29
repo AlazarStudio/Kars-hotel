@@ -163,16 +163,16 @@ export class ConnectivityController {
   @Get('hotels/:slug/availability')
   @RequireScopes(PARTNER_SCOPES.AvailabilityRead)
   @ApiOperation({ summary: 'Availability + nightly rates for a stay period' })
-  availability(@Param('slug') slug: string, @Query() dto: ConnectAvailabilityDto) {
-    return this.connectivity.availabilityFor(slug, dto);
+  availability(@Param('slug') slug: string, @Query() dto: ConnectAvailabilityDto, @Req() req: PartnerRequest,) {
+    return this.connectivity.availabilityFor(slug, dto, req.partner!.partnerId);
   }
 
   @Post('hotels/:slug/reservations')
   @HttpCode(HttpStatus.CREATED)
   @RequireScopes(PARTNER_SCOPES.ReservationsWrite)
   @ApiOperation({ summary: 'Create a reservation by room category' })
-  createReservation(@Param('slug') slug: string, @Body() dto: ConnectCreateReservationDto) {
-    return this.connectivity.createReservation(slug, dto);
+  createReservation(@Param('slug') slug: string, @Body() dto: ConnectCreateReservationDto, @Req() req: PartnerRequest) {
+    return this.connectivity.createReservation(slug, dto, req.partner!.partnerId);
   }
 
   @Get('hotels/:slug/reservations/:id')
@@ -288,6 +288,16 @@ export class ConnectivityController {
   /* Э3 · Корпоративный тариф гостиницы для оператора.
      Читает оператор ту же картину, что видит гостиница у себя: один расчёт
      статуса на обе стороны, иначе спор «у меня подтверждён» неразрешим. */
+  /* Все корпоративные тарифы партнёра у гостиницы (29.09.2026): условия,
+     НДС, цены по числу гостей, статус — партнёр сверяет каждый со своим
+     договором. Партнёр — тот, чей ключ. */
+  @Get('hotels/:slug/corporate-tariffs')
+  @RequireScopes(PARTNER_SCOPES.HotelsRead)
+  @ApiOperation({ summary: 'All corporate tariffs of the calling partner at a hotel' })
+  getCorporateTariffs(@Param('slug') slug: string, @Req() req: PartnerRequest) {
+    return this.connectivity.partnerTariffs(slug, req.partner!.partnerId);
+  }
+
   @Get('hotels/:slug/corporate-tariff')
   @RequireScopes(PARTNER_SCOPES.HotelsRead)
   @ApiOperation({ summary: 'Corporate rate plan for the operator, with review status' })
@@ -308,8 +318,9 @@ export class ConnectivityController {
   reviewCorporateTariff(
     @Param('slug') slug: string,
     @Body() dto: ReviewCorporateTariffDto,
+    @Req() req: PartnerRequest,
   ) {
-    return this.connectivity.reviewCorporateTariff(slug, dto);
+    return this.connectivity.reviewCorporateTariff(slug, dto, req.partner!.partnerId);
   }
 
   // В7 · история изменений гостиницы: оператор видит, что и когда поменял

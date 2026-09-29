@@ -155,6 +155,91 @@ export class RatePlansService {
     }
   }
 
+  /** Действующие тарифы партнёра со статусом сверки — выбор тарифа для
+   *  наличия и брони (29.09.2026). */
+  async partnerPlans(partnerId: string) {
+    const plans = await this.prisma.forTenant((tx) =>
+      tx.ratePlan.findMany({
+        where: { partnerId, isActive: true },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      }),
+    );
+    return this.withOperatorStatus(plans);
+  }
+
+  /* КОРПОРАТИВНЫЕ ТАРИФЫ ПАРТНЁРА ДЛЯ СВЕРКИ (29.09.2026).
+   *
+   * Все тарифы партнёра у гостиницы: условия (юрлицо, заказчик, вид брони —
+   * кодами партнёра и названиями), НДС, статус и цены по категориям и числу
+   * гостей. Партнёр сверяет каждый тариф со «срезом» своего договора, и видеть
+   * обязан те же цифры, что считает PMS. */
+  async partnerTariffs(partnerId: string) {
+    const plans = await this.prisma.forTenant((tx) =>
+      tx.ratePlan.findMany({
+        where: { partnerId, isActive: true },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+        include: {
+          partnerAccount: { select: { code: true, name: true } },
+          partnerCustomer: { select: { code: true, name: true } },
+        },
+      }),
+    );
+    if (!plans.length) return [];
+    const [decorated, docs, roomTypes, prices] = await Promise.all([
+      this.withOperatorStatus(plans),
+      this.contractDocs(),
+      this.prisma.forTenant((tx) =>
+        tx.roomType.findMany({
+          where: { isActive: true },
+          orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+          select: { id: true, name: true, maxOccupancy: true },
+        }),
+      ),
+      this.planPrices(plans.map((p) => p.id)),
+    ]);
+    return decorated.map((plan) => {
+      const rows = prices.get(plan.id) ?? [];
+      const categories = roomTypes.map((rt) => {
+        const standard = rows
+          .filter((r) => r.kind === 'STANDARD' && r.roomTypeId === rt.id)
+          .map((r) => ({ occupancy: r.occupancy ?? 0, price: Number(r.price), currency: r.currency }))
+          .sort((a, b) => a.occupancy - b.occupancy);
+        const others = rows.filter((r) => r.kind !== 'STANDARD' && r.roomTypeId === rt.id);
+        const amounts = others.map((r) => Number(r.price));
+        return {
+          categoryId: rt.id,
+          categoryName: rt.name,
+          capacity: rt.maxOccupancy,
+          /** Базовые цены по числу гостей (0 — на любое), рубли без НДС. */
+          prices: standard,
+          overrides: amounts.length
+            ? { count: amounts.length, min: Math.min(...amounts), max: Math.max(...amounts) }
+            : null,
+        };
+      });
+      return {
+        id: plan.id,
+        code: plan.code,
+        name: plan.name,
+        mealPlan: plan.mealPlan,
+        operatorContract: plan.operatorContract,
+        conditions: {
+          account: plan.partnerAccount,
+          customer: plan.partnerCustomer,
+          guestKind: plan.guestKind,
+        },
+        vatRate: plan.vatRate != null ? Number(plan.vatRate) : null,
+        status: plan.operatorStatus,
+        fingerprint: plan.fingerprint,
+        reviewedAt: plan.reviewedAt,
+        reviewedBy: plan.reviewedBy,
+        reviewDocuments: plan.reviewDocuments,
+        contractDocs: docsOfContract(docs, plan.operatorContract),
+        categories,
+      };
+    });
+  }
+
   /** Тариф оператора со статусом и приложениями договора — для кабинета и
    *  для самого оператора: обе стороны обязаны видеть ОДНУ картину. */
   async operatorTariff() {

@@ -8,6 +8,7 @@ import {
   IsString,
   IsUUID,
   Min,
+  Length,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -86,4 +87,18 @@ export class ConnectCreateReservationDto {
   @IsOptional()
   @IsIn(['CREW', 'DISRUPTION'])
   guestKind?: 'CREW' | 'DISRUPTION';
+
+  /* Юрлицо партнёра и заказчик (29.09.2026) — по ним проверяется, что
+     корпоративный тариф брони подходит; коды из справочника партнёра. */
+  @ApiPropertyOptional({ description: 'Код юрлица партнёра' })
+  @IsOptional()
+  @IsString()
+  @Length(1, 64)
+  account?: string;
+
+  @ApiPropertyOptional({ description: 'Код заказчика партнёра (авиакомпании)' })
+  @IsOptional()
+  @IsString()
+  @Length(1, 64)
+  customer?: string;
 }

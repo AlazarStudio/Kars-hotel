@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { PartnerPlanQuery, pickPartnerPlans } from '../rate-plans/partner-tariff-match';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext, RequestContext } from '../../common/context/tenant-context';
@@ -331,8 +332,9 @@ export class ConnectivityService {
     };
   }
 
-  async availabilityFor(slug: string, dto: ConnectAvailabilityDto) {
+  async availabilityFor(slug: string, dto: ConnectAvailabilityDto, partnerId: string) {
     const tenant = await this.resolveTenant(slug);
+    const query = await this.partnerQuery(partnerId, dto);
 
     return this.runAsTenant(tenant.id, async () => {
       const roomTypes = await this.prisma.forTenantExplicit(tenant.id, (tx) =>
@@ -358,6 +360,8 @@ export class ConnectivityService {
         nightlyFrom: number | null;
         /** Тот самый корпоративный тариф — оператор платит по нему. */
         forOperator: boolean;
+        /** НДС тарифа партнёра, %; цены тарифа партнёра — без НДС. */
+        vatRate: number | null;
       };
       type OfferRoom = {
         id: string;
@@ -380,8 +384,17 @@ export class ConnectivityService {
        * дать выбрать цену, которую никто не сверял, — а подтверждение ровно
        * для того и заведено. Причину оператор получает отдельным полем и
        * показывает диспетчеру, вместо того чтобы гадать, куда делся тариф. */
-      const corporate = await this.ratePlans.operatorTariff();
-      const corporateApplies = corporate?.operatorStatus?.applies === true;
+      /* Тарифы партнёра под ЭТОТ запрос (29.09.2026): самые точные из
+         подходящих по юрлицу, заказчику и виду брони. Неподтверждённые не
+         предлагаются, а называются — диспетчер должен знать, почему цена не
+         договорная. Тарифы других партнёров и с другими условиями не
+         показываются вовсе. */
+      const chosen = pickPartnerPlans(await this.ratePlans.partnerPlans(partnerId), query);
+      const applying = new Set(
+        chosen.filter((p) => p.operatorStatus?.applies === true).map((p) => p.id),
+      );
+      const corporate = chosen[0] ?? null;
+      const corporateApplies = applying.size > 0;
 
       const offers: Array<{
         categoryId: string;
@@ -413,9 +426,11 @@ export class ConnectivityService {
           dto.checkIn,
           dto.checkOut,
           rt.basePrice as never,
+          dto.guests,
         );
         const ratePlans: OfferRatePlan[] = planPrices
-          .filter((p) => !corporate || p.ratePlanId !== corporate.id || corporateApplies)
+          // Свои тарифы отеля — всем; тариф партнёра — только выбранный и подтверждённый.
+          .filter((p) => p.partnerId == null || applying.has(p.ratePlanId))
           .map((p) => ({
             ratePlanId: p.ratePlanId,
             code: p.code,
@@ -428,7 +443,8 @@ export class ConnectivityService {
             })),
             total: p.total != null ? Number(p.total) : null,
             nightlyFrom: p.nightlyFrom != null ? Number(p.nightlyFrom) : null,
-            forOperator: corporate?.id === p.ratePlanId,
+            forOperator: applying.has(p.ratePlanId),
+            vatRate: p.vatRate != null ? Number(p.vatRate) : null,
           }));
 
         // Back-compat nightly rate: cheapest plan's nightly, else cheapest
@@ -480,6 +496,15 @@ export class ConnectivityService {
               state: corporate.operatorStatus?.state ?? 'DRAFT',
               applies: corporateApplies,
               reason: corporate.operatorStatus?.reason ?? '',
+              /* Все тарифы, выбранные под условия запроса (разное питание). */
+              plans: chosen.map((p) => ({
+                ratePlanId: p.id,
+                name: p.name,
+                mealPlan: p.mealPlan,
+                state: p.operatorStatus?.state ?? 'DRAFT',
+                applies: p.operatorStatus?.applies === true,
+                reason: p.operatorStatus?.reason ?? '',
+              })),
             }
           : null,
       };
@@ -488,8 +513,9 @@ export class ConnectivityService {
 
   // ─── Reservations (tenant-scoped) ──────────────────────────────────────────
 
-  async createReservation(slug: string, dto: ConnectCreateReservationDto) {
+  async createReservation(slug: string, dto: ConnectCreateReservationDto, partnerId: string) {
     const tenant = await this.resolveTenant(slug);
+    const query = await this.partnerQuery(partnerId, dto);
 
     return this.runAsTenant(tenant.id, async () => {
       // Validate the category belongs to this hotel.
@@ -512,12 +538,36 @@ export class ConnectivityService {
       // via the same resolution chain used for availability.
       let ratePlanId: string | undefined;
       let totalPrice: number | undefined;
-      if (dto.ratePlanId) {
+      /* Корпоративный тариф брони (29.09.2026) — только подходящий условиям и
+         подтверждённый. Раньше проходил любой тариф по id, и партнёр мог
+         забронировать по неподтверждённому или чужому. Без тарифа в запросе —
+         берётся подходящий сам, если он один. */
+      const chosen = pickPartnerPlans(await this.ratePlans.partnerPlans(partnerId), query);
+      const applying = chosen.filter((p) => p.operatorStatus?.applies === true);
+      let planIdToUse = dto.ratePlanId;
+      if (!planIdToUse && applying.length === 1) planIdToUse = applying[0].id;
+      if (!planIdToUse && applying.length > 1) {
+        throw new ConflictException(
+          `Под эти условия подходит несколько тарифов (${applying.map((p) => p.name).join(', ')}) — укажите ratePlanId`,
+        );
+      }
+      if (planIdToUse) {
         const plan = await this.prisma.forTenantExplicit(tenant.id, (tx) =>
-          tx.ratePlan.findUnique({ where: { id: dto.ratePlanId } }),
+          tx.ratePlan.findUnique({ where: { id: planIdToUse } }),
         );
         if (!plan || !plan.isActive) {
-          throw new NotFoundException(`Rate plan ${dto.ratePlanId} not found in hotel ${slug}`);
+          throw new NotFoundException(`Rate plan ${planIdToUse} not found in hotel ${slug}`);
+        }
+        if (plan.partnerId) {
+          const mine = chosen.find((p) => p.id === plan.id);
+          if (plan.partnerId !== partnerId || !mine) {
+            throw new ConflictException('Этот корпоративный тариф не для этих условий брони');
+          }
+          if (mine.operatorStatus?.applies !== true) {
+            throw new ConflictException(
+              `Корпоративный тариф «${plan.name}» не подтверждён: ${mine.operatorStatus?.reason ?? ''}`.trim(),
+            );
+          }
         }
         ratePlanId = plan.id;
         const planPrices = await this.availability.priceByPlan(
@@ -525,11 +575,12 @@ export class ConnectivityService {
           dto.checkIn,
           dto.checkOut,
           category.basePrice as never,
+          dto.adults + (dto.children ?? 0),
         );
         const match = planPrices.find((p) => p.ratePlanId === plan.id);
         if (!match) {
           throw new ConflictException(
-            `Rate plan ${dto.ratePlanId} is not bookable for the selected dates`,
+            `Тариф «${plan.name}» не считается на эти даты и число гостей — в нём нет цены`,
           );
         }
         totalPrice = match.total != null ? Number(match.total) : undefined;
@@ -817,23 +868,21 @@ export class ConnectivityService {
     return this.runAsTenant(tenant.id, () => this.ratePlans.operatorTariff());
   }
 
-  async reviewCorporateTariff(slug: string, dto: ReviewCorporateTariffDto) {
+  async reviewCorporateTariff(slug: string, dto: ReviewCorporateTariffDto, partnerId: string) {
     const tenant = await this.resolveTenant(slug);
     return this.runAsTenant(tenant.id, async () => {
-      const current = await this.ratePlans.operatorTariff();
-      if (!current) {
-        throw new NotFoundException(
-          `У гостиницы ${slug} нет корпоративного тарифа для оператора`,
-        );
-      }
-      /* Решают по тому тарифу, который смотрели. Гостиница вправе выключить
-         один и включить другой — и тогда решение уехало бы на чужие цифры. */
-      if (current.id !== dto.ratePlanId) {
+      /* Решение — по ЛЮБОМУ действующему тарифу этого партнёра (29.09.2026):
+         тарифов у гостиницы теперь несколько. Чужой тариф (другого партнёра
+         или выключенный) — отказ: решение уехало бы на чужие цифры. */
+      const mine = (await this.ratePlans.partnerPlans(partnerId)).find(
+        (p) => p.id === dto.ratePlanId,
+      );
+      if (!mine) {
         throw new ConflictException(
-          'Гостиница сменила корпоративный тариф — откройте его заново',
+          'Такого действующего корпоративного тарифа у гостиницы нет — откройте тарифы заново',
         );
       }
-      return this.ratePlans.applyOperatorReview(current.id, {
+      return this.ratePlans.applyOperatorReview(mine.id, {
         verdict: dto.verdict,
         reviewedBy: dto.reviewedBy,
         seenFingerprint: dto.seenFingerprint,
@@ -998,6 +1047,41 @@ export class ConnectivityService {
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
   /** Resolve a hotel by slug across all tenants (admin client). */
+  /* Условия запроса партнёра (29.09.2026): коды юрлица и заказчика — из его
+   * справочника. Незнакомый код — как неназванный: тарифа под незнакомую
+   * авиакомпанию у гостиницы быть не может, и подойдёт общий. */
+  private async partnerQuery(
+    partnerId: string,
+    dto: { account?: string; customer?: string; guestKind?: 'CREW' | 'DISRUPTION' },
+  ): Promise<PartnerPlanQuery> {
+    const [account, customer] = await Promise.all([
+      dto.account
+        ? this.prisma.admin.partnerAccount.findUnique({
+            where: { partnerId_code: { partnerId, code: dto.account } },
+            select: { id: true, isActive: true },
+          })
+        : null,
+      dto.customer
+        ? this.prisma.admin.partnerCustomer.findUnique({
+            where: { partnerId_code: { partnerId, code: dto.customer } },
+            select: { id: true, isActive: true },
+          })
+        : null,
+    ]);
+    return {
+      partnerId,
+      accountId: account?.isActive ? account.id : null,
+      customerId: customer?.isActive ? customer.id : null,
+      guestKind: dto.guestKind ?? null,
+    };
+  }
+
+  /** Все корпоративные тарифы партнёра у гостиницы — для его сверки. */
+  async partnerTariffs(slug: string, partnerId: string) {
+    const tenant = await this.resolveTenant(slug);
+    return this.runAsTenant(tenant.id, () => this.ratePlans.partnerTariffs(partnerId));
+  }
+
   private async resolveTenant(slug: string) {
     if (slug === ConnectivityService.PLATFORM_SLUG) {
       throw new NotFoundException(`Hotel '${slug}' not found`);

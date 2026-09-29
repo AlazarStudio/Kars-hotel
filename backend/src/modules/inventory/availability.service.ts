@@ -49,6 +49,13 @@ export interface RatePlanPrice {
   code: string | null;
   name: string;
   mealPlan: string; // NONE | BB | HB | FB | AI
+  /** Корпоративный тариф партнёра и его условия (29.09.2026); null — свой тариф отеля. */
+  partnerId: string | null;
+  partnerAccountId: string | null;
+  partnerCustomerId: string | null;
+  guestKind: string | null;
+  /** НДС тарифа партнёра, %; null — без НДС или не задан. */
+  vatRate: string | null;
   nights: number;
   perNight: RatePlanNight[];
   /** Sum of per-night prices when EVERY night is priced; null otherwise. */
@@ -385,9 +392,12 @@ export class AvailabilityService {
     checkIn: string,
     checkOut: string,
     basePrice?: Prisma.Decimal | number | null,
+    /** Сколько гостей в номере (29.09.2026): цена бывает своя на одного и на двоих. */
+    guests?: number,
   ): Promise<RatePlanPrice[]> {
     const tenantId = TenantContext.getTenantIdOrThrow();
-    const cacheKey = InventoryService.cacheKey(tenantId, roomTypeId, checkIn, checkOut) + ':plans';
+    const cacheKey =
+      InventoryService.cacheKey(tenantId, roomTypeId, checkIn, checkOut) + `:plans:g${guests ?? 0}`;
 
     const cached = await this.redis.raw.get(cacheKey);
     if (cached) {
@@ -407,20 +417,29 @@ export class AvailabilityService {
       const ratePlans = await tx.ratePlan.findMany({
         where: { isActive: true },
         orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-        select: { id: true, code: true, name: true, mealPlan: true },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          mealPlan: true,
+          partnerId: true,
+          partnerAccountId: true,
+          partnerCustomerId: true,
+          guestKind: true,
+          vatRate: true,
+        },
       });
       if (!ratePlans.length) return [] as RatePlanPrice[];
 
       // Per-day Rate overrides for every plan of this room type in range.
       const dailyRows = await tx.$queryRaw<
-        Array<{ rate_plan_id: string; date: Date; price: string }>
+        Array<{ rate_plan_id: string; date: Date; occupancy: number; price: string }>
       >`
-        SELECT rate_plan_id, date, MIN(price)::text AS price
+        SELECT rate_plan_id, date, occupancy, price::text AS price
         FROM rate
         WHERE tenant_id    = ${tenantId}::uuid
           AND room_type_id = ${roomTypeId}::uuid
           AND date BETWEEN ${checkInDate}::date AND ${checkOutDate}::date
-        GROUP BY rate_plan_id, date
       `;
 
       const [seasonRows, standardRows] = await Promise.all([
@@ -464,10 +483,27 @@ export class AvailabilityService {
         })),
       );
 
-      const dailyByPlanDay = new Map<string, string>();
+      /* Цена на день — по числу гостей (29.09.2026). Для своих тарифов отеля,
+         если цены на это число нет, — самая низкая из заведённых на день, как
+         было; для тарифа партнёра — только ровно на это число: цена «за
+         двоих» за одного в его счёт не идёт. */
+      const dailyByPlanDay = new Map<string, { occupancy: number; price: Prisma.Decimal }[]>();
       for (const r of dailyRows) {
-        dailyByPlanDay.set(`${r.rate_plan_id}|${format(r.date, 'yyyy-MM-dd')}`, r.price);
+        const k = `${r.rate_plan_id}|${format(r.date, 'yyyy-MM-dd')}`;
+        const list = dailyByPlanDay.get(k) ?? [];
+        list.push({ occupancy: r.occupancy, price: new Prisma.Decimal(r.price) });
+        dailyByPlanDay.set(k, list);
       }
+      const dailyFor = (planId: string, day: string, strict: boolean): Prisma.Decimal | null => {
+        const list = dailyByPlanDay.get(`${planId}|${day}`);
+        if (!list?.length) return null;
+        if (guests) {
+          const exact = list.find((x) => x.occupancy === guests);
+          if (exact) return exact.price;
+          if (strict) return null;
+        }
+        return list.reduce((m, x) => (x.price.lessThan(m) ? x.price : m), list[0].price);
+      };
 
       const priced: RatePlanPrice[] = [];
       for (const plan of ratePlans) {
@@ -475,13 +511,18 @@ export class AvailabilityService {
         let total: Prisma.Decimal | null = new Prisma.Decimal(0);
         let cheapest: Prisma.Decimal | null = null;
 
+        /* Тариф партнёра не берёт базовую цену категории: он про договорные
+           цифры, и «по прайсу» вместо договора — ровно та подмена, ради
+           которой тариф заводили. Нет своей цены на ночь — тариф не
+           предлагается. */
+        const isPartnerPlan = plan.partnerId != null;
         for (const date of stayDates) {
           const day = format(date, 'yyyy-MM-dd');
-          const daily = dailyByPlanDay.get(`${plan.id}|${day}`);
+          const daily = dailyFor(plan.id, day, isPartnerPlan);
           const eff: Prisma.Decimal | null =
-            daily != null
-              ? new Prisma.Decimal(daily)
-              : (baseline.resolve(plan.id, roomTypeId, day) ?? baseFallback);
+            daily ??
+            baseline.resolve(plan.id, roomTypeId, day, guests) ??
+            (isPartnerPlan ? null : baseFallback);
 
           perNight.push({ date: day, price: eff != null ? eff.toFixed(2) : null });
 
@@ -501,6 +542,11 @@ export class AvailabilityService {
           code: plan.code,
           name: plan.name,
           mealPlan: plan.mealPlan,
+          partnerId: plan.partnerId,
+          partnerAccountId: plan.partnerAccountId,
+          partnerCustomerId: plan.partnerCustomerId,
+          guestKind: plan.guestKind,
+          vatRate: plan.vatRate != null ? plan.vatRate.toString() : null,
           nights: stayDates.length,
           perNight,
           total: total.toFixed(2),

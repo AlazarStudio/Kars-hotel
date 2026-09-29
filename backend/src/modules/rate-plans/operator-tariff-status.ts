@@ -55,6 +55,13 @@ export interface PlanPricingShape {
   occupancyPricing: boolean;
   priceModifierType: string;
   priceModifierValue: unknown;
+  /* Условия и НДС (29.09.2026): тариф «для России» и тот же тариф «для
+     Смартавиа» — разные договорённости, и перенастройка тарифа обязана
+     ронять подтверждение. Необязательны: у прежних тарифов их нет. */
+  partnerAccountId?: string | null;
+  partnerCustomerId?: string | null;
+  guestKind?: string | null;
+  vatRate?: unknown;
 }
 
 export interface ReviewedPlan extends PlanPricingShape {
@@ -129,12 +136,18 @@ export function tariffFingerprint(input: {
       ),
     );
 
-  const plan = {
+  const plan: Record<string, unknown> = {
     mealPlan: input.plan.mealPlan,
     occupancyPricing: input.plan.occupancyPricing,
     priceModifierType: input.plan.priceModifierType,
     priceModifierValue: String(input.plan.priceModifierValue),
   };
+  /* В отпечаток — только заданные: у прежних тарифов условий нет, и их
+     подтверждение не должно слететь от появления новых полей. */
+  if (input.plan.partnerAccountId) plan.partnerAccountId = input.plan.partnerAccountId;
+  if (input.plan.partnerCustomerId) plan.partnerCustomerId = input.plan.partnerCustomerId;
+  if (input.plan.guestKind) plan.guestKind = input.plan.guestKind;
+  if (input.plan.vatRate != null) plan.vatRate = String(input.plan.vatRate);
 
   return createHash('sha256')
     .update(JSON.stringify({ docs, plan, prices }))
