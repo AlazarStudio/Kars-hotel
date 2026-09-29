@@ -1,5 +1,6 @@
 import {
   IsDateString,
+  IsIn,
   IsEmail,
   IsInt,
   IsNotEmpty,
@@ -76,4 +77,13 @@ export class ConnectCreateReservationDto {
   @IsOptional()
   @IsString()
   comment?: string;
+
+  /**
+   * Вид брони (29.09.2026): экипаж (эстафета, командировка) или сбойный рейс.
+   * Договоры гостиниц требуют его в заявке, и цена у них своя.
+   */
+  @ApiPropertyOptional({ enum: ['CREW', 'DISRUPTION'] })
+  @IsOptional()
+  @IsIn(['CREW', 'DISRUPTION'])
+  guestKind?: 'CREW' | 'DISRUPTION';
 }

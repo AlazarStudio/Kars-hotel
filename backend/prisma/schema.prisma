@@ -620,6 +620,16 @@ enum ReservationSource {
   CORPORATE
 }
 
+/// Вид брони партнёра (29.09.2026): кого селят. Договоры гостиниц требуют
+/// его в заявке — «отмечать принадлежность гостей к экипажу» (Нью Стар),
+/// «указывать вид брони: эстафета / сбой» («Космос»), — и цена у них своя.
+enum GuestKind {
+  /// Экипаж: эстафета, командировка — плановое размещение.
+  CREW
+  /// Сбойный рейс: экипаж и пассажиры задержанного рейса.
+  DISRUPTION
+}
+
 /// Core reservation entity. Full CRUD business logic arrives in Phase H;
 /// here we define the schema so the Timeline (Phase G) can display real data.
 ///
@@ -648,6 +658,8 @@ model Reservation {
   /// lifecycle: hotel staff may view it but cannot cancel it from the PMS — only
   /// the partner can release it through the connectivity API.
   channelManaged Boolean        @default(false) @map("channel_managed")
+  /// Вид брони партнёра; пусто — не указан (собственные брони отеля).
+  guestKind   GuestKind?        @map("guest_kind")
   notes       String?
   placeNumber Int               @default(1) @map("place_number")
   version     Int               @default(0)

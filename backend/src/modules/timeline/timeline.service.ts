@@ -46,6 +46,7 @@ interface RawReservationRow {
   total_price: string | null;
   source: string;
   channel_managed: boolean;
+  guest_kind: 'CREW' | 'DISRUPTION' | null;
   rate_plan_id: string | null;
   version: number;
   place_number: number;
@@ -152,6 +153,7 @@ export class TimelineService {
           total_price::text  AS total_price,
           source,
           channel_managed,
+          guest_kind,
           rate_plan_id,
           version,
           place_number
@@ -182,6 +184,7 @@ export class TimelineService {
           totalPrice: r.total_price,
           source: r.source as TimelineReservation['source'],
           channelManaged: r.channel_managed,
+          guestKind: r.guest_kind,
           ratePlanId: r.rate_plan_id,
           version: r.version,
           placeNumber: r.place_number,

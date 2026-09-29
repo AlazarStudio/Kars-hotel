@@ -481,7 +481,11 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
         <div className={classes.modalFooter}>
           {!isNew && isChannelManaged && (
             <div className={classes.channelNote}>
-              Бронь из Kars Avia — отменить можно только на стороне партнёра.
+              {/* Вид брони — договоры требуют его в заявке, и цена своя. */}
+              Бронь из Kars Avia
+              {booking?.guestKind === 'CREW' && ' · экипаж (эстафета, командировка)'}
+              {booking?.guestKind === 'DISRUPTION' && ' · сбойный рейс'}
+              {' '}— отменить можно только на стороне партнёра.
             </div>
           )}
           {!isNew && !isChannelManaged && ['new', 'confirmed'].includes(booking?.status) && (

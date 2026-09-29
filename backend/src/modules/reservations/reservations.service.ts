@@ -119,7 +119,7 @@ export class ReservationsService {
           tenant_id, room_id, room_type_id, guest_name, phone, email,
           check_in, check_out,
           status, source, adults, children,
-          notes, total_price, rate_plan_id, place_number, channel_managed, version
+          notes, total_price, rate_plan_id, place_number, channel_managed, guest_kind, version
         ) VALUES (
           ${tenantId}::uuid,
           ${dto.roomId}::uuid,
@@ -138,6 +138,7 @@ export class ReservationsService {
           ${dto.ratePlanId ?? null}::uuid,
           ${placeNumber},
           ${dto.channelManaged ?? false},
+          ${dto.guestKind ?? null}::"GuestKind",
           1
         )
         RETURNING id, status, version, place_number

@@ -1,4 +1,5 @@
 import {
+  IsIn,
   IsString,
   IsDateString,
   IsEmail,
@@ -88,4 +89,12 @@ export class CreateReservationDto {
   @IsOptional()
   @IsBoolean()
   channelManaged?: boolean;
+
+  @ApiPropertyOptional({
+    enum: ['CREW', 'DISRUPTION'],
+    description: 'Вид брони партнёра: экипаж (эстафета, командировка) или сбойный рейс',
+  })
+  @IsOptional()
+  @IsIn(['CREW', 'DISRUPTION'])
+  guestKind?: 'CREW' | 'DISRUPTION';
 }

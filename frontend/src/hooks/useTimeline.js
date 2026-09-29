@@ -66,6 +66,7 @@ function transformTimeline(data) {
           totalPrice: res.totalPrice ? Number(res.totalPrice) : 0,
           source: res.source?.toLowerCase() ?? 'direct',
           channelManaged: res.channelManaged ?? false,
+          guestKind: res.guestKind ?? null,
           version: res.version,
           placeNumber: res.placeNumber ?? 1,
         });

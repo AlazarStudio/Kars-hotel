@@ -37,6 +37,8 @@ export interface TimelineReservation {
   source: ReservationSource;
   /** Owned by an external partner channel (Kars Avia) — cannot be cancelled from the PMS. */
   channelManaged: boolean;
+  /** Вид брони партнёра: экипаж (эстафета) или сбойный рейс; null — не указан. */
+  guestKind: 'CREW' | 'DISRUPTION' | null;
   ratePlanId: string | null;
   version: number;
   placeNumber: number;

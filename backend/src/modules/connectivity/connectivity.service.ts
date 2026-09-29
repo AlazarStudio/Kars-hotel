@@ -571,6 +571,7 @@ export class ConnectivityService {
         // Owned by the partner channel — hotel staff can view but not cancel it
         // locally; only this connectivity API can release it (see cancel below).
         channelManaged: true,
+        guestKind: dto.guestKind,
         notes: notes || undefined,
         ratePlanId,
         totalPrice,
