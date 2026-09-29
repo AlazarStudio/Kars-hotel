@@ -8,6 +8,8 @@ export interface VerifiedPartner {
   id: string;
   name: string;
   scopes: string[];
+  /** Партнёр ключа — от его имени идут запросы (29.09.2026). */
+  partnerId: string;
 }
 
 /** Result of minting a new key — the plaintext is present ONLY here, once. */
@@ -55,7 +57,12 @@ export class PartnerKeyService {
     name: string;
     scopes: PartnerScope[];
     expiresAt?: Date | null;
+    /** Код партнёра, которому выдаётся ключ (29.09.2026). */
+    partnerCode?: string;
   }): Promise<MintedKey> {
+    const partnerCode = params.partnerCode ?? 'kars-avia';
+    const partner = await this.prisma.admin.partner.findUnique({ where: { code: partnerCode } });
+    if (!partner) throw new Error(`Партнёр «${partnerCode}» не найден`);
     const secret = randomBytes(24).toString('base64url'); // 32 url-safe chars
     const plaintext = `klh_${PartnerKeyService.ENV_TAG}_${secret}`;
     const keyPrefix = plaintext.slice(0, PartnerKeyService.PREFIX_LEN);
@@ -64,6 +71,7 @@ export class PartnerKeyService {
     const row = await this.prisma.admin.partnerApiKey.create({
       data: {
         name: params.name,
+        partnerId: partner.id,
         keyPrefix,
         keyHash,
         scopes: params.scopes,
@@ -103,7 +111,7 @@ export class PartnerKeyService {
       .update({ where: { id: row.id }, data: { lastUsedAt: new Date() } })
       .catch((e) => this.logger.warn(`lastUsedAt update failed: ${(e as Error).message}`));
 
-    return { id: row.id, name: row.name, scopes: row.scopes };
+    return { id: row.id, name: row.name, scopes: row.scopes, partnerId: row.partnerId };
   }
 
   /** List keys (metadata only — never exposes hashes). */

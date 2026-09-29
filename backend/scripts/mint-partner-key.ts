@@ -15,7 +15,11 @@ import { PARTNER_SCOPES, PartnerScope } from '../src/modules/connectivity/decora
 const VALID = new Set<string>(Object.values(PARTNER_SCOPES));
 
 async function main() {
-  const [, , nameArg, ...scopeArgs] = process.argv;
+  /* --partner=<код> — чей ключ; по умолчанию kars-avia (29.09.2026). */
+  const argv = process.argv.slice(2);
+  const partnerArg = argv.find((a) => a.startsWith('--partner='));
+  const partnerCode = partnerArg ? partnerArg.slice('--partner='.length) : undefined;
+  const [nameArg, ...scopeArgs] = argv.filter((a) => !a.startsWith('--partner='));
   const name = nameArg?.trim();
   if (!name) {
     console.error('Usage: ts-node scripts/mint-partner-key.ts "<name>" [scope ...]');
@@ -34,7 +38,7 @@ async function main() {
   const app = await NestFactory.createApplicationContext(AppModule, { logger: false });
   try {
     const keys = app.get(PartnerKeyService);
-    const minted = await keys.mint({ name, scopes });
+    const minted = await keys.mint({ name, scopes, partnerCode });
 
     console.log('\n  Partner API key created');
     console.log('  ─────────────────────────────────────────────');

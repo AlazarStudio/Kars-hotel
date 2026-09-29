@@ -17,6 +17,7 @@ import { RatePlansModule } from './modules/rate-plans/rate-plans.module';
 import { RatesModule } from './modules/rates/rates.module';
 import { RestrictionsModule } from './modules/restrictions/restrictions.module';
 import { PricingModule } from './modules/pricing/pricing.module';
+import { PartnersModule } from './modules/partners/partners.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { TimelineModule } from './modules/timeline/timeline.module';
 import { ReservationsModule } from './modules/reservations/reservations.module';
@@ -60,6 +61,7 @@ import { ConnectivityModule } from './modules/connectivity/connectivity.module';
     RatesModule,
     RestrictionsModule,
     PricingModule,
+    PartnersModule,
     InventoryModule,
     TimelineModule,
     ReservationsModule,

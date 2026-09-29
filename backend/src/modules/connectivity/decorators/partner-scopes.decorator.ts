@@ -20,6 +20,9 @@ export const PARTNER_SCOPES = {
      прислать свой договор и вынести решение по ЧУЖОМУ тарифу — разные права.
      Первое делает интеграция, второе — человек, который отвечает деньгами. */
   CorporateTariffReview: 'corporate-tariff:review',
+  /* Справочник партнёра — его юрлица и заказчики (авиакомпании). Партнёр
+     ведёт его сам; гостиница по нему выбирает, для кого её тариф. */
+  DirectoryWrite: 'directory:write',
 } as const;
 
 export type PartnerScope = (typeof PARTNER_SCOPES)[keyof typeof PARTNER_SCOPES];

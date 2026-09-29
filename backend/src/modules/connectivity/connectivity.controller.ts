@@ -11,6 +11,7 @@ import {
   Post,
   Put,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiSecurity, ApiTags } from '@nestjs/swagger';
@@ -29,6 +30,9 @@ import {
   ConnectContractPricesSyncDto,
 } from './dto/connect-contract-prices.dto';
 import { ConnectRegisterHotelDto } from './dto/connect-register-hotel.dto';
+import { ConnectPartnerDirectoryDto } from './dto/connect-partner-directory.dto';
+import { PartnerDirectoryService } from '../partners/partner-directory.service';
+import { PartnerRequest } from './guards/partner-api-key.guard';
 
 /**
  * Partner connectivity API — the cross-tenant integration surface consumed by
@@ -47,7 +51,28 @@ import { ConnectRegisterHotelDto } from './dto/connect-register-hotel.dto';
 @UseGuards(PartnerApiKeyGuard)
 @Controller('connect/v1')
 export class ConnectivityController {
-  constructor(private readonly connectivity: ConnectivityService) {}
+  constructor(
+    private readonly connectivity: ConnectivityService,
+    private readonly directory: PartnerDirectoryService,
+  ) {}
+
+  /* Справочник партнёра (29.09.2026): его юрлица и заказчики. Партнёр — тот,
+     чей ключ; заявить в теле «я другой партнёр» нельзя. Набор — полная
+     картина: чего нет, то выключается. */
+  @Put('partner/directory')
+  @HttpCode(HttpStatus.OK)
+  @RequireScopes(PARTNER_SCOPES.DirectoryWrite)
+  @ApiOperation({ summary: 'Replace the partner directory: legal entities and customers' })
+  syncDirectory(@Req() req: PartnerRequest, @Body() dto: ConnectPartnerDirectoryDto) {
+    return this.directory.sync(req.partner!.partnerId, dto);
+  }
+
+  @Get('partner/directory')
+  @RequireScopes(PARTNER_SCOPES.HotelsRead)
+  @ApiOperation({ summary: 'The partner directory as stored in the PMS' })
+  getDirectory(@Req() req: PartnerRequest) {
+    return this.directory.get(req.partner!.partnerId);
+  }
 
   @Post('sso')
   @HttpCode(HttpStatus.OK)

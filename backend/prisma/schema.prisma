@@ -339,8 +339,69 @@ model AuditLog {
 /// accessed EXCLUSIVELY through the admin (BYPASSRLS) client and is made
 /// unreadable by the runtime `app_user` role in the accompanying migration, so
 /// a compromised app-tier connection cannot exfiltrate key hashes.
+/// Партнёр-канал (29.09.2026): внешняя система, которая бронирует через API
+/// подключения. Kars Avia — один из партнёров, не особый случай: PMS как
+/// отдельный продукт работает с любым числом партнёров, и договорные тарифы
+/// гостиница заводит для конкретного партнёра.
+model Partner {
+  id        String   @id @default(uuid()) @db.Uuid
+  /// Постоянный код партнёра (`kars-avia`).
+  code      String   @unique
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  apiKeys   PartnerApiKey[]
+  accounts  PartnerAccount[]
+  customers PartnerCustomer[]
+
+  @@map("partner")
+}
+
+/// Счёт партнёра — его юрлицо (у Kars Avia: «Карс Авиа», «Ани Групп Аэро»,
+/// «Карс Туристик»). Договор гостиница заключает с конкретным юрлицом, и цены
+/// у разных юрлиц одной гостиницы бывают разными. Справочник присылает сам
+/// партнёр; гостиница выбирает из него, но не правит.
+model PartnerAccount {
+  id        String   @id @default(uuid()) @db.Uuid
+  partnerId String   @map("partner_id") @db.Uuid
+  partner   Partner  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  /// Код юрлица у партнёра — по нему партнёр называет его в запросах.
+  code      String
+  name      String
+  inn       String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([partnerId, code])
+  @@map("partner_account")
+}
+
+/// Заказчик партнёра — для Kars Avia это авиакомпания, чьих людей селят.
+/// Гостиница даёт разную цену разным авиакомпаниям одного партнёра («Космос»,
+/// Мурманск: «Россия» и «Смартавиа»). Справочник присылает партнёр.
+model PartnerCustomer {
+  id        String   @id @default(uuid()) @db.Uuid
+  partnerId String   @map("partner_id") @db.Uuid
+  partner   Partner  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  /// Код заказчика у партнёра (для авиакомпании — код ИАТА или свой).
+  code      String
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([partnerId, code])
+  @@map("partner_customer")
+}
+
 model PartnerApiKey {
   id         String    @id @default(uuid()) @db.Uuid
+  /// Чей ключ. Партнёр определяется ключом, а не заявлением в запросе.
+  partnerId  String    @map("partner_id") @db.Uuid
+  partner    Partner   @relation(fields: [partnerId], references: [id])
   /// Human-readable label, e.g. "Kars Avia (prod)".
   name       String
   /// Visible, indexed lookup handle — the first chars of the full key.
