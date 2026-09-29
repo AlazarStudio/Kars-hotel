@@ -9,6 +9,8 @@ import {
   IsUUID,
   Min,
   ValidateNested,
+  IsInt,
+  Max,
 } from 'class-validator';
 
 /** One baseline price for a (ratePlan × roomType). price = 0 clears the row. */
@@ -21,6 +23,14 @@ export class StandardRateItemDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   price!: number;
+
+  /** На сколько гостей цена (29.09.2026); 0 или пусто — на любое число. */
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(20)
+  occupancy?: number;
 }
 
 /**

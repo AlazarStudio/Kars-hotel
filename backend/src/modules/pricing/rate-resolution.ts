@@ -10,6 +10,8 @@ export interface SeasonWindow {
   dateTo: string; // inclusive
   price: Decimal;
   sortOrder: number;
+  /** На сколько гостей (29.09.2026); 0 или пусто — на любое число. */
+  occupancy?: number;
 }
 
 /** A standard (baseline) price for one (ratePlan × roomType). */
@@ -17,6 +19,8 @@ export interface StandardWindow {
   ratePlanId: string;
   roomTypeId: string;
   price: Decimal;
+  /** На сколько гостей (29.09.2026); 0 или пусто — на любое число. */
+  occupancy?: number;
 }
 
 const key = (planId: string, roomTypeId: string) => `${planId}|${roomTypeId}`;
@@ -28,6 +32,22 @@ export function isoDay(d: Date): string {
     .slice(0, 10);
 }
 
+/* Цена по числу гостей (29.09.2026). Корпоративный тариф партнёра задаёт
+ * цену номера на одного и на двоих отдельно («Стандарт двухместный: 4 400 на
+ * одного, 5 700 на двоих»). Порядок выбора:
+ *   - число гостей известно: цена ровно на это число → цена «на любое число»;
+ *     цены на ДРУГОЕ число гостей не берутся — «за двоих» за одного значит
+ *     выставить не ту сумму;
+ *   - число не известно (старые вызовы): «на любое число», иначе на самое
+ *     малое заполненное — как было, пока цена была одна. */
+function pickByOccupancy<T extends { occupancy?: number }>(rows: T[], occupancy?: number): T | null {
+  const occ = (r: T) => r.occupancy ?? 0;
+  if (occupancy != null && occupancy > 0) {
+    return rows.find((r) => occ(r) === occupancy) ?? rows.find((r) => occ(r) === 0) ?? null;
+  }
+  return rows.find((r) => occ(r) === 0) ?? [...rows].sort((a, b) => occ(a) - occ(b))[0] ?? null;
+}
+
 /**
  * Builds a fast lookup that resolves the "baseline" price for a
  * (ratePlan × roomType × date) by consulting seasons first (the covering season
@@ -37,7 +57,7 @@ export function isoDay(d: Date): string {
  */
 export class BaselineResolver {
   private readonly seasonsByKey = new Map<string, SeasonWindow[]>();
-  private readonly standardByKey = new Map<string, Decimal>();
+  private readonly standardByKey = new Map<string, StandardWindow[]>();
 
   constructor(seasons: SeasonWindow[], standards: StandardWindow[]) {
     for (const s of seasons) {
@@ -53,18 +73,32 @@ export class BaselineResolver {
       );
     }
     for (const s of standards) {
-      this.standardByKey.set(key(s.ratePlanId, s.roomTypeId), s.price);
+      const k = key(s.ratePlanId, s.roomTypeId);
+      const list = this.standardByKey.get(k);
+      if (list) list.push(s);
+      else this.standardByKey.set(k, [s]);
     }
   }
 
-  /** Season → standard. Returns null when neither covers the (plan, roomType, date). */
-  resolve(ratePlanId: string, roomTypeId: string, day: string): Decimal | null {
+  /**
+   * Season → standard. Returns null when neither covers the (plan, roomType,
+   * date) for this number of guests.
+   */
+  resolve(ratePlanId: string, roomTypeId: string, day: string, occupancy?: number): Decimal | null {
     const list = this.seasonsByKey.get(key(ratePlanId, roomTypeId));
     if (list) {
-      for (const s of list) {
-        if (day >= s.dateFrom && day <= s.dateTo) return s.price;
+      /* Самый точный по датам сезон выбирается ДО числа гостей: сезон с
+         ценой «на любое число» перекрывает прошлый сезон с ценой на двоих. */
+      const covering = list.filter((s) => day >= s.dateFrom && day <= s.dateTo);
+      if (covering.length) {
+        const top = covering[0];
+        const sameWindow = covering.filter(
+          (s) => s.dateFrom === top.dateFrom && s.dateTo === top.dateTo && s.sortOrder === top.sortOrder,
+        );
+        const hit = pickByOccupancy(sameWindow, occupancy);
+        if (hit) return hit.price;
       }
     }
-    return this.standardByKey.get(key(ratePlanId, roomTypeId)) ?? null;
+    return pickByOccupancy(this.standardByKey.get(key(ratePlanId, roomTypeId)) ?? [], occupancy)?.price ?? null;
   }
 }

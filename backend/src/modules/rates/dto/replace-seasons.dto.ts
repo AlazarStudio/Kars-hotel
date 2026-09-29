@@ -12,6 +12,7 @@ import {
   MaxLength,
   Min,
   ValidateNested,
+  Max,
 } from 'class-validator';
 
 /** The price of a season for one category. */
@@ -24,6 +25,14 @@ export class SeasonPriceItemDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   price!: number;
+
+  /** На сколько гостей цена (29.09.2026); 0 или пусто — на любое число. */
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(20)
+  occupancy?: number;
 }
 
 /** One named season (date range) with a price per category. */

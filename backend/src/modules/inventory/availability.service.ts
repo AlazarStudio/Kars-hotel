@@ -219,11 +219,12 @@ export class AvailabilityService {
             dateTo: true,
             price: true,
             sortOrder: true,
+            occupancy: true,
           },
         }),
         tx.standardRate.findMany({
           where: { roomTypeId, ratePlanId: ratePlanId || undefined },
-          select: { ratePlanId: true, roomTypeId: true, price: true },
+          select: { ratePlanId: true, roomTypeId: true, price: true, occupancy: true },
         }),
       ]);
 
@@ -235,11 +236,13 @@ export class AvailabilityService {
           dateTo: isoDay(s.dateTo),
           price: s.price as unknown as Prisma.Decimal,
           sortOrder: s.sortOrder,
+          occupancy: s.occupancy,
         })),
         standardRows.map((s) => ({
           ratePlanId: s.ratePlanId,
           roomTypeId: s.roomTypeId,
           price: s.price as unknown as Prisma.Decimal,
+          occupancy: s.occupancy,
         })),
       );
 
@@ -434,11 +437,12 @@ export class AvailabilityService {
             dateTo: true,
             price: true,
             sortOrder: true,
+            occupancy: true,
           },
         }),
         tx.standardRate.findMany({
           where: { roomTypeId },
-          select: { ratePlanId: true, roomTypeId: true, price: true },
+          select: { ratePlanId: true, roomTypeId: true, price: true, occupancy: true },
         }),
       ]);
 
@@ -450,11 +454,13 @@ export class AvailabilityService {
           dateTo: isoDay(s.dateTo),
           price: s.price as unknown as Prisma.Decimal,
           sortOrder: s.sortOrder,
+          occupancy: s.occupancy,
         })),
         standardRows.map((s) => ({
           ratePlanId: s.ratePlanId,
           roomTypeId: s.roomTypeId,
           price: s.price as unknown as Prisma.Decimal,
+          occupancy: s.occupancy,
         })),
       );
 

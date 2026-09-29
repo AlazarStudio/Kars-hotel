@@ -12,6 +12,8 @@ import {
   MaxLength,
   Min,
   MinLength,
+  IsIn,
+  Max,
 } from 'class-validator';
 
 export class CreateRatePlanDto {
@@ -93,4 +95,33 @@ export class CreateRatePlanDto {
   @IsString()
   @MaxLength(64)
   operatorContract?: string | null;
+
+  /* Корпоративный тариф партнёра и условия применения (29.09.2026). Пустое
+     условие — «для любого». Юрлицо и заказчик — из справочника партнёра. */
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @IsOptional()
+  @IsUUID()
+  partnerId?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'Юрлицо партнёра' })
+  @IsOptional()
+  @IsUUID()
+  partnerAccountId?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'Заказчик партнёра (авиакомпания)' })
+  @IsOptional()
+  @IsUUID()
+  partnerCustomerId?: string | null;
+
+  @ApiPropertyOptional({ enum: ['CREW', 'DISRUPTION'], nullable: true })
+  @IsOptional()
+  @IsIn(['CREW', 'DISRUPTION'])
+  guestKind?: 'CREW' | 'DISRUPTION' | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'НДС, %; пусто — без НДС' })
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(30)
+  vatRate?: number | null;
 }

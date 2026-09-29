@@ -51,8 +51,9 @@ export class RatePlansService {
   }
 
   async create(dto: CreateRatePlanDto) {
-    this.assertOperatorPlanStandsAlone(dto.forOperator ?? false, dto.parentRatePlanId);
-    await this.assertSingleOperatorPlan(dto.forOperator ?? false, dto.isActive ?? true);
+    const scope = await this.partnerScope(dto, null);
+    this.assertOperatorPlanStandsAlone(scope.partnerId != null, dto.parentRatePlanId);
+    await this.assertUniquePartnerScope(scope, dto.mealPlan ?? 'NONE', dto.isActive ?? true);
     try {
       return await this.prisma.forTenant((tx) =>
         tx.ratePlan.create({
@@ -70,7 +71,8 @@ export class RatePlansService {
             paymentPolicyId: dto.paymentPolicyId ?? null,
             sortOrder: dto.sortOrder ?? 0,
             isActive: dto.isActive ?? true,
-            forOperator: dto.forOperator ?? false,
+            ...scope,
+            forOperator: scope.partnerId != null,
             operatorContract: dto.operatorContract ?? null,
           },
           include: { parentRatePlan: { select: { id: true, code: true, name: true } } },
@@ -88,16 +90,28 @@ export class RatePlansService {
     const before = await this.prisma.forTenant((tx) =>
       tx.ratePlan.findUnique({
         where: { id },
-        select: { forOperator: true, parentRatePlanId: true, isActive: true },
+        select: {
+          forOperator: true,
+          parentRatePlanId: true,
+          isActive: true,
+          mealPlan: true,
+          partnerId: true,
+          partnerAccountId: true,
+          partnerCustomerId: true,
+          guestKind: true,
+          vatRate: true,
+        },
       }),
     );
     if (!before) throw new NotFoundException('Тариф не найден');
+    const scope = await this.partnerScope(dto, before);
     this.assertOperatorPlanStandsAlone(
-      dto.forOperator ?? before.forOperator,
+      scope.partnerId != null,
       dto.parentRatePlanId === undefined ? before.parentRatePlanId : dto.parentRatePlanId,
     );
-    await this.assertSingleOperatorPlan(
-      dto.forOperator ?? before.forOperator,
+    await this.assertUniquePartnerScope(
+      scope,
+      dto.mealPlan ?? before.mealPlan,
       dto.isActive ?? before.isActive,
       id,
     );
@@ -119,7 +133,8 @@ export class RatePlansService {
             paymentPolicyId: dto.paymentPolicyId === undefined ? undefined : dto.paymentPolicyId,
             sortOrder: dto.sortOrder ?? undefined,
             isActive: dto.isActive ?? undefined,
-            forOperator: dto.forOperator ?? undefined,
+            ...scope,
+            forOperator: scope.partnerId != null,
             operatorContract:
               dto.operatorContract === undefined ? undefined : dto.operatorContract,
           },
@@ -254,27 +269,123 @@ export class RatePlansService {
     return this.get(id);
   }
 
-  /* Корпоративный тариф у гостиницы ОДИН, и сказать об этом надо словами.
+  /* УСЛОВИЯ КОРПОРАТИВНОГО ТАРИФА (29.09.2026).
    *
-   * Уникальность держит частичный индекс, но его сообщение непригодно:
-   * нарушенный ключ Prisma не называет, и человек читает «код занят»,
-   * переименовывает тариф и упирается туда же. Правило проверяется там, где
-   * исполняется; индекс остаётся страховкой от гонки. */
-  private async assertSingleOperatorPlan(
-    forOperator: boolean,
+   * Тариф партнёра говорит, к чему применяется: юрлицо партнёра, заказчик
+   * (авиакомпания), вид брони; пустое — «для любого». Проверяется здесь, а не
+   * только в базе: юрлицо и заказчик должны быть из справочника ЭТОГО
+   * партнёра и действующими, иначе тариф молча не применится никогда.
+   *
+   * Совместимость: старый признак «для оператора» без партнёра означает
+   * Kars Avia — единственного партнёра до 29.09.2026. */
+  private async partnerScope(
+    dto: {
+      forOperator?: boolean;
+      partnerId?: string | null;
+      partnerAccountId?: string | null;
+      partnerCustomerId?: string | null;
+      guestKind?: 'CREW' | 'DISRUPTION' | null;
+      vatRate?: number | null;
+    },
+    before: {
+      partnerId: string | null;
+      partnerAccountId: string | null;
+      partnerCustomerId: string | null;
+      guestKind: 'CREW' | 'DISRUPTION' | null;
+      vatRate: unknown;
+    } | null,
+  ): Promise<{
+    partnerId: string | null;
+    partnerAccountId: string | null;
+    partnerCustomerId: string | null;
+    guestKind: 'CREW' | 'DISRUPTION' | null;
+    vatRate: number | null;
+  }> {
+    const pick = <K extends keyof NonNullable<typeof before>>(k: K, v: unknown) =>
+      v === undefined ? (before ? before[k] : null) : v;
+
+    let partnerId = pick('partnerId', dto.partnerId) as string | null;
+    if (dto.forOperator === true && !partnerId) {
+      const kars = await this.prisma.forTenant((tx) =>
+        tx.partner.findUnique({ where: { code: 'kars-avia' }, select: { id: true } }),
+      );
+      partnerId = kars?.id ?? null;
+    }
+    if (dto.forOperator === false) partnerId = null;
+
+    const scope = {
+      partnerId,
+      partnerAccountId: partnerId ? (pick('partnerAccountId', dto.partnerAccountId) as string | null) : null,
+      partnerCustomerId: partnerId ? (pick('partnerCustomerId', dto.partnerCustomerId) as string | null) : null,
+      guestKind: partnerId ? (pick('guestKind', dto.guestKind) as 'CREW' | 'DISRUPTION' | null) : null,
+      vatRate: partnerId
+        ? (() => {
+            const v = pick('vatRate', dto.vatRate);
+            return v == null ? null : Number(v);
+          })()
+        : null,
+    };
+    if (!partnerId) return scope;
+
+    const [partner, account, customer] = await this.prisma.forTenant((tx) =>
+      Promise.all([
+        tx.partner.findUnique({ where: { id: partnerId! }, select: { isActive: true } }),
+        scope.partnerAccountId
+          ? tx.partnerAccount.findUnique({
+              where: { id: scope.partnerAccountId },
+              select: { partnerId: true, isActive: true },
+            })
+          : null,
+        scope.partnerCustomerId
+          ? tx.partnerCustomer.findUnique({
+              where: { id: scope.partnerCustomerId },
+              select: { partnerId: true, isActive: true },
+            })
+          : null,
+      ]),
+    );
+    if (!partner?.isActive) throw new ConflictException('Партнёр не найден или выключен');
+    if (scope.partnerAccountId && (!account?.isActive || account.partnerId !== partnerId)) {
+      throw new ConflictException('Юрлицо не из справочника этого партнёра');
+    }
+    if (scope.partnerCustomerId && (!customer?.isActive || customer.partnerId !== partnerId)) {
+      throw new ConflictException('Авиакомпания не из справочника этого партнёра');
+    }
+    return scope;
+  }
+
+  /* Два действующих тарифа на одни и те же условия и питание сделали бы цену
+     случайной. Уникальность держит индекс, но его сообщение непригодно —
+     правило проверяется здесь, словами; индекс — страховка от гонки. */
+  private async assertUniquePartnerScope(
+    scope: {
+      partnerId: string | null;
+      partnerAccountId: string | null;
+      partnerCustomerId: string | null;
+      guestKind: 'CREW' | 'DISRUPTION' | null;
+    },
+    mealPlan: string,
     isActive: boolean,
     exceptId?: string,
   ) {
-    if (!forOperator || !isActive) return;
+    if (!scope.partnerId || !isActive) return;
     const rival = await this.prisma.forTenant((tx) =>
       tx.ratePlan.findFirst({
-        where: { forOperator: true, isActive: true, id: exceptId ? { not: exceptId } : undefined },
+        where: {
+          partnerId: scope.partnerId,
+          partnerAccountId: scope.partnerAccountId,
+          partnerCustomerId: scope.partnerCustomerId,
+          guestKind: scope.guestKind,
+          mealPlan: mealPlan as never,
+          isActive: true,
+          id: exceptId ? { not: exceptId } : undefined,
+        },
         select: { code: true, name: true },
       }),
     );
     if (rival) {
       throw new ConflictException(
-        `Корпоративный тариф для оператора уже есть — «${rival.name}» (${rival.code}). ` +
+        `Корпоративный тариф на эти условия и питание уже есть — «${rival.name}» (${rival.code}). ` +
           'Правьте его или выключите прежний.',
       );
     }
@@ -330,11 +441,12 @@ export class RatePlansService {
             dateTo: true,
             price: true,
             currency: true,
+            occupancy: true,
           },
         }),
         tx.standardRate.findMany({
           where: { ratePlanId: { in: ids } },
-          select: { ratePlanId: true, roomTypeId: true, price: true, currency: true },
+          select: { ratePlanId: true, roomTypeId: true, price: true, currency: true, occupancy: true },
         }),
       ]),
     );
@@ -360,6 +472,9 @@ export class RatePlansService {
       push(r.ratePlanId, {
         kind: 'SEASON',
         roomTypeId: r.roomTypeId,
+        /* 0 — «на любое число»: в отпечаток не идёт, чтобы подтверждения
+           тарифов, заведённых до цен по гостям, не слетели сами (29.09.2026). */
+        occupancy: r.occupancy || null,
         dateFrom: r.dateFrom,
         dateTo: r.dateTo,
         price: r.price,
@@ -370,6 +485,7 @@ export class RatePlansService {
       push(r.ratePlanId, {
         kind: 'STANDARD',
         roomTypeId: r.roomTypeId,
+        occupancy: r.occupancy || null,
         price: r.price,
         currency: r.currency,
       });

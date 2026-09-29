@@ -120,11 +120,12 @@ export class PricingService {
             dateTo: true,
             price: true,
             sortOrder: true,
+            occupancy: true,
           },
         }),
         tx.standardRate.findMany({
           where: { ratePlanId: { in: planIds }, roomTypeId: input.roomTypeId },
-          select: { ratePlanId: true, roomTypeId: true, price: true },
+          select: { ratePlanId: true, roomTypeId: true, price: true, occupancy: true },
         }),
       ]);
 
@@ -136,17 +137,20 @@ export class PricingService {
           dateTo: isoDay(s.dateTo),
           price: s.price as unknown as Prisma.Decimal,
           sortOrder: s.sortOrder,
+          occupancy: s.occupancy,
         })),
         standardRows.map((s) => ({
           ratePlanId: s.ratePlanId,
           roomTypeId: s.roomTypeId,
           price: s.price as unknown as Prisma.Decimal,
+          occupancy: s.occupancy,
         })),
       );
 
       // ── Calculate ─────────────────────────────────────────────────────────
       return calculatePricing({
-        fallback: (planId, date) => resolver.resolve(planId, input.roomTypeId, isoDay(date)),
+        fallback: (planId, date) =>
+          resolver.resolve(planId, input.roomTypeId, isoDay(date), input.occupancy),
         ratePlan: {
           id: ratePlan.id,
           parentRatePlanId: ratePlan.parentRatePlanId,

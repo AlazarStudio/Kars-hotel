@@ -178,19 +178,23 @@ export class RatesService {
     const currency = dto.currency ?? 'RUB';
     await this.prisma.forTenant(async (tx) => {
       for (const it of dto.items) {
+        // Цена на число гостей (29.09.2026); 0 — на любое число, как раньше.
+        const occupancy = it.occupancy ?? 0;
         if (it.price > 0) {
           await tx.standardRate.upsert({
             where: {
-              tenantId_ratePlanId_roomTypeId: {
+              tenantId_ratePlanId_roomTypeId_occupancy: {
                 tenantId,
                 ratePlanId: dto.ratePlanId,
                 roomTypeId: it.roomTypeId,
+                occupancy,
               },
             },
             create: {
               tenantId,
               ratePlanId: dto.ratePlanId,
               roomTypeId: it.roomTypeId,
+              occupancy,
               price: it.price,
               currency,
             },
@@ -198,7 +202,7 @@ export class RatesService {
           });
         } else {
           await tx.standardRate.deleteMany({
-            where: { ratePlanId: dto.ratePlanId, roomTypeId: it.roomTypeId },
+            where: { ratePlanId: dto.ratePlanId, roomTypeId: it.roomTypeId, occupancy },
           });
         }
       }
@@ -248,6 +252,7 @@ export class RatesService {
             tenantId,
             ratePlanId: dto.ratePlanId,
             roomTypeId: it.roomTypeId,
+            occupancy: it.occupancy ?? 0,
             name: s.name,
             color: s.color ?? null,
             dateFrom: new Date(`${s.dateFrom}T00:00:00.000Z`),
