@@ -188,6 +188,8 @@ export class PricingService {
       });
       return rows.map((r) => ({
         id: r.id,
+        partnerId: r.partnerId,
+        account: r.accountCode ? { code: r.accountCode, name: r.accountName ?? r.accountCode } : null,
         contractNumber: r.contractNumber,
         amendmentNumber: r.amendmentNumber,
         service: r.service,

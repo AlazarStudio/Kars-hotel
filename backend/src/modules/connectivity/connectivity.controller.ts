@@ -253,8 +253,9 @@ export class ConnectivityController {
   putContractPrices(
     @Param('slug') slug: string,
     @Body() dto: ConnectContractPricesDto,
+    @Req() req: PartnerRequest,
   ) {
-    return this.connectivity.putContractPrices(slug, dto);
+    return this.connectivity.putContractPrices(slug, dto, req.partner!.partnerId);
   }
 
   /* Э6 · Синхронизация зеркала целиком. Объявлена ДО одиночного PUT не по
@@ -274,15 +275,16 @@ export class ConnectivityController {
   syncContractPrices(
     @Param('slug') slug: string,
     @Body() dto: ConnectContractPricesSyncDto,
+    @Req() req: PartnerRequest,
   ) {
-    return this.connectivity.syncContractPrices(slug, dto.documents);
+    return this.connectivity.syncContractPrices(slug, dto.documents, req.partner!.partnerId);
   }
 
   @Get('hotels/:slug/contract-prices')
   @RequireScopes(PARTNER_SCOPES.HotelsRead)
   @ApiOperation({ summary: 'Contract price snapshots mirrored for a hotel' })
-  getContractPrices(@Param('slug') slug: string) {
-    return this.connectivity.listContractPrices(slug);
+  getContractPrices(@Param('slug') slug: string, @Req() req: PartnerRequest) {
+    return this.connectivity.listContractPrices(slug, req.partner!.partnerId);
   }
 
   /* Э3 · Корпоративный тариф гостиницы для оператора.

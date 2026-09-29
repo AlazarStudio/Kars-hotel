@@ -926,10 +926,11 @@ export class ConnectivityService {
    * тарифам, а корпоративный тариф для оператора гостиница заводит отдельно —
    * руками или «заполнить по договору», — и оператор его подтверждает.
    */
-  async putContractPrices(slug: string, dto: ConnectContractPricesDto) {
+  async putContractPrices(slug: string, dto: ConnectContractPricesDto, partnerId: string) {
     const tenant = await this.resolveTenant(slug);
     const key = {
       tenantId: tenant.id,
+      partnerId,
       contractNumber: dto.contractNumber,
       amendmentNumber: dto.amendmentNumber ?? null,
       service: dto.service,
@@ -939,6 +940,8 @@ export class ConnectivityService {
       validFrom: new Date(dto.validFrom),
       validTo: dto.validTo ? new Date(dto.validTo) : null,
       vatRate: dto.vatRate ?? null,
+      accountCode: dto.account?.code ?? null,
+      accountName: dto.account?.name ?? null,
       rows: dto.rows as unknown as Prisma.InputJsonValue,
       receivedAt: new Date(),
     };
@@ -970,7 +973,7 @@ export class ConnectivityService {
    *
    * Одной транзакцией: между удалением лишнего и записью нового кабинет не
    * должен показывать полупустую картину — по ней как раз и спорят о деньгах. */
-  async syncContractPrices(slug: string, documents: ConnectContractPricesDto[]) {
+  async syncContractPrices(slug: string, documents: ConnectContractPricesDto[], partnerId: string) {
     const tenant = await this.resolveTenant(slug);
     const keyOf = (d: {
       contractNumber: string;
@@ -979,8 +982,9 @@ export class ConnectivityService {
     }) => `${d.contractNumber}|${d.amendmentNumber ?? ''}|${d.service}`;
 
     return this.prisma.admin.$transaction(async (tx) => {
+      // Только документы ЭТОГО партнёра: набор одного не стирает договоры другого.
       const existing = await tx.partnerContractPrice.findMany({
-        where: { tenantId: tenant.id },
+        where: { tenantId: tenant.id, partnerId },
         select: {
           id: true,
           contractNumber: true,
@@ -1001,12 +1005,15 @@ export class ConnectivityService {
       for (const [key, dto] of incoming) {
         const data = {
           tenantId: tenant.id,
+          partnerId,
           contractNumber: dto.contractNumber,
           amendmentNumber: dto.amendmentNumber ?? null,
           service: dto.service,
           validFrom: new Date(dto.validFrom),
           validTo: dto.validTo ? new Date(dto.validTo) : null,
           vatRate: dto.vatRate ?? null,
+          accountCode: dto.account?.code ?? null,
+          accountName: dto.account?.name ?? null,
           rows: dto.rows as unknown as Prisma.InputJsonValue,
           receivedAt: new Date(),
         };
@@ -1025,10 +1032,10 @@ export class ConnectivityService {
    * Свежие сверху: спорят обычно по последнему приложению. Отдаётся как есть,
    * без пересчёта: это чужой документ, и толковать его здесь не наше дело.
    */
-  async listContractPrices(slug: string) {
+  async listContractPrices(slug: string, partnerId: string) {
     const tenant = await this.resolveTenant(slug);
     const rows = await this.prisma.admin.partnerContractPrice.findMany({
-      where: { tenantId: tenant.id },
+      where: { tenantId: tenant.id, partnerId },
       orderBy: [{ validFrom: 'desc' }, { receivedAt: 'desc' }],
     });
     return rows.map((r) => ({
@@ -1039,6 +1046,7 @@ export class ConnectivityService {
       validFrom: r.validFrom.toISOString(),
       validTo: r.validTo?.toISOString() ?? null,
       vatRate: r.vatRate == null ? null : Number(r.vatRate),
+      account: r.accountCode ? { code: r.accountCode, name: r.accountName ?? r.accountCode } : null,
       rows: r.rows,
       receivedAt: r.receivedAt.toISOString(),
     }));

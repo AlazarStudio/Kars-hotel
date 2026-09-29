@@ -21,6 +21,8 @@ export type OperatorTariffState = 'DRAFT' | 'CONFIRMED' | 'REJECTED' | 'STALE';
 
 /** Приложение к договору — снимок, присланный оператором. */
 export interface ContractPriceDoc {
+  /** Чей договор; у сверки тарифа — договор ЕГО партнёра (29.09.2026). */
+  partnerId?: string | null;
   contractNumber: string;
   amendmentNumber: string | null;
   service: string;
@@ -65,6 +67,7 @@ export interface PlanPricingShape {
 }
 
 export interface ReviewedPlan extends PlanPricingShape {
+  partnerId?: string | null;
   operatorContract: string | null;
   reviewVerdict: 'CONFIRMED' | 'REJECTED' | null;
   reviewFingerprint: string | null;
@@ -158,9 +161,13 @@ export function tariffFingerprint(input: {
 export function docsOfContract(
   docs: ContractPriceDoc[],
   contractNumber: string | null,
+  partnerId?: string | null,
 ): ContractPriceDoc[] {
   if (!contractNumber) return [];
-  return docs.filter((d) => d.contractNumber === contractNumber);
+  // Номера договоров у разных партнёров могут совпасть — сверяем со своим.
+  return docs.filter(
+    (d) => d.contractNumber === contractNumber && (!partnerId || !d.partnerId || d.partnerId === partnerId),
+  );
 }
 
 /** Как назвать сверенные документы человеку: «договор 18, ДС 2 и 3». */
@@ -191,7 +198,7 @@ export function operatorTariffStatus(
   docs: ContractPriceDoc[],
   currentFingerprint: string,
 ): TariffStatus {
-  const mine = docsOfContract(docs, plan.operatorContract);
+  const mine = docsOfContract(docs, plan.operatorContract, plan.partnerId);
 
   if (!plan.reviewVerdict) {
     if (!plan.operatorContract) {

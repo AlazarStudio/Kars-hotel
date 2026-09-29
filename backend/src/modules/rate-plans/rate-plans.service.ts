@@ -234,7 +234,7 @@ export class RatePlansService {
         reviewedAt: plan.reviewedAt,
         reviewedBy: plan.reviewedBy,
         reviewDocuments: plan.reviewDocuments,
-        contractDocs: docsOfContract(docs, plan.operatorContract),
+        contractDocs: docsOfContract(docs, plan.operatorContract, plan.partnerId),
         categories,
       };
     });
@@ -248,7 +248,7 @@ export class RatePlansService {
     );
     if (!plan) return null;
     const [decorated] = await this.withOperatorStatus([plan]);
-    const docs = docsOfContract(await this.contractDocs(), plan.operatorContract);
+    const docs = docsOfContract(await this.contractDocs(), plan.operatorContract, plan.partnerId);
 
     /* Сверять оператор будет ЦИФРЫ, а не наличие тарифа, — значит их и надо
        отдать. Базовая цена по категориям это то, с чем сопоставляется строка
@@ -311,7 +311,7 @@ export class RatePlansService {
       throw new ConflictException('Это не корпоративный тариф оператора');
     }
 
-    const mine = docsOfContract(await this.contractDocs(), plan.operatorContract);
+    const mine = docsOfContract(await this.contractDocs(), plan.operatorContract, plan.partnerId);
     if (!mine.length) {
       // Подтверждать нечему: сверять не с чем, и «подтверждено» было бы
       // подписью под пустым листом.
@@ -491,6 +491,7 @@ export class RatePlansService {
       tx.partnerContractPrice.findMany(),
     );
     return rows.map((r) => ({
+      partnerId: r.partnerId,
       contractNumber: r.contractNumber,
       amendmentNumber: r.amendmentNumber,
       service: r.service,
@@ -595,7 +596,7 @@ export class RatePlansService {
     return plans.map((p) => {
       if (!p.forOperator) return { ...p, operatorStatus: null, fingerprint: null };
       const plan = p as unknown as Parameters<typeof operatorTariffStatus>[0];
-      const mine = docsOfContract(docs, plan.operatorContract);
+      const mine = docsOfContract(docs, plan.operatorContract, plan.partnerId);
       const fingerprint = tariffFingerprint({
         docs: mine,
         plan,

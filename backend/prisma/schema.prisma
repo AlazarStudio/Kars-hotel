@@ -257,6 +257,12 @@ model PartnerContractPrice {
   id              String    @id @default(uuid()) @db.Uuid
   tenantId        String    @map("tenant_id") @db.Uuid
   tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Чей договор (29.09.2026): синхронизация партнёра трогает только свои.
+  partnerId       String    @map("partner_id") @db.Uuid
+  partner         Partner   @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  /// Юрлицо партнёра, подписавшее договор, — снимок кода и названия.
+  accountCode     String?   @map("account_code")
+  accountName     String?   @map("account_name")
   /// Номер договора и ДС — как назвать источник цены в кабинете.
   contractNumber  String    @map("contract_number")
   amendmentNumber String?   @map("amendment_number")
@@ -272,7 +278,7 @@ model PartnerContractPrice {
   receivedAt      DateTime  @default(now()) @map("received_at")
 
   /// Полная замена по документу: приложение одно на (договор, ДС, услугу).
-  @@unique([tenantId, contractNumber, amendmentNumber, service])
+  @@unique([tenantId, partnerId, contractNumber, amendmentNumber, service])
   @@index([tenantId])
   @@map("partner_contract_price")
 }
@@ -356,6 +362,7 @@ model Partner {
   accounts  PartnerAccount[]
   customers PartnerCustomer[]
   ratePlans RatePlan[]
+  contractPrices PartnerContractPrice[]
 
   @@map("partner")
 }

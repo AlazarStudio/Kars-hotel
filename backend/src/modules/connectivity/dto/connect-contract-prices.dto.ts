@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsIn,
@@ -9,9 +10,25 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Length,
+  Max,
+  Min,
   ValidateNested,
 } from 'class-validator';
+
+/** Код и название из справочника партнёра — снимком, для показа и условий. */
+export class ConnectDirectoryRefDto {
+  @ApiProperty({ description: 'Код из справочника партнёра' })
+  @IsString()
+  @Length(1, 64)
+  code!: string;
+
+  @ApiProperty()
+  @IsString()
+  @Length(1, 300)
+  name!: string;
+}
 
 /**
  * Зеркало закупочных цен договора с оператором (Kars Avia, Э6).
@@ -50,6 +67,78 @@ export class ConnectContractPriceRowDto {
   @ApiProperty({ example: false })
   @IsBoolean()
   onRequest!: boolean;
+
+  /* ── Измерения строки (29.09.2026) ─────────────────────────────────────
+     Строка договора — не «категория → цена»: это класс номера × число
+     гостей × питание × для кого. Без этих измерений гостиница не может
+     завести тариф «по договору» — не знает, какую цифру куда. */
+
+  /** Категории PMS, к которым относится строка: партнёр сам сопоставил
+      свой класс номера с категориями гостиницы. */
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsUUID('all', { each: true })
+  categoryIds?: string[];
+
+  @ApiPropertyOptional({ example: 'standard', description: 'Класс номера партнёра' })
+  @IsOptional()
+  @IsString()
+  @Length(1, 40)
+  classCode?: string | null;
+
+  @ApiPropertyOptional({ example: 'Стандарт' })
+  @IsOptional()
+  @IsString()
+  @Length(1, 120)
+  className?: string | null;
+
+  @ApiPropertyOptional({ example: 'Стандарт одноместный', description: 'Как написано в договоре' })
+  @IsOptional()
+  @IsString()
+  @Length(1, 300)
+  docName?: string | null;
+
+  @ApiPropertyOptional({ example: 'корпус 2' })
+  @IsOptional()
+  @IsString()
+  @Length(1, 120)
+  variant?: string | null;
+
+  @ApiPropertyOptional({ example: 1, description: 'На сколько гостей цена; пусто — на любое число' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  guests?: number | null;
+
+  @ApiPropertyOptional({ description: 'Цена за место (за человека), а не за номер' })
+  @IsOptional()
+  @IsBoolean()
+  perPerson?: boolean;
+
+  @ApiPropertyOptional({ enum: ['NONE', 'BB', 'HB', 'FB', 'AI'], description: 'Питание, включённое в цену номера' })
+  @IsOptional()
+  @IsIn(['NONE', 'BB', 'HB', 'FB', 'AI'])
+  mealPlan?: 'NONE' | 'BB' | 'HB' | 'FB' | 'AI';
+
+  @ApiPropertyOptional({ enum: ['CREW', 'DISRUPTION'], description: 'Вид брони; пусто — любой' })
+  @IsOptional()
+  @IsIn(['CREW', 'DISRUPTION'])
+  guestKind?: 'CREW' | 'DISRUPTION' | null;
+
+  @ApiPropertyOptional({ example: 'Пассажиры', description: 'Для кого — словами партнёра' })
+  @IsOptional()
+  @IsString()
+  @Length(1, 120)
+  audienceLabel?: string | null;
+
+  @ApiPropertyOptional({ type: ConnectDirectoryRefDto, description: 'Только для этого заказчика' })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ConnectDirectoryRefDto)
+  customer?: ConnectDirectoryRefDto | null;
 }
 
 export class ConnectContractPricesDto {
@@ -67,6 +156,13 @@ export class ConnectContractPricesDto {
   @ApiProperty({ enum: ['ACCOMMODATION', 'MEAL'] })
   @IsIn(['ACCOMMODATION', 'MEAL'])
   service!: 'ACCOMMODATION' | 'MEAL';
+
+  /** Юрлицо партнёра, подписавшее договор (29.09.2026). */
+  @ApiPropertyOptional({ type: ConnectDirectoryRefDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ConnectDirectoryRefDto)
+  account?: ConnectDirectoryRefDto | null;
 
   @ApiProperty({ example: '2026-01-01T00:00:00.000Z' })
   @IsISO8601()
