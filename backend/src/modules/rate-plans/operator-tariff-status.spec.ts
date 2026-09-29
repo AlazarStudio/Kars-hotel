@@ -210,6 +210,9 @@ describe('название сверенных документов', () => {
   });
   it('одна ДС', () => {
     expect(documentsLabel([doc({ amendmentNumber: '2' })])).toBe('договор 18, ДС 2');
+    // Партнёр присылает номер и с приставкой — «ДС ДС 1» быть не должно.
+    expect(documentsLabel([doc({ amendmentNumber: 'ДС 1' }), doc({ amendmentNumber: 'ДС 10' }), doc({ amendmentNumber: 'ДС 2' })]))
+      .toBe('договор 18, ДС 1, 2 и 10');
   });
   it('несколько ДС перечисляются по-русски', () => {
     expect(

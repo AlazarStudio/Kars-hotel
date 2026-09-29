@@ -176,7 +176,11 @@ export function documentsLabel(docs: ContractPriceDoc[]): string | null {
   const contract = docs[0].contractNumber;
   const amendments = [
     ...new Set(docs.map((d) => d.amendmentNumber).filter((a): a is string => !!a)),
-  ].sort();
+  ]
+    /* Номер ДС партнёр присылает по-разному: «2» или уже «ДС 2». Приставку
+       ставим один раз — иначе в кабинете «ДС ДС 1» (найдено 29.09.2026). */
+    .map((a) => a.replace(/^\s*ДС\s*(№\s*)?/i, ''))
+    .sort((x, y) => x.localeCompare(y, 'ru', { numeric: true }));
   if (!amendments.length) return `договор ${contract}, без ДС`;
   const list =
     amendments.length === 1
