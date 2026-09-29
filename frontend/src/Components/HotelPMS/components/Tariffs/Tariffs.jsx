@@ -19,6 +19,8 @@ import {
   STATE_LABEL, GUEST_KIND_LABELS, VAT_RATES,
   accommodationRows, matchContractRows,
   occupancyColumns, occupancyLabel, priceKey, pickOccupancy, partnerConditions,
+  MEAL_PLAN_SHORT, planDocs, planSlice, sliceCells, contractPeriods, contractSlices,
+  sliceName, planForSlice, rowLabel,
 } from './corporateTariff';
 
 const MEAL_PLAN_LABELS = {
@@ -42,6 +44,38 @@ const codeFromName = (name) =>
   name.toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_-]/g, '').slice(0, 32) || 'PLAN';
 
 const fmtRub = (v) => Number(v).toLocaleString('ru-RU');
+const fmtDay = (d) => (d ? format(parseISO(String(d).slice(0, 10)), 'dd.MM.yyyy') : '—');
+const lastValidTo = (docs) =>
+  (docs ?? []).map((d) => d.validTo).filter(Boolean).sort().pop() ?? null;
+const MEAL_KIND_LABELS = { BREAKFAST: 'Завтрак', LUNCH: 'Обед', DINNER: 'Ужин' };
+
+/* Строки договора, НЕ легшие в тариф, — сгруппированно по причине.
+ *
+ * «Для другой авиакомпании» и «с другим питанием» — не ошибка: это строки
+ * других тарифов того же договора, их называем спокойно. «Такой категории
+ * нет» и «по запросу» — повод гостинице разобраться: по этим строкам её
+ * посчитают не по тарифу. */
+const QUIET_REASONS = ['для другой авиакомпании', 'для другого вида брони', 'другое юрлицо'];
+function SkippedRows({ skipped }) {
+  if (!skipped?.length) return null;
+  const groups = new Map();
+  for (const s of skipped) {
+    const g = groups.get(s.reason) ?? [];
+    g.push(rowLabel(s.row));
+    groups.set(s.reason, g);
+  }
+  return [...groups].map(([reason, labels]) => {
+    const quiet = QUIET_REASONS.includes(reason) || reason.startsWith('с питанием');
+    const uniq = [...new Set(labels)];
+    return (
+      <div key={reason} className={quiet ? classes.fillQuiet : classes.fillWarn}>
+        {quiet ? 'Не для этого тарифа' : 'Не легли'} ({reason}): {labels.length}{' '}
+        {labels.length === 1 ? 'строка' : labels.length < 5 ? 'строки' : 'строк'} —{' '}
+        {uniq.slice(0, 3).join('; ')}{uniq.length > 3 ? ` и ещё ${uniq.length - 3}` : ''}.
+      </div>
+    );
+  });
+}
 const day10 = (s) => (typeof s === 'string' ? s.slice(0, 10) : format(s, 'yyyy-MM-dd'));
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -397,7 +431,7 @@ function OccupancyGrid({ roomTypes, occs, values, onChange }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // StandardPrices — baseline price per category (the "everyday" price)
 // ─────────────────────────────────────────────────────────────────────────────
-function StandardPrices({ plan, roomTypes, contractSheets }) {
+function StandardPrices({ plan, roomTypes, contractSheets, partners }) {
   const { data: standard = [], isLoading } = useStandardRates(plan.id);
   const save = useSetStandardRates();
   const occs = useMemo(() => occupancyColumns(plan, roomTypes), [plan, roomTypes]);
@@ -416,17 +450,32 @@ function StandardPrices({ plan, roomTypes, contractSheets }) {
   /* «Заполнить по договору» — только раскладка цен по полям, без сохранения.
      Ставки свои, отвечает за них гостиница; подставить и записать за неё
      значило бы расписаться её рукой. */
+  const docs = useMemo(() => planDocs(contractSheets, plan), [contractSheets, plan]);
   const contractRows = useMemo(
-    () => (plan.forOperator ? accommodationRows(contractSheets, plan.operatorContract) : []),
-    [contractSheets, plan.forOperator, plan.operatorContract],
+    () => (plan.forOperator && !plan.partnerId ? accommodationRows(contractSheets, plan.operatorContract) : []),
+    [contractSheets, plan.forOperator, plan.partnerId, plan.operatorContract],
   );
   const fillFromContract = () => {
+    if (plan.partnerId) {
+      /* Срез договора под условия тарифа (Э3): юрлицо, авиакомпания, вид
+         брони, питание — и число гостей по ячейкам. */
+      const periods = contractPeriods(docs, format(new Date(), 'yyyy-MM-dd'));
+      const res = sliceCells(docs, planSlice(plan, partners), roomTypes, periods.base);
+      setDraft(d => ({ ...d, ...res.prices }));
+      setFilled({ count: Object.keys(res.prices).length, skipped: res.skipped, uncovered: res.uncovered, periods, docs });
+      return;
+    }
     const { prices, unmatched, uncovered } = matchContractRows(contractRows, roomTypes);
-    // Договор пока не называет число гостей — цена ложится «на любое» (Э3 это исправит).
     const keyed = Object.fromEntries(Object.entries(prices).map(([rtId, v]) => [priceKey(rtId, 0), v]));
     setDraft(d => ({ ...d, ...keyed }));
-    setFilled({ count: Object.keys(prices).length, unmatched, uncovered });
+    setFilled({
+      count: Object.keys(prices).length,
+      skipped: unmatched.map((row) => ({ row, reason: 'не удалось сопоставить с категорией' })),
+      uncovered,
+      periods: null,
+    });
   };
+  const canFill = plan.partnerId ? docs.length > 0 : contractRows.length > 0;
 
   const cells = useMemo(
     () => roomTypes.flatMap((rt) => occs.filter((o) => o === 0 || o <= (rt.maxOccupancy ?? o)).map((o) => [rt.id, o])),
@@ -499,16 +548,20 @@ function StandardPrices({ plan, roomTypes, contractSheets }) {
       {filled && (
         <div className={classes.fillReport}>
           <div>
-            Подставлено цен из договора: <b>{filled.count}</b>. Проверьте и сохраните —
-            записываются они только по вашей кнопке.
+            Подставлено цен из договора: <b>{filled.count}</b>
+            {filled.periods?.expired && (
+              <> — договор действовал по {fmtDay(lastValidTo(filled.docs))}, подставлены его последние цены</>
+            )}
+            . Проверьте и сохраните — записываются они только по вашей кнопке.
           </div>
           {/* Что НЕ легло — говорим сразу и поимённо. Молча пропущенная строка
               договора это категория, которую посчитают не по договору. */}
-          {filled.unmatched.length > 0 && (
-            <div className={classes.fillWarn}>
-              Не удалось сопоставить строки договора:{' '}
-              {filled.unmatched.map(r => r.categoryName || '(без названия)').join(', ')}.
-              Проверьте названия категорий.
+          <SkippedRows skipped={filled.skipped} />
+          {filled.periods?.seasons.length > 0 && (
+            <div>
+              В договоре есть цены на другие периоды (с{' '}
+              {filled.periods.seasons.map((s) => fmtDay(s.from)).join(', с ')}) — добавьте их на вкладке
+              «Сезоны» кнопкой «Сезоны по договору».
             </div>
           )}
           {filled.uncovered.length > 0 && (
@@ -530,10 +583,10 @@ function StandardPrices({ plan, roomTypes, contractSheets }) {
             <button
               className={classes.btnGhost}
               onClick={fillFromContract}
-              disabled={!contractRows.length}
-              title={contractRows.length
-                ? 'Подставить цены из ценового приложения договора'
-                : 'Оператор не присылал цен по этому договору'}
+              disabled={!canFill}
+              title={canFill
+                ? 'Подставить цены договора под условия этого тарифа'
+                : 'Партнёр не присылал цен по этому договору'}
             >
               Заполнить по договору
             </button>
@@ -548,9 +601,15 @@ function StandardPrices({ plan, roomTypes, contractSheets }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Seasons — named date ranges with a price per category
 // ─────────────────────────────────────────────────────────────────────────────
-function Seasons({ plan, roomTypes }) {
+function Seasons({ plan, roomTypes, contractSheets, partners }) {
   const { data: seasonRows = [], isLoading } = useSeasons(plan.id);
   const save = useReplaceSeasons();
+  const docs = useMemo(() => planDocs(contractSheets, plan), [contractSheets, plan]);
+  const contractSeasons = useMemo(
+    () => (plan.partnerId ? contractPeriods(docs, format(new Date(), 'yyyy-MM-dd')).seasons : []),
+    [docs, plan.partnerId],
+  );
+  const [fillNote, setFillNote] = useState(null);
 
   // Group flat rows back into seasons keyed by their identity.
   const initial = useMemo(() => {
@@ -591,6 +650,32 @@ function Seasons({ plan, roomTypes }) {
     ]);
   };
   const removeSeason = (idx) => setList((l) => l.filter((_, i) => i !== idx));
+
+  /* Периоды договора (ДС с другой даты) — сезонами: цены среза на первый
+     день периода. Как и базовые цены — только раскладка, сохраняет человек. */
+  const fillSeasonsFromContract = () => {
+    const slice = planSlice(plan, partners);
+    const added = [];
+    for (const period of contractSeasons) {
+      const { prices } = sliceCells(docs, slice, roomTypes, period.from);
+      if (!Object.keys(prices).length) continue;
+      if (list.some((s) => s.dateFrom === period.from && s.dateTo === period.to)) continue;
+      added.push({
+        name: `По договору с ${fmtDay(period.from)}`,
+        color: SEASON_COLORS[(list.length + added.length) % SEASON_COLORS.length],
+        dateFrom: period.from,
+        dateTo: period.to,
+        sortOrder: list.length + added.length,
+        prices,
+      });
+    }
+    setList((l) => [...l, ...added]);
+    setFillNote(
+      added.length
+        ? `Добавлено сезонов по договору: ${added.length}. Проверьте и сохраните.`
+        : 'Новых периодов с ценами для этого тарифа в договоре нет.',
+    );
+  };
 
   const handleSave = async () => {
     setError(null);
@@ -695,6 +780,10 @@ function Seasons({ plan, roomTypes }) {
       {roomTypes.length > 0 && (
         <div className={classes.sectionActions}>
           <button className={classes.btnGhost} onClick={addSeason}>+ Добавить сезон</button>
+          {contractSeasons.length > 0 && (
+            <button className={classes.btnGhost} onClick={fillSeasonsFromContract}>Сезоны по договору</button>
+          )}
+          {fillNote && <span style={{ fontSize: 12, color: '#64748B' }}>{fillNote}</span>}
           <div style={{ flex: 1 }} />
           {dirty && <button className={classes.btnGhost} onClick={() => setList(initial)}>Отмена</button>}
           <button className={classes.btnPrimary} onClick={handleSave} disabled={!dirty || save.isPending || isLoading}>
@@ -1269,9 +1358,11 @@ function PlanPanel({ plan, roomTypes, onEditPlan, contractSheets, partners }) {
       {plan.forOperator && <CorporateStatus plan={plan} />}
 
       {tab === 'standard' && (
-        <StandardPrices plan={plan} roomTypes={roomTypes} contractSheets={contractSheets} />
+        <StandardPrices plan={plan} roomTypes={roomTypes} contractSheets={contractSheets} partners={partners} />
       )}
-      {tab === 'seasons' && <Seasons plan={plan} roomTypes={roomTypes} />}
+      {tab === 'seasons' && (
+        <Seasons plan={plan} roomTypes={roomTypes} contractSheets={contractSheets} partners={partners} />
+      )}
       {tab === 'calendar' && (
         <RateCalendar plan={plan} roomTypes={roomTypes} />
       )}
@@ -1293,15 +1384,31 @@ function PlanPanel({ plan, roomTypes, onEditPlan, contractSheets, partners }) {
  * Расчёт брони по этому списку НЕ идёт: PMS считает по своим тарифам. Чтобы
  * оператор считался по договору, заводится отдельный корпоративный тариф.
  * ───────────────────────────────────────────────────────────────────────── */
-function OperatorContractPrices() {
+function OperatorContractPrices({ partners, plans, roomTypes, onCreatePlans, creating, error }) {
   const { data, isLoading, isError } = useOperatorContractPrices();
-  const sheets = data ?? [];
+  const sheets = useMemo(() => data ?? [], [data]);
+
+  /* Договор — единица разговора с гостиницей: документы (договор и ДС) и
+     тарифы, которые он просит завести, — вместе. */
+  const groups = useMemo(() => {
+    const map = new Map();
+    for (const sh of sheets) {
+      const k = `${sh.partnerId ?? ''}|${sh.contractNumber}|${sh.account?.code ?? ''}`;
+      if (!map.has(k)) {
+        map.set(k, { key: k, partnerId: sh.partnerId, contractNumber: sh.contractNumber, account: sh.account, sheets: [] });
+      }
+      map.get(k).sheets.push(sh);
+    }
+    for (const g of map.values()) g.sheets.sort((x, y) => String(y.validFrom).localeCompare(String(x.validFrom)));
+    return [...map.values()];
+  }, [sheets]);
+  const rtName = useMemo(() => new Map(roomTypes.map((rt) => [rt.id, rt.name])), [roomTypes]);
 
   if (isLoading) return null;
   if (isError) {
     return (
       <div className={classes.sectionCard}>
-        <div className={classes.sectionTitle}>Цены по договору с оператором</div>
+        <div className={classes.sectionTitle}>Цены по договору с партнёром</div>
         <div className={classes.emptyHint}>Не удалось загрузить — попробуйте обновить страницу.</div>
       </div>
     );
@@ -1309,9 +1416,9 @@ function OperatorContractPrices() {
   if (!sheets.length) {
     return (
       <div className={classes.sectionCard}>
-        <div className={classes.sectionTitle}>Цены по договору с оператором</div>
+        <div className={classes.sectionTitle}>Цены по договору с партнёром</div>
         <div className={classes.emptyHint}>
-          Договорных цен пока нет. Они появятся здесь, когда оператор заведёт
+          Договорных цен пока нет. Они появятся здесь, когда партнёр заведёт
           ценовое приложение к договору с вами.
         </div>
       </div>
@@ -1320,47 +1427,137 @@ function OperatorContractPrices() {
 
   return (
     <div className={classes.sectionCard}>
-      <div className={classes.sectionTitle}>Цены по договору с оператором</div>
+      <div className={classes.sectionTitle}>Цены по договору с партнёром</div>
       <div className={classes.emptyHint}>
-        Так вас посчитает оператор. Цены ведутся в его реестре договоров и здесь
-        только показываются; ваши собственные тарифы — выше и не меняются.
+        Так вас посчитает партнёр. Цены ведутся в его реестре договоров и здесь
+        только показываются; ваши тарифы — выше. Строка договора — это номер ×
+        число гостей × питание × для кого: каждый такой срез — отдельный тариф.
       </div>
-      {sheets.map((s) => (
-        <div key={s.id} className={classes.contractSheet}>
-          <div className={classes.contractHead}>
-            <b>
-              {s.amendmentNumber
-                ? `${s.amendmentNumber} к договору ${s.contractNumber}`
-                : `Договор ${s.contractNumber}`}
-            </b>
-            <span>
-              {s.service === 'MEAL' ? 'Питание' : 'Проживание'}
-              {' · с '}
-              {format(parseISO(s.validFrom), 'd MMM yyyy', { locale: ru })}
-              {s.validTo
-                ? ` по ${format(parseISO(s.validTo), 'd MMM yyyy', { locale: ru })}`
-                : ' — бессрочно'}
-              {s.vatRate != null ? ` · НДС ${s.vatRate}%` : ' · без НДС'}
-            </span>
+      {error && <div className={classes.fillWarn} style={{ margin: '8px 0' }}>{error}</div>}
+      {groups.map((g) => (
+        <div key={g.key} className={classes.contractGroup}>
+          <div className={classes.contractGroupHead}>
+            <b>Договор {g.contractNumber}</b>
+            {g.account && <span>{g.account.name}</span>}
           </div>
-          <table className={classes.contractTable}>
-            <tbody>
-              {(s.rows ?? []).map((r, i) => (
-                <tr key={i}>
-                  <td>{r.categoryName || r.mealKind || '—'}</td>
-                  <td>
-                    {/* «По запросу» — не ноль: цена есть, но называется в
-                        переписке. Ноль читался бы как «бесплатно». */}
-                    {r.onRequest || r.priceNet == null
-                      ? 'по запросу'
-                      : `${fmtRub(r.priceNet / 100)} ₽`}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ContractSliceList
+            group={g}
+            partner={partners.find((p) => p.id === g.partnerId) ?? null}
+            plans={plans}
+            onCreate={onCreatePlans}
+            creating={creating}
+          />
+          {g.sheets.map((sh) => (
+            <div key={sh.id} className={classes.contractSheet}>
+              <div className={classes.contractHead}>
+                <b>{sh.amendmentNumber ? sh.amendmentNumber : 'Сам договор'}</b>
+                <span>
+                  {sh.service === 'MEAL' ? 'Питание' : 'Проживание'}
+                  {' · с '}
+                  {format(parseISO(sh.validFrom), 'd MMM yyyy', { locale: ru })}
+                  {sh.validTo
+                    ? ` по ${format(parseISO(sh.validTo), 'd MMM yyyy', { locale: ru })}`
+                    : ' — бессрочно'}
+                  {sh.vatRate != null ? ` · НДС ${sh.vatRate}%` : ' · без НДС'}
+                </span>
+              </div>
+              <table className={classes.contractTable}>
+                <tbody>
+                  {(sh.rows ?? []).map((r, i) => (
+                    <tr key={i}>
+                      <td>
+                        <div>{sh.service === 'MEAL' ? (MEAL_KIND_LABELS[r.mealKind] ?? r.mealKind ?? '—') : rowLabel(r)}</div>
+                        <RowChips row={r} rtName={rtName} meal={sh.service === 'MEAL'} />
+                      </td>
+                      <td>
+                        {/* «По запросу» — не ноль: цена есть, но называется в
+                            переписке. Ноль читался бы как «бесплатно». */}
+                        {r.onRequest || r.priceNet == null
+                          ? 'по запросу'
+                          : `${fmtRub(r.priceNet / 100)} ₽${r.perPerson ? ' за место' : ''}`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
         </div>
       ))}
+    </div>
+  );
+}
+
+/* Измерения строки договора — мелкими метками под названием. Категории
+   гостиницы, к которым строка относится, — последней: «нет такой категории»
+   это то, что гостинице стоит увидеть первым делом. */
+function RowChips({ row, rtName, meal }) {
+  const chips = [];
+  if (!meal) {
+    if (row.guests) chips.push(`на ${occupancyLabel(row.guests)}`);
+    if (row.perPerson) chips.push('за место');
+    if (row.mealPlan && row.mealPlan !== 'NONE') chips.push(MEAL_PLAN_SHORT[row.mealPlan] ?? row.mealPlan);
+  }
+  if (row.audienceLabel) chips.push(row.audienceLabel);
+  if (row.customer) chips.push(row.customer.name);
+  const cats = Array.isArray(row.categoryIds) ? row.categoryIds : null;
+  return (
+    <div className={classes.rowChips}>
+      {chips.map((c) => <span key={c} className={classes.rowChip}>{c}</span>)}
+      {!meal && cats && (cats.length
+        ? <span className={classes.rowCats}>→ {cats.map((id) => rtName.get(id) ?? 'категория удалена').join(', ')}</span>
+        : <span className={classes.rowNoCat}>такой категории у гостиницы нет</span>)}
+    </div>
+  );
+}
+
+/* Тарифы, которые просит договор: по одному на срез (авиакомпания × вид
+   брони × питание). Заводятся БЕЗ цен — цены подставляет «Заполнить по
+   договору» в каждом, а сохраняет гостиница сама. */
+function ContractSliceList({ group, partner, plans, onCreate, creating }) {
+  const slices = useMemo(
+    () => contractSlices(group.sheets.filter((s) => s.service === 'ACCOMMODATION')),
+    [group],
+  );
+  if (!slices.length) return null;
+  const rows = slices.map((s) => {
+    let problem = null;
+    if (!partner) problem = 'партнёр не найден';
+    else if (s.account && !partner.accounts?.some((a) => a.code === s.account.code)) problem = 'юрлица нет в справочнике партнёра';
+    else if (s.customer && !partner.customers?.some((c) => c.code === s.customer.code)) problem = 'авиакомпании нет в справочнике партнёра';
+    return { s, plan: problem ? null : planForSlice(plans, s, partner, group.contractNumber), problem };
+  });
+  const missing = rows.filter((x) => !x.plan && !x.problem);
+  return (
+    <div className={classes.sliceBox}>
+      <div className={classes.sliceHead}>Тарифы по договору</div>
+      <ul className={classes.sliceList}>
+        {rows.map(({ s, plan, problem }) => (
+          <li key={s.key}>
+            <span>{sliceName(s)}</span>
+            <span className={classes.sliceRows}>{s.rows} стр.</span>
+            {plan
+              ? <span className={classes.sliceOk}>тариф «{plan.name}»</span>
+              : problem
+                ? <span className={classes.rowNoCat}>{problem}</span>
+                : <span className={classes.sliceMissing}>тарифа нет</span>}
+          </li>
+        ))}
+      </ul>
+      {missing.length > 0 && (
+        <div className={classes.sliceActions}>
+          <button
+            className={classes.btnGhost}
+            disabled={creating}
+            onClick={() => onCreate(group, missing.map((x) => x.s))}
+          >
+            {creating ? 'Заводим…' : `Завести недостающие тарифы (${missing.length})`}
+          </button>
+          <span className={classes.fieldHint}>
+            Тарифы заводятся без цен: откройте каждый и нажмите «Заполнить по договору».
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -1442,6 +1639,48 @@ function Tariffs() {
 
   const isSaving = createPlan.isPending || updatePlan.isPending || deletePlan.isPending;
 
+  /* Тарифы по срезам договора (Э3): условия — из договора, цены — нет.
+     Код из номера договора; занятые пропускаются. НДС — договора. */
+  const [sliceError, setSliceError] = useState(null);
+  const [creatingSlices, setCreatingSlices] = useState(false);
+  const createFromContract = async (group, slices) => {
+    setSliceError(null);
+    setCreatingSlices(true);
+    const partner = partners.find((p) => p.id === group.partnerId);
+    const used = new Set(plans.map((p) => p.code));
+    const stem = 'D' + group.contractNumber.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 20);
+    const latest = group.sheets.filter((sh) => sh.service === 'ACCOMMODATION')[0];
+    let n = 1;
+    let lastId = null;
+    try {
+      for (const sl of slices) {
+        let code;
+        do { code = `${stem}-${n++}`; } while (used.has(code));
+        used.add(code);
+        const created = await createPlan.mutateAsync({
+          code,
+          name: `${sliceName(sl)} — договор ${group.contractNumber}`.slice(0, 120),
+          mealPlan: sl.mealPlan,
+          isActive: true,
+          forOperator: true,
+          operatorContract: group.contractNumber,
+          partnerId: partner.id,
+          partnerAccountId: sl.account ? partner.accounts.find((a) => a.code === sl.account.code).id : null,
+          partnerCustomerId: sl.customer ? partner.customers.find((c) => c.code === sl.customer.code).id : null,
+          guestKind: sl.guestKind,
+          vatRate: latest?.vatRate ?? null,
+        });
+        lastId = created.id;
+      }
+    } catch (err) {
+      const msg = err?.response?.data?.message;
+      setSliceError(Array.isArray(msg) ? msg.join(', ') : (msg ?? err.message ?? 'Ошибка'));
+    } finally {
+      setCreatingSlices(false);
+      if (lastId) setSelectedPlanId(lastId);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className={classes.root}>
@@ -1520,7 +1759,14 @@ function Tariffs() {
         </>
       )}
 
-      <OperatorContractPrices />
+      <OperatorContractPrices
+        partners={partners}
+        plans={plans}
+        roomTypes={roomTypes}
+        onCreatePlans={createFromContract}
+        creating={creatingSlices}
+        error={sliceError}
+      />
 
       {showForm && (
         <RatePlanForm

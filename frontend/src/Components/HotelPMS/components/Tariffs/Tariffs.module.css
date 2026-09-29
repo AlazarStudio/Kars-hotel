@@ -1183,3 +1183,33 @@
 .occNone { color: #CBD5E1; text-align: center; }
 
 .calOccSelect { width: auto; height: 32px; padding: 0 10px; font-size: 13px; }
+
+/* ── Договор партнёра: срезы и измерения строк (29.09.2026) ───────────── */
+
+.contractGroup { border-top: 1px solid #E2E8F0; padding-top: 14px; margin-top: 14px; }
+.contractGroupHead { display: flex; gap: 10px; align-items: baseline; margin-bottom: 10px; }
+.contractGroupHead b { font-size: 15px; color: #0F172A; }
+.contractGroupHead span { font-size: 12.5px; color: #64748B; }
+
+.rowChips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.rowChip {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #F1F5F9;
+  color: #475569;
+}
+.rowCats { font-size: 11px; color: #94A3B8; }
+.rowNoCat { font-size: 11px; color: #B45309; }
+
+.sliceBox { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+.sliceHead { font-size: 12.5px; font-weight: 600; color: #334155; margin-bottom: 6px; }
+.sliceList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.sliceList li { display: flex; gap: 10px; align-items: baseline; font-size: 13px; color: #0F172A; }
+.sliceRows { font-size: 11.5px; color: #94A3B8; }
+.sliceOk { font-size: 12px; color: #15803D; }
+.sliceMissing { font-size: 12px; color: #64748B; }
+.sliceActions { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
+.sliceActions .fieldHint { margin-top: 0; }
+
+.fillQuiet { font-size: 12.5px; color: #64748B; margin-top: 4px; }
