@@ -14,6 +14,7 @@ import { HousekeepingService } from '../housekeeping/housekeeping.service';
 import { PartnerWebhookService } from '../connectivity/partner-webhook.service';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
+import { allocatePlace, placesOf, type PlaceHolder } from './room-places';
 import { SwapReservationsDto } from './dto/swap-reservations.dto';
 import { parseISO, format } from 'date-fns';
 
@@ -73,37 +74,29 @@ export class ReservationsService {
 
     const result = await this.prisma.forTenant(async (tx): Promise<CreateResult> => {
       // 1. Verify room exists and get capacity
-      const rooms = await tx.$queryRaw<{ id: string; room_type_id: string; capacity: number }[]>`
-        SELECT id, room_type_id, capacity
-        FROM room
-        WHERE id = ${dto.roomId}::uuid
-          AND is_active = true
+      const rooms = await tx.$queryRaw<
+        { id: string; room_type_id: string; capacity: number; multi_place: boolean }[]
+      >`
+        SELECT r.id, r.room_type_id, r.capacity, t.multi_place_enabled AS multi_place
+        FROM room r
+        JOIN tenant t ON t.id = r.tenant_id
+        WHERE r.id = ${dto.roomId}::uuid
+          AND r.is_active = true
         LIMIT 1
       `;
       if (!rooms.length) return { ok: false, reason: 'ROOM_NOT_FOUND' };
 
-      const { room_type_id: roomTypeId, capacity } = rooms[0];
+      const { room_type_id: roomTypeId, capacity, multi_place: multiPlace } = rooms[0];
 
-      // 2. Find which places are already occupied for this period
-      const occupied = await tx.$queryRaw<{ place_number: number }[]>`
-        SELECT place_number
-        FROM reservation
-        WHERE room_id   = ${dto.roomId}::uuid
-          AND check_in  < ${checkOut}::date
-          AND check_out > ${checkIn}::date
-          AND status NOT IN ('CANCELLED', 'NO_SHOW')
-      `;
-
-      const takenPlaces = new Set(occupied.map((r) => r.place_number));
-
-      // 3. Auto-assign: pick the lowest available place number
-      let placeNumber: number | null = null;
-      for (let p = 1; p <= capacity; p++) {
-        if (!takenPlaces.has(p)) {
-          placeNumber = p;
-          break;
-        }
-      }
+      // 2–3. Места — одним правилом (room-places.ts): обычная гостиница отдаёт
+      //      номер брони целиком, койко-места — по числу людей.
+      const others = await this.overlapping(tx, dto.roomId, checkIn, checkOut, null);
+      const placeNumber = allocatePlace({
+        capacity,
+        multiPlace,
+        guests: { adults: dto.adults, children: dto.children ?? 0 },
+        others,
+      });
       if (placeNumber === null) return { ok: false, reason: 'NO_PLACE_AVAILABLE' };
 
       // 4. Insert reservation
@@ -264,87 +257,56 @@ export class ReservationsService {
           : cur.source
         : cur.source;
 
-      // 4. Resolve place number
+      // 4. Resolve place number — тем же правилом, что при создании
+      //    (room-places.ts): обычная гостиница — номер целиком, койко-места —
+      //    по числу людей в брони.
       let placeNumber = cur.place_number;
-
-      if (dto.placeNumber !== undefined) {
-        // Explicit place requested — validate it's free (exclude self)
-        placeNumber = dto.placeNumber;
-        const conflicts = await tx.$queryRaw<{ id: string }[]>`
-          SELECT id FROM reservation
-          WHERE room_id      = ${roomId}::uuid
-            AND place_number = ${placeNumber}
-            AND id          != ${id}::uuid
-            AND check_in    < ${checkOut}::date
-            AND check_out   > ${checkIn}::date
-            AND status NOT IN ('CANCELLED', 'NO_SHOW')
+      const guests = {
+        adults: dto.adults ?? cur.adults,
+        children: dto.children ?? cur.children,
+      };
+      if (
+        dto.placeNumber !== undefined ||
+        dto.roomId ||
+        dto.checkIn ||
+        dto.checkOut ||
+        dto.adults !== undefined ||
+        dto.children !== undefined
+      ) {
+        const roomRows = await tx.$queryRaw<{ capacity: number; multi_place: boolean }[]>`
+          SELECT r.capacity, t.multi_place_enabled AS multi_place
+          FROM room r
+          JOIN tenant t ON t.id = r.tenant_id
+          WHERE r.id = ${roomId}::uuid AND r.is_active = true
           LIMIT 1
         `;
-        if (conflicts.length) return { ok: false, reason: 'BOOKING_CONFLICT' };
-      } else if (dto.roomId || dto.checkIn || dto.checkOut) {
-        // Room/dates changed — auto-reassign place
-        if (dto.roomId && dto.roomId !== cur.room_id) {
-          const roomRows = await tx.$queryRaw<{ room_type_id: string; capacity: number }[]>`
-            SELECT room_type_id, capacity FROM room
-            WHERE id = ${dto.roomId}::uuid AND is_active = true
-            LIMIT 1
-          `;
-          if (!roomRows.length) return { ok: false, reason: 'ROOM_NOT_FOUND' };
+        if (!roomRows.length) return { ok: false, reason: 'ROOM_NOT_FOUND' };
+        const { capacity, multi_place: multiPlace } = roomRows[0];
+        const others = await this.overlapping(tx, roomId, checkIn, checkOut, id);
+        const need = placesOf(guests, capacity, multiPlace);
+        const spanFree = (start: number) =>
+          start >= 1 &&
+          start + (multiPlace ? need : 1) - 1 <= capacity &&
+          (multiPlace
+            ? others.every((o) => {
+                const n = placesOf(o, capacity, true);
+                return start + need - 1 < o.placeNumber || o.placeNumber + n - 1 < start;
+              })
+            : others.length === 0);
 
-          const occupied = await tx.$queryRaw<{ place_number: number }[]>`
-            SELECT place_number FROM reservation
-            WHERE room_id   = ${roomId}::uuid
-              AND id        != ${id}::uuid
-              AND check_in  < ${checkOut}::date
-              AND check_out > ${checkIn}::date
-              AND status NOT IN ('CANCELLED', 'NO_SHOW')
-          `;
-          const takenPlaces = new Set(occupied.map((r) => r.place_number));
-          let assigned: number | null = null;
-          for (let p = 1; p <= roomRows[0].capacity; p++) {
-            if (!takenPlaces.has(p)) {
-              assigned = p;
-              break;
-            }
-          }
+        if (dto.placeNumber !== undefined) {
+          // Явно выбранное место — должно быть свободно (без самой брони).
+          if (!spanFree(dto.placeNumber)) return { ok: false, reason: 'BOOKING_CONFLICT' };
+          placeNumber = dto.placeNumber;
+        } else if (dto.roomId && dto.roomId !== cur.room_id) {
+          const assigned = allocatePlace({ capacity, multiPlace, guests, others });
           if (assigned === null) return { ok: false, reason: 'NO_PLACE_AVAILABLE' };
           placeNumber = assigned;
-        } else {
-          // Same room, dates changed — check current place is still free
-          const conflicts = await tx.$queryRaw<{ id: string }[]>`
-            SELECT id FROM reservation
-            WHERE room_id      = ${roomId}::uuid
-              AND place_number = ${placeNumber}
-              AND id          != ${id}::uuid
-              AND check_in    < ${checkOut}::date
-              AND check_out   > ${checkIn}::date
-              AND status NOT IN ('CANCELLED', 'NO_SHOW')
-            LIMIT 1
-          `;
-          if (conflicts.length) {
-            const roomRows = await tx.$queryRaw<{ capacity: number }[]>`
-              SELECT capacity FROM room WHERE id = ${roomId}::uuid LIMIT 1
-            `;
-            const capacity = roomRows[0]?.capacity ?? 1;
-            const occupied = await tx.$queryRaw<{ place_number: number }[]>`
-              SELECT place_number FROM reservation
-              WHERE room_id   = ${roomId}::uuid
-                AND id        != ${id}::uuid
-                AND check_in  < ${checkOut}::date
-                AND check_out > ${checkIn}::date
-                AND status NOT IN ('CANCELLED', 'NO_SHOW')
-            `;
-            const takenPlaces = new Set(occupied.map((r) => r.place_number));
-            let assigned: number | null = null;
-            for (let p = 1; p <= capacity; p++) {
-              if (!takenPlaces.has(p)) {
-                assigned = p;
-                break;
-              }
-            }
-            if (assigned === null) return { ok: false, reason: 'NO_PLACE_AVAILABLE' };
-            placeNumber = assigned;
-          }
+        } else if (!spanFree(placeNumber)) {
+          // Тот же номер, новые даты или состав — текущее место занято: ищем другое.
+          const assigned = allocatePlace({ capacity, multiPlace, guests, others });
+          if (assigned === null) return { ok: false, reason: 'NO_PLACE_AVAILABLE' };
+          placeNumber = assigned;
         }
       }
 
@@ -947,5 +909,31 @@ export class ReservationsService {
         },
       };
     });
+  }
+  /** Брони номера, пересекающиеся по датам (кроме `excludeId`) — для правила мест. */
+  private async overlapping(
+    tx: { $queryRaw: PrismaService['$queryRaw'] },
+    roomId: string,
+    checkIn: Date,
+    checkOut: Date,
+    excludeId: string | null,
+  ): Promise<PlaceHolder[]> {
+    const rows = excludeId
+      ? await tx.$queryRaw<{ place_number: number; adults: number; children: number }[]>`
+          SELECT place_number, adults, children FROM reservation
+          WHERE room_id = ${roomId}::uuid
+            AND id != ${excludeId}::uuid
+            AND check_in  < ${checkOut}::date
+            AND check_out > ${checkIn}::date
+            AND status NOT IN ('CANCELLED', 'NO_SHOW')
+        `
+      : await tx.$queryRaw<{ place_number: number; adults: number; children: number }[]>`
+          SELECT place_number, adults, children FROM reservation
+          WHERE room_id = ${roomId}::uuid
+            AND check_in  < ${checkOut}::date
+            AND check_out > ${checkIn}::date
+            AND status NOT IN ('CANCELLED', 'NO_SHOW')
+        `;
+    return rows.map((r) => ({ placeNumber: r.place_number, adults: r.adults, children: r.children ?? 0 }));
   }
 }

@@ -605,7 +605,13 @@ export class ConnectivityService {
           dto.checkOut,
         );
       } else {
-        roomId = await this.pickAvailableRoom(tenant.id, dto.categoryId, dto.checkIn, dto.checkOut);
+        roomId = await this.pickAvailableRoom(
+          tenant.id,
+          dto.categoryId,
+          dto.checkIn,
+          dto.checkOut,
+          (dto.adults ?? 1) + ((dto as { children?: number }).children ?? 0),
+        );
       }
       if (!roomId) {
         throw new ConflictException('No room available in this category for the selected dates');
@@ -1187,7 +1193,14 @@ export class ConnectivityService {
           r.view,
           r.partner_hold,
           (
-            SELECT COUNT(*) FROM reservation res
+            /* Занятые места — правилом room-places.ts: обычная гостиница
+               отдаёт номер брони целиком, койко-места — по числу людей. */
+            SELECT COALESCE(SUM(
+              CASE WHEN tn.multi_place_enabled
+                THEN GREATEST(res.adults + COALESCE(res.children, 0), 1)
+                ELSE r.capacity END), 0)
+            FROM reservation res
+            JOIN tenant tn ON tn.id = res.tenant_id
             WHERE res.room_id = r.id
               AND res.check_in  < ${checkOut}::date
               AND res.check_out > ${checkIn}::date
@@ -1234,7 +1247,14 @@ export class ConnectivityService {
           r.room_type_id,
           r.capacity,
           (
-            SELECT COUNT(*) FROM reservation res
+            /* Занятые места — правилом room-places.ts: обычная гостиница
+               отдаёт номер брони целиком, койко-места — по числу людей. */
+            SELECT COALESCE(SUM(
+              CASE WHEN tn.multi_place_enabled
+                THEN GREATEST(res.adults + COALESCE(res.children, 0), 1)
+                ELSE r.capacity END), 0)
+            FROM reservation res
+            JOIN tenant tn ON tn.id = res.tenant_id
             WHERE res.room_id = r.id
               AND res.check_in  < ${checkOut}::date
               AND res.check_out > ${checkIn}::date
@@ -1263,6 +1283,8 @@ export class ConnectivityService {
     roomTypeId: string,
     checkIn: string,
     checkOut: string,
+    /** Сколько людей в брони — при койко-местах столько мест и нужно. */
+    guests = 1,
   ): Promise<string | null> {
     return this.prisma.forTenantExplicit(tenantId, async (tx) => {
       const rows = await tx.$queryRaw<Array<{ id: string }>>`
@@ -1271,12 +1293,21 @@ export class ConnectivityService {
         WHERE r.room_type_id = ${roomTypeId}::uuid
           AND r.is_active = true
           AND (
-            SELECT COUNT(*) FROM reservation res
+            -- Занятые места — правилом room-places.ts (см. listRoomsForCategory).
+            SELECT COALESCE(SUM(
+              CASE WHEN tn.multi_place_enabled
+                THEN GREATEST(res.adults + COALESCE(res.children, 0), 1)
+                ELSE r.capacity END), 0)
+            FROM reservation res
+            JOIN tenant tn ON tn.id = res.tenant_id
             WHERE res.room_id = r.id
               AND res.check_in  < ${checkOut}::date
               AND res.check_out > ${checkIn}::date
               AND res.status NOT IN ('CANCELLED', 'NO_SHOW')
-          ) < r.capacity
+          ) + (
+            SELECT CASE WHEN tn2.multi_place_enabled THEN ${guests} ELSE r.capacity END
+            FROM tenant tn2 WHERE tn2.id = r.tenant_id
+          ) <= r.capacity
         ORDER BY r.number ASC
         LIMIT 1
       `;
