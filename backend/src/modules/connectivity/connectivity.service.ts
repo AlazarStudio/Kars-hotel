@@ -545,7 +545,19 @@ export class ConnectivityService {
          забронировать по неподтверждённому или чужому. Без тарифа в запросе —
          берётся подходящий сам, если он один. */
       const chosen = pickPartnerPlans(await this.ratePlans.partnerPlans(partnerId), query);
-      const applying = chosen.filter((p) => p.operatorStatus?.applies === true);
+      const planPrices = await this.availability.priceByPlan(
+        dto.categoryId,
+        dto.checkIn,
+        dto.checkOut,
+        category.basePrice as never,
+        guests,
+      );
+      /* Сам — только тариф, в котором ЕСТЬ цена на эту категорию и этих
+         гостей (30.09.2026, Э12). Раньше брался единственный подходящий и
+         бронь падала «в тарифе нет цены»: наличие его не предлагало, и
+         партнёр честно бронировал без тарифа, а мы подставляли его сами. */
+      const priced = new Set(planPrices.filter((p) => p.total != null).map((p) => p.ratePlanId));
+      const applying = chosen.filter((p) => p.operatorStatus?.applies === true && priced.has(p.id));
       let planIdToUse = dto.ratePlanId;
       if (!planIdToUse && applying.length === 1) planIdToUse = applying[0].id;
       if (!planIdToUse && applying.length > 1) {
@@ -572,15 +584,8 @@ export class ConnectivityService {
           }
         }
         ratePlanId = plan.id;
-        const planPrices = await this.availability.priceByPlan(
-          dto.categoryId,
-          dto.checkIn,
-          dto.checkOut,
-          category.basePrice as never,
-          dto.adults + (dto.children ?? 0),
-        );
         const match = planPrices.find((p) => p.ratePlanId === plan.id);
-        if (!match) {
+        if (!match || match.total == null) {
           throw new ConflictException(
             `Тариф «${plan.name}» не считается на эти даты и число гостей — в нём нет цены`,
           );
