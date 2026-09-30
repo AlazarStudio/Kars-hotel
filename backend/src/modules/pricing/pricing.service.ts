@@ -197,6 +197,8 @@ export class PricingService {
         validTo: r.validTo?.toISOString() ?? null,
         vatRate: r.vatRate == null ? null : Number(r.vatRate),
         rows: r.rows,
+        // Сетки «Заполнить по договору» (Э12) — цены срезов, посчитанные партнёром.
+        fill: r.fill ?? null,
         receivedAt: r.receivedAt.toISOString(),
       }));
     });

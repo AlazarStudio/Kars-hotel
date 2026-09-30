@@ -275,6 +275,8 @@ model PartnerContractPrice {
   vatRate         Decimal?  @map("vat_rate") @db.Decimal(5, 2)
   /// Снимок строк приложения: категория/приём пищи, цена (копейки), «по запросу».
   rows            Json
+  /// Сетки «Заполнить по договору» (Э12): цены срезов, посчитанные партнёром.
+  fill            Json?
   /// Когда пришёл снапшот — чтобы видеть, насколько он свежий.
   receivedAt      DateTime  @default(now()) @map("received_at")
 

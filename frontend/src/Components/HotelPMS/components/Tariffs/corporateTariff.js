@@ -210,7 +210,39 @@ export function rowLabel(row) {
  * Частная строка (для этой авиакомпании, для этого вида брони) бьёт общую
  * независимо от свежести — так же считает и партнёр. Цена за место
  * раскладывается по числу гостей: за двоих — вдвое. */
+/* СЕТКА ПАРТНЁРА НА ДЕНЬ (30.09.2026, Э12). Партнёр присылает с документами
+ * готовые цены каждого среза — посчитанные тем же подбором, которым он потом
+ * сверяет тариф. Своё правило раскладки строк здесь с его сверкой разошлось:
+ * строка «Стандарт двухместный» ложилась только в эту категорию и только на
+ * двоих, а партнёр ждал её цену и в одноместном стандарте, и за одного гостя.
+ *
+ * Сетка действует с `from` до следующей сетки договора: берётся последняя,
+ * начавшаяся не позже дня. null — партнёр сеток не прислал (старый партнёр):
+ * тогда раскладка по строкам, как было. */
+export function fillGrid(docs, slice, date) {
+  const withFill = docs.filter((d) => d.fill?.length);
+  if (!withFill.length) return null;
+  let best = null;
+  for (const doc of withFill) {
+    for (const f of doc.fill) {
+      if (day(f.from) <= date && (!best || day(f.from) > day(best.f.from))) best = { f, doc };
+    }
+  }
+  if (!best) return { cells: [], doc: null };
+  const same = (x, y) => (x ?? null) === (y ?? null);
+  const pick = (customer) =>
+    best.f.slices.find(
+      (g) => same(g.customer, customer) && same(g.guestKind, slice.guestKind) && g.mealPlan === slice.mealPlan,
+    );
+  /* Тариф под авиакомпанию, которой договор не называет, — цены «для любой»:
+     ровно так его и сверят. */
+  const grid = pick(slice.customer) ?? (slice.customer ? pick(null) : null);
+  return { cells: grid?.cells ?? [], doc: best.doc };
+}
+
 export function sliceCells(docs, slice, roomTypes, date) {
+  const grid = fillGrid(docs, slice, date);
+  if (grid) return gridCells(docs, slice, roomTypes, date, grid);
   const effective = docsAt(docs, date);
   const cells = new Map();
   const skipped = [];
@@ -243,6 +275,38 @@ export function sliceCells(docs, slice, roomTypes, date) {
   });
   const prices = Object.fromEntries([...cells].map(([k, v]) => [k, String(v.kopecks / 100)]));
   const covered = new Set([...cells.keys()].map((k) => k.split('|')[0]));
+  return {
+    prices,
+    skipped,
+    uncovered: roomTypes.filter((rt) => !covered.has(rt.id)),
+    docs: effective,
+  };
+}
+
+/* Раскладка по сетке партнёра. Строки договора по-прежнему разбираются —
+   только чтобы честно назвать то, что к тарифу не относится (другая
+   авиакомпания, питание); цены берутся из сетки. */
+function gridCells(docs, slice, roomTypes, date, grid) {
+  const effective = docsAt(docs, date);
+  const skipped = [];
+  for (const doc of effective) {
+    for (const row of doc.rows ?? []) {
+      const reason = rowMismatch(row, doc, slice);
+      if (reason) skipped.push({ row, doc, reason });
+    }
+  }
+  const foreignAccount =
+    slice.account && grid.doc?.account?.code && grid.doc.account.code !== slice.account;
+  const byId = new Map(roomTypes.map((rt) => [rt.id, rt]));
+  const prices = {};
+  if (!foreignAccount) {
+    for (const c of grid.cells) {
+      const rt = byId.get(c.categoryId);
+      if (!rt || c.occupancy > (rt.maxOccupancy ?? 1)) continue;
+      prices[priceKey(rt.id, c.occupancy)] = String(c.price / 100);
+    }
+  }
+  const covered = new Set(Object.keys(prices).map((k) => k.split('|')[0]));
   return {
     prices,
     skipped,

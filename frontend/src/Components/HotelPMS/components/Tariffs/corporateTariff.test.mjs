@@ -117,3 +117,42 @@ test('срезы договора и тариф, который его вопл�
   // тот же тариф, но с завтраком — уже не он
   assert.equal(planForSlice([{ ...plan, mealPlan: 'BB' }], ru, partner, '25/82'), null);
 });
+
+/* Э12 · сетка партнёра. Цены берутся из неё, а не раскладкой строк: своё
+   правило раскладки разошлось со сверкой партнёра (одноместный стандарт без
+   своей строки оставался пустым). */
+const GRID = (from, slices) => ({ from, slices });
+const FILLED = {
+  ...DOC,
+  fill: [
+    GRID('2025-05-01', [
+      { customer: 'org-ru', guestKind: 'CREW', mealPlan: 'NONE', cells: [
+        { categoryId: 'std1', occupancy: 1, price: 560000 },
+        { categoryId: 'std2', occupancy: 1, price: 560000 },
+        { categoryId: 'std2', occupancy: 2, price: 560000 },
+      ] },
+      { customer: null, guestKind: 'CREW', mealPlan: 'NONE', cells: [{ categoryId: 'std1', occupancy: 1, price: 380000 }] },
+    ]),
+    GRID('2025-09-01', [
+      { customer: 'org-ru', guestKind: 'CREW', mealPlan: 'NONE', cells: [{ categoryId: 'std1', occupancy: 1, price: 600000 }] },
+    ]),
+  ],
+};
+
+test('сетка партнёра: цены из неё, включая категории без своей строки', () => {
+  const { prices, uncovered } = sliceCells([FILLED], slice({ customer: 'org-ru', guestKind: 'CREW' }), RT, '2025-06-01');
+  assert.deepEqual(prices, { 'std1|1': '5600', 'std2|1': '5600', 'std2|2': '5600' });
+  assert.deepEqual(uncovered.map((rt) => rt.id), ['bed']);
+});
+
+test('сетка берётся последняя из начавшихся к дню', () => {
+  const { prices } = sliceCells([FILLED], slice({ customer: 'org-ru', guestKind: 'CREW' }), RT, '2025-10-01');
+  assert.deepEqual(prices, { 'std1|1': '6000' });
+});
+
+test('авиакомпания, которой договор не называет, — сетка «для любой»; чужое юрлицо — ничего', () => {
+  const other = sliceCells([FILLED], slice({ customer: 'org-xx', guestKind: 'CREW' }), RT, '2025-06-01');
+  assert.deepEqual(other.prices, { 'std1|1': '3800' });
+  const foreign = sliceCells([FILLED], slice({ account: 'kc-2', customer: 'org-ru', guestKind: 'CREW' }), RT, '2025-06-01');
+  assert.deepEqual(foreign.prices, {});
+});

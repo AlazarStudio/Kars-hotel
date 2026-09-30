@@ -931,6 +931,7 @@ export class ConnectivityService {
       accountCode: dto.account?.code ?? null,
       accountName: dto.account?.name ?? null,
       rows: dto.rows as unknown as Prisma.InputJsonValue,
+      fill: (dto.fill ?? Prisma.DbNull) as unknown as Prisma.InputJsonValue,
       receivedAt: new Date(),
     };
     /* Не `upsert`: составной ключ содержит НУЛЛИРУЕМЫЙ номер ДС, а Prisma в
@@ -1003,6 +1004,7 @@ export class ConnectivityService {
           accountCode: dto.account?.code ?? null,
           accountName: dto.account?.name ?? null,
           rows: dto.rows as unknown as Prisma.InputJsonValue,
+          fill: (dto.fill ?? Prisma.DbNull) as unknown as Prisma.InputJsonValue,
           receivedAt: new Date(),
         };
         const id = byKey.get(key);
@@ -1036,6 +1038,7 @@ export class ConnectivityService {
       vatRate: r.vatRate == null ? null : Number(r.vatRate),
       account: r.accountCode ? { code: r.accountCode, name: r.accountName ?? r.accountCode } : null,
       rows: r.rows,
+      fill: r.fill ?? null,
       receivedAt: r.receivedAt.toISOString(),
     }));
   }

@@ -141,6 +141,66 @@ export class ConnectContractPriceRowDto {
   customer?: ConnectDirectoryRefDto | null;
 }
 
+/** Ячейка сетки: категория × число гостей → цена (копейки). */
+export class ConnectFillCellDto {
+  @ApiProperty()
+  @IsUUID()
+  categoryId!: string;
+
+  @ApiProperty({ example: 1 })
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  occupancy!: number;
+
+  @ApiProperty({ example: 320000, description: 'Копейки' })
+  @IsInt()
+  @Min(0)
+  price!: number;
+}
+
+/** Срез договора: авиакомпания × вид брони × питание. */
+export class ConnectFillSliceDto {
+  @ApiPropertyOptional({ description: 'Код заказчика из справочника партнёра; null — для любого' })
+  @IsOptional()
+  @IsString()
+  @Length(1, 64)
+  customer?: string | null;
+
+  @ApiPropertyOptional({ enum: ['CREW', 'DISRUPTION'] })
+  @IsOptional()
+  @IsIn(['CREW', 'DISRUPTION'])
+  guestKind?: 'CREW' | 'DISRUPTION' | null;
+
+  @ApiProperty({ enum: ['NONE', 'BB', 'HB', 'FB', 'AI'] })
+  @IsIn(['NONE', 'BB', 'HB', 'FB', 'AI'])
+  mealPlan!: string;
+
+  @ApiProperty({ type: [ConnectFillCellDto] })
+  @IsArray()
+  @ArrayMaxSize(2000)
+  @ValidateNested({ each: true })
+  @Type(() => ConnectFillCellDto)
+  cells!: ConnectFillCellDto[];
+}
+
+/* Сетка «Заполнить по договору» (30.09.2026, Э12): что партнёр заплатит за
+   каждую категорию и число гостей, посчитанное ЕГО подбором. Действует с
+   `from` до следующей сетки того же договора. Гостиница её копирует, а не
+   выводит из строк сама: своё правило разошлось бы с его сверкой. */
+export class ConnectFillDto {
+  @ApiProperty({ example: '2026-01-01' })
+  @IsISO8601()
+  from!: string;
+
+  @ApiProperty({ type: [ConnectFillSliceDto] })
+  @IsArray()
+  @ArrayMaxSize(500)
+  @ValidateNested({ each: true })
+  @Type(() => ConnectFillSliceDto)
+  slices!: ConnectFillSliceDto[];
+}
+
 export class ConnectContractPricesDto {
   @ApiProperty({ example: 'Г-18' })
   @IsString()
@@ -183,6 +243,14 @@ export class ConnectContractPricesDto {
   @ValidateNested({ each: true })
   @Type(() => ConnectContractPriceRowDto)
   rows!: ConnectContractPriceRowDto[];
+
+  @ApiPropertyOptional({ type: [ConnectFillDto], description: 'Сетки «Заполнить по договору»' })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => ConnectFillDto)
+  fill?: ConnectFillDto[];
 }
 
 /* Набор документов, действующих у оператора ПРЯМО СЕЙЧАС.
