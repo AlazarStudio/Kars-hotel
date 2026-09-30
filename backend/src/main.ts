@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger as PinoLogger } from 'nestjs-pino';
@@ -8,7 +9,13 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
+  /* Лимит тела — 2 МБ вместо 100 КБ по умолчанию (30.09.2026). Копия договорных
+     цен партнёра везёт сетки «Заполнить по договору», и у крупных гостиниц
+     она уже 110–225 КБ: синхронизация падала, а у партнёра она молчаливая —
+     копия тихо переставала обновляться. Файлы идут multipart, их это не
+     касается. */
+  app.useBodyParser('json', { limit: '2mb' });
 
   app.useLogger(app.get(PinoLogger));
   app.use(helmet());

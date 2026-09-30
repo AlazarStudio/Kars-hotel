@@ -53,6 +53,24 @@ export class HttpExceptionFilter implements ExceptionFilter {
       return;
     }
 
+    /* Ошибки разбора запроса (слишком большое тело, битый JSON) приходят из
+       body-parser не HttpException, а объектом http-errors с `expose: true`.
+       Раньше они уходили 500 «Internal server error», и партнёр не мог
+       понять, что дело в размере (30.09.2026). */
+    const clientError = exception as { status?: unknown; expose?: unknown; message?: unknown };
+    if (
+      clientError?.expose === true &&
+      typeof clientError.status === 'number' &&
+      clientError.status >= 400 &&
+      clientError.status < 500
+    ) {
+      response.status(clientError.status).json({
+        statusCode: clientError.status,
+        message: String(clientError.message ?? 'Bad request'),
+      });
+      return;
+    }
+
     // Unknown error — log and return 500
     console.error(`Unhandled exception on ${request.method} ${request.url}:`, exception);
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
