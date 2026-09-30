@@ -3,6 +3,7 @@ import HotelPMS from './Components/HotelPMS/HotelPMS';
 import Login from './Components/Auth/Login';
 import Register from './Components/Auth/Register';
 import SsoEntry from './Components/Auth/SsoEntry';
+import InviteAccept from './Components/Auth/InviteAccept';
 import AdminPanel from './Components/AdminPanel/AdminPanel';
 import ProtectedRoute from './auth/ProtectedRoute';
 
@@ -28,6 +29,8 @@ export default function App() {
       <Route path="/register" element={<Register />} />
       {/* Вход по одноразовой SSO-ссылке из диспетчерской Kars Avia */}
       <Route path="/sso" element={<SsoEntry />} />
+      {/* Приглашение владельца в кабинет гостиницы (Э10) */}
+      <Route path="/invite/:token" element={<InviteAccept />} />
 
       {/* Super-admin panel with sub-sections */}
       <Route path="/admin" element={<ProtectedAdmin />} />

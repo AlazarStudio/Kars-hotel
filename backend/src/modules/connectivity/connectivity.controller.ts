@@ -14,6 +14,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { ConnectOwnerInviteDto } from './dto/connect-owner-invite.dto';
 import { ApiOperation, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { Public } from '../auth/decorators/public.decorator';
 import { ConnectivityService } from './connectivity.service';
@@ -293,6 +294,28 @@ export class ConnectivityController {
   /* Все корпоративные тарифы партнёра у гостиницы (29.09.2026): условия,
      НДС, цены по числу гостей, статус — партнёр сверяет каждый со своим
      договором. Партнёр — тот, чей ключ. */
+  /* Э10 · кабинет гостиницы: ведёт ли она его сама (свой сотрудник
+     входил), ждёт ли приглашение, или её ведёт партнёр. */
+  @Get('hotels/:slug/cabinet')
+  @RequireScopes(PARTNER_SCOPES.HotelsRead)
+  @ApiOperation({ summary: 'Whether the hotel runs its own cabinet' })
+  getCabinet(@Param('slug') slug: string) {
+    return this.connectivity.cabinet(slug);
+  }
+
+  /* Э10 · пригласить владельца в кабинет. Ответ — одноразовый токен ссылки
+     (партнёр строит ссылку сам) и новое состояние кабинета. */
+  @Post('hotels/:slug/cabinet/invite')
+  @RequireScopes(PARTNER_SCOPES.HotelsWrite)
+  @ApiOperation({ summary: 'Invite the hotel owner to run the cabinet' })
+  inviteOwner(
+    @Param('slug') slug: string,
+    @Body() dto: ConnectOwnerInviteDto,
+    @Req() req: PartnerRequest,
+  ) {
+    return this.connectivity.inviteOwner(slug, dto, req.partner!.partnerId);
+  }
+
   @Get('hotels/:slug/corporate-tariffs')
   @RequireScopes(PARTNER_SCOPES.HotelsRead)
   @ApiOperation({ summary: 'All corporate tariffs of the calling partner at a hotel' })

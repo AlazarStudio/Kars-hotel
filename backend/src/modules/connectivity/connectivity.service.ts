@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { OwnerInviteService } from '../auth/owner-invite.service';
 import { PartnerPlanQuery, pickPartnerPlans } from '../rate-plans/partner-tariff-match';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -43,6 +44,7 @@ export class ConnectivityService {
   private static readonly PLATFORM_SLUG = 'platform';
 
   constructor(
+    private readonly ownerInvites: OwnerInviteService,
     private readonly prisma: PrismaService,
     private readonly availability: AvailabilityService,
     private readonly reservations: ReservationsService,
@@ -1068,6 +1070,20 @@ export class ConnectivityService {
       customerId: customer?.isActive ? customer.id : null,
       guestKind: dto.guestKind ?? null,
     };
+  }
+
+  /* Э10 · кабинет гостиницы: ведёт ли она его сама, ждёт ли приглашение. */
+  async cabinet(slug: string) {
+    const tenant = await this.resolveTenant(slug);
+    return this.ownerInvites.status(tenant.id);
+  }
+
+  /* Э10 · пригласить владельца. Ссылку партнёр собирает сам из своего адреса
+     PMS (как для входа диспетчера): PMS отдаёт только одноразовый токен. */
+  async inviteOwner(slug: string, dto: { email: string; fullName: string }, partnerId: string) {
+    const tenant = await this.resolveTenant(slug);
+    const invite = await this.ownerInvites.create(tenant.id, dto, partnerId);
+    return { ...invite, cabinet: await this.ownerInvites.status(tenant.id) };
   }
 
   /** Все корпоративные тарифы партнёра у гостиницы — для его сверки. */

@@ -10,7 +10,10 @@ import {
   Res,
   UnauthorizedException,
   UseGuards,
+  Param,
 } from '@nestjs/common';
+import { OwnerInviteService } from './owner-invite.service';
+import { AcceptOwnerInviteDto } from './dto/accept-owner-invite.dto';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
@@ -26,7 +29,40 @@ const REFRESH_COOKIE = 'refresh_token';
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly invites: OwnerInviteService,
+  ) {}
+
+  /* Э10 · приглашение владельца: страница без входа показывает, куда
+     приглашают; принятие задаёт пароль и сразу входит — тем же входом, что
+     обычный логин (одна выдача сессии на всю систему). */
+  @Public()
+  @Get('invite/:token')
+  @ApiOperation({ summary: 'Owner invite: what hotel and whom it is for' })
+  peekInvite(@Param('token') token: string) {
+    return this.invites.peek(token);
+  }
+
+  @Public()
+  @Post('invite/:token/accept')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Owner invite: set password, create the OWNER account and sign in' })
+  async acceptInvite(
+    @Param('token') token: string,
+    @Body() dto: AcceptOwnerInviteDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const created = await this.invites.accept(token, dto.password);
+    const { user, tokens } = await this.auth.login(
+      { email: created.email, password: dto.password } as never,
+      req.ip,
+      req.headers['user-agent'],
+    );
+    this.setRefreshCookie(res, tokens.refreshToken, tokens.refreshTtlSeconds);
+    return { user, accessToken: tokens.accessToken, accessTtlSeconds: tokens.accessTtlSeconds };
+  }
 
   @Public()
   @Post('register-tenant')

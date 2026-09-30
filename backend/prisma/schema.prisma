@@ -109,6 +109,7 @@ model Tenant {
   auditLogs AuditLog[]
   partnerServices PartnerService[]
   contractPrices  PartnerContractPrice[]
+  ownerInvites    OwnerInvite[]
 
   @@map("tenant")
 }
@@ -1064,4 +1065,26 @@ model HousekeepingTask {
   @@index([roomId])
   @@index([assigneeId])
   @@map("housekeeping_task")
+}
+
+/// Приглашение владельца в кабинет гостиницы (30.09.2026, Э10). Гостиницу
+/// завёл партнёр; чтобы она вела корпоративные тарифы сама, партнёр её
+/// приглашает, и владелец задаёт пароль по одноразовой ссылке. Токен
+/// хранится хешем; новое приглашение отменяет прежние (`revoked`).
+model OwnerInvite {
+  id        String    @id @default(uuid()) @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email     String
+  fullName  String    @map("full_name")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  revoked   Boolean   @default(false)
+  /// Кто пригласил — партнёр (его ключ API).
+  partnerId String?   @map("partner_id") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@map("owner_invite")
 }

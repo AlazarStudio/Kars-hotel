@@ -11,6 +11,18 @@ export async function registerTenant(payload) {
   return data; // { tenantId, userId, accessToken, accessTtlSeconds }
 }
 
+/* Приглашение владельца (Э10): что за гостиница, и принять — задать пароль. */
+export async function peekOwnerInvite(token) {
+  const { data } = await api.get(`/auth/invite/${encodeURIComponent(token)}`);
+  return data;
+}
+
+export async function acceptOwnerInvite(token, password) {
+  const { data } = await api.post(`/auth/invite/${encodeURIComponent(token)}/accept`, { password });
+  setAccessToken(data.accessToken);
+  return data; // { user, accessToken, accessTtlSeconds }
+}
+
 export async function login(payload) {
   const { data } = await api.post("/auth/login", payload);
   setAccessToken(data.accessToken);

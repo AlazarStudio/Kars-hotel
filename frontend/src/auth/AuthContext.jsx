@@ -98,6 +98,13 @@ export function AuthProvider({ children }) {
     return data;
   }, []);
 
+  const acceptInvite = useCallback(async (token, password) => {
+    const data = await authApi.acceptOwnerInvite(token, password);
+    setUser(data.user);
+    setStatus(STATUS.AUTHENTICATED);
+    return data;
+  }, []);
+
   const registerTenant = useCallback(async (payload) => {
     const data = await authApi.registerTenant(payload);
     const profile = await authApi.me();
@@ -197,6 +204,7 @@ export function AuthProvider({ children }) {
       impersonate,
       exitImpersonation,
       ssoEnter,
+      acceptInvite,
       isSuperAdmin: user?.isSuperAdmin === true,
       isImpersonating: impersonatedTenant !== null,
     }),
@@ -211,6 +219,7 @@ export function AuthProvider({ children }) {
       impersonate,
       exitImpersonation,
       ssoEnter,
+      acceptInvite,
     ],
   );
 
