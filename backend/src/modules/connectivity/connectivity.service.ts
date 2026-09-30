@@ -927,6 +927,8 @@ export class ConnectivityService {
       contractNumber: dto.contractNumber,
       amendmentNumber: dto.amendmentNumber ?? null,
       service: dto.service,
+      // Сезоны одного документа — разные листы (30.09.2026).
+      validFrom: new Date(dto.validFrom),
     };
     const data = {
       ...key,
@@ -969,11 +971,15 @@ export class ConnectivityService {
    * должен показывать полупустую картину — по ней как раз и спорят о деньгах. */
   async syncContractPrices(slug: string, documents: ConnectContractPricesDto[], partnerId: string) {
     const tenant = await this.resolveTenant(slug);
+    /* Ключ документа — и день начала листа: у одного ДС бывает несколько
+       сезонов, и без даты в ключе выживал последний (30.09.2026). */
+    const dayOf = (v: string | Date) => new Date(v).toISOString().slice(0, 10);
     const keyOf = (d: {
       contractNumber: string;
       amendmentNumber?: string | null;
       service: string;
-    }) => `${d.contractNumber}|${d.amendmentNumber ?? ''}|${d.service}`;
+      validFrom: string | Date;
+    }) => `${d.contractNumber}|${d.amendmentNumber ?? ''}|${d.service}|${dayOf(d.validFrom)}`;
 
     return this.prisma.admin.$transaction(async (tx) => {
       // Только документы ЭТОГО партнёра: набор одного не стирает договоры другого.
@@ -984,6 +990,7 @@ export class ConnectivityService {
           contractNumber: true,
           amendmentNumber: true,
           service: true,
+          validFrom: true,
         },
       });
       const incoming = new Map(documents.map((d) => [keyOf(d), d]));

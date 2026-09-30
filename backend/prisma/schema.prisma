@@ -281,7 +281,8 @@ model PartnerContractPrice {
   receivedAt      DateTime  @default(now()) @map("received_at")
 
   /// Полная замена по документу: приложение одно на (договор, ДС, услугу).
-  @@unique([tenantId, partnerId, contractNumber, amendmentNumber, service])
+  /// Сезоны одного ДС — разные листы: день начала тоже в ключе (30.09.2026).
+  @@unique([tenantId, partnerId, contractNumber, amendmentNumber, service, validFrom])
   @@index([tenantId])
   @@map("partner_contract_price")
 }
