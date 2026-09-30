@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { PartnerWebhookService } from '../connectivity/partner-webhook.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/context/tenant-context';
 import { BulkUpsertRatesDto } from './dto/bulk-upsert-rates.dto';
@@ -16,7 +17,16 @@ export interface ListRatesFilter {
 
 @Injectable()
 export class RatesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly webhooks: PartnerWebhookService,
+  ) {}
+
+  /* Э9 · правка цен тарифа партнёра роняет его подтверждение — партнёру
+     сообщается сразу (по уже сверенным тарифам; фильтр — в сервисе вебхуков). */
+  private async pricesChanged(ratePlanIds: Iterable<string>): Promise<void> {
+    for (const id of new Set(ratePlanIds)) await this.webhooks.emitForRatePlan(id, 'prices');
+  }
 
   async list(filter: ListRatesFilter) {
     return this.prisma.forTenant((tx) =>
@@ -85,6 +95,7 @@ export class RatesService {
         },
       },
     });
+    await this.pricesChanged(dto.items.map((it) => it.ratePlanId));
     return result;
   }
 
@@ -149,11 +160,13 @@ export class RatesService {
         },
       },
     });
+    await this.pricesChanged([dto.ratePlanId]);
     return result;
   }
 
   async remove(id: string) {
-    await this.prisma.forTenant((tx) => tx.rate.delete({ where: { id } }));
+    const removed = await this.prisma.forTenant((tx) => tx.rate.delete({ where: { id } }));
+    await this.pricesChanged([removed.ratePlanId]);
     return { ok: true };
   }
 
@@ -213,6 +226,7 @@ export class RatesService {
       action: 'set',
       diff: { before: {}, after: { ratePlanId: dto.ratePlanId, count: dto.items.length } },
     });
+    await this.pricesChanged([dto.ratePlanId]);
     return this.listStandard(dto.ratePlanId);
   }
 
@@ -271,6 +285,7 @@ export class RatesService {
       action: 'replace',
       diff: { before: {}, after: { ratePlanId: dto.ratePlanId, seasons: dto.seasons.length } },
     });
+    await this.pricesChanged([dto.ratePlanId]);
     return this.listSeasons(dto.ratePlanId);
   }
 }

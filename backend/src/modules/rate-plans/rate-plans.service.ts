@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { PartnerWebhookService } from '../connectivity/partner-webhook.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   PRISMA_RECORD_NOT_FOUND,
@@ -21,7 +22,10 @@ import {
 
 @Injectable()
 export class RatePlansService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly webhooks: PartnerWebhookService,
+  ) {}
 
   async list() {
     const plans = await this.prisma.forTenant((tx) =>
@@ -116,7 +120,7 @@ export class RatePlansService {
       id,
     );
     try {
-      return await this.prisma.forTenant((tx) =>
+      const updated = await this.prisma.forTenant((tx) =>
         tx.ratePlan.update({
           where: { id },
           data: {
@@ -140,6 +144,9 @@ export class RatePlansService {
           },
         }),
       );
+      // Э9 · партнёру: условия его тарифа поменялись — сверка снова нужна.
+      await this.webhooks.emitForRatePlan(id, 'conditions');
+      return updated;
     } catch (e) {
       throw this.translatePrismaError(e, dto.code);
     }
@@ -148,7 +155,10 @@ export class RatePlansService {
   async remove(id: string) {
     // Prisma cascades Rate rows; child rate plans get parentRatePlanId set to null (SetNull).
     try {
+      const meta = await this.webhooks.planMeta(id);
       await this.prisma.forTenant((tx) => tx.ratePlan.delete({ where: { id } }));
+      // Э9 · партнёру: тарифа больше нет — брони по нему надо пересмотреть.
+      await this.webhooks.emitTariffChanged(meta, 'removed');
       return { ok: true };
     } catch (e) {
       throw this.translatePrismaError(e);

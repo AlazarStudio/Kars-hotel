@@ -705,22 +705,8 @@ export class ConnectivityService {
     this.logger.log(
       `Partner reservation updated in hotel ${slug}: ${id} (${before.checkIn}…${before.checkOut} → ${after.checkIn}…${after.checkOut})`,
     );
-    /* Партнёр узнаёт об изменении и тем же путём, что о заезде и отмене:
-       ответ на запрос он получит и так, но вебхук закрывает случай, когда
-       правку сделали НЕ через него — например, гостиница переселила гостя. */
-    await this.partnerWebhooks.emitForReservation('reservation.changed', id, {
-      reservationId: id,
-      hotelSlug: slug,
-      checkIn: after.checkIn,
-      checkOut: after.checkOut,
-      roomId: after.roomId,
-      roomNumber: after.roomNumber,
-      guestName: after.guestName,
-      adults: after.adults,
-      children: after.children,
-      status: after.status,
-      version: after.version,
-    });
+    /* «Бронь изменена» сообщает сама правка (`ReservationsService.update`) —
+       и для правок гостиницы, и для правок партнёра, одним форматом. */
     return after;
   }
 

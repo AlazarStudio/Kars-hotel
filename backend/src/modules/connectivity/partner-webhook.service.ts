@@ -29,7 +29,17 @@ export type PartnerWebhookType =
   | 'reservation.cancelled'
   | 'guest.checked_in'
   | 'guest.checked_out'
-  | 'guest.no_show';
+  | 'guest.no_show'
+  | 'tariff.changed';
+
+export interface TariffMeta {
+  id: string;
+  code: string;
+  name: string;
+  partnerId: string | null;
+  reviewVerdict: string | null;
+  slug: string;
+}
 
 @Injectable()
 export class PartnerWebhookService {
@@ -76,6 +86,98 @@ export class PartnerWebhookService {
         `Не удалось подготовить вебхук ${type} по брони ${reservationId}: ${(e as Error).message}`,
       );
     }
+  }
+
+  /* БРОНЬ ИЗМЕНЕНА — одним местом и в формате договора (30.09.2026, Э9).
+   *
+   * Раньше событие слал только путь партнёра (connectivity), и сырым
+   * форматом PMS: `reservationId` вместо `id`, статус заглавными. Приёмник
+   * Авии искал бронь по `id` — и ни одно «изменена» не находило размещения.
+   * А правки самой гостиницы (перенесла даты, переселила в другой номер на
+   * шахматке) не сообщались вовсе. Теперь правку брони партнёра сообщает
+   * сама правка — откуда бы она ни пришла, — и одним форматом. */
+  async emitReservationChanged(reservationId: string): Promise<void> {
+    if (!this.url || !this.secret) return;
+    try {
+      const rows = await this.prisma.admin.$queryRaw<
+        {
+          id: string;
+          status: string;
+          check_in: Date;
+          check_out: Date;
+          room_id: string | null;
+          room_number: string | null;
+          version: number;
+          channel_managed: boolean;
+          slug: string;
+        }[]
+      >`
+        SELECT r.id, r.status::text AS status, r.check_in, r.check_out, r.room_id,
+               rm.number AS room_number, r.version, r.channel_managed, t.slug
+        FROM reservation r
+        JOIN tenant t ON t.id = r.tenant_id
+        LEFT JOIN room rm ON rm.id = r.room_id
+        WHERE r.id = ${reservationId}::uuid
+        LIMIT 1
+      `;
+      const r = rows[0];
+      if (!r?.channel_managed) return;
+      const day = (d: Date) => d.toISOString().slice(0, 10);
+      void this.deliver('reservation.changed', r.slug, {
+        id: r.id,
+        reservationId: r.id,
+        status: r.status.toLowerCase(),
+        checkIn: day(r.check_in),
+        checkOut: day(r.check_out),
+        roomId: r.room_id,
+        roomNumber: r.room_number,
+        version: r.version,
+      });
+    } catch (e) {
+      this.log.warn(`Не удалось подготовить вебхук reservation.changed по брони ${reservationId}: ${(e as Error).message}`);
+    }
+  }
+
+  /* ТАРИФ ПАРТНЁРА ИЗМЕНЁН (30.09.2026, Э9).
+   *
+   * Правка цен, условий или выключение корпоративного тарифа роняет его
+   * подтверждение (отпечаток сверки), а партнёр узнавал об этом, только
+   * открыв панель. Теперь гостиница говорит сама. Только по тарифу, который
+   * уже сверяли (подтверждён или отклонён): правки черновика никого не
+   * касаются, а шум приучает не читать. */
+  async planMeta(ratePlanId: string): Promise<TariffMeta | null> {
+    try {
+      const rows = await this.prisma.admin.$queryRaw<TariffMeta[]>`
+        SELECT rp.id, rp.code, rp.name, rp.partner_id AS "partnerId",
+               rp.review_verdict::text AS "reviewVerdict", t.slug
+        FROM rate_plan rp
+        JOIN tenant t ON t.id = rp.tenant_id
+        WHERE rp.id = ${ratePlanId}::uuid
+        LIMIT 1
+      `;
+      return rows[0] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async emitTariffChanged(
+    meta: TariffMeta | null,
+    change: 'prices' | 'conditions' | 'removed',
+  ): Promise<void> {
+    if (!this.url || !this.secret || !meta?.partnerId || !meta.reviewVerdict) return;
+    void this.deliver('tariff.changed', meta.slug, {
+      ratePlanId: meta.id,
+      code: meta.code,
+      name: meta.name,
+      change,
+    });
+  }
+
+  /** То же по id — для правок, после которых тариф ещё существует. */
+  async emitForRatePlan(ratePlanId: string, change: 'prices' | 'conditions'): Promise<void> {
+    if (!this.url || !this.secret) return;
+    await this.emitTariffChanged(await this.planMeta(ratePlanId), change);
   }
 
   /** Доставка с ретраями. Живёт в фоне — результат никого не блокирует. */

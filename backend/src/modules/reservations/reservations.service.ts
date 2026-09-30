@@ -433,6 +433,10 @@ export class ReservationsService {
       diff: { before: {}, after: { status: result.status, version: result.version } },
     });
 
+    /* Правка брони партнёра — ему сообщается ЗДЕСЬ, откуда бы она ни пришла:
+       переселила гостиница на шахматке или перенёс даты сам партнёр. */
+    await this.partnerWebhooks.emitReservationChanged(result.id);
+
     return { id: result.id, status: result.status, version: result.version };
   }
 
