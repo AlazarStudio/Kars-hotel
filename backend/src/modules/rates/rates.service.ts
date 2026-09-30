@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PartnerWebhookService } from '../connectivity/partner-webhook.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { RedisService } from '../../common/redis/redis.service';
+import { InventoryService } from '../inventory/inventory.service';
 import { TenantContext } from '../../common/context/tenant-context';
 import { BulkUpsertRatesDto } from './dto/bulk-upsert-rates.dto';
 import { FillRatesDto } from './dto/fill-rates.dto';
@@ -20,12 +22,43 @@ export class RatesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly webhooks: PartnerWebhookService,
+    private readonly redis: RedisService,
   ) {}
 
   /* Э9 · правка цен тарифа партнёра роняет его подтверждение — партнёру
-     сообщается сразу (по уже сверенным тарифам; фильтр — в сервисе вебхуков). */
-  private async pricesChanged(ratePlanIds: Iterable<string>): Promise<void> {
-    for (const id of new Set(ratePlanIds)) await this.webhooks.emitForRatePlan(id, 'prices');
+     сообщается сразу (по уже сверенным тарифам; фильтр — в сервисе вебхуков).
+     Только если цены ДЕЙСТВИТЕЛЬНО изменились (30.09.2026, Э12): «Сохранить»
+     без правок слал партнёру «гостиница изменила тариф», а подтверждение при
+     этом держалось — отпечаток тот же. Шум приучает не читать. */
+  private async pricesChanged(
+    ratePlanIds: Iterable<string>,
+    before: Map<string, string>,
+  ): Promise<void> {
+    const ids = [...new Set(ratePlanIds)];
+    await InventoryService.dropPriceCache(this.redis, TenantContext.getTenantIdOrThrow());
+    const after = await this.priceSnapshot(ids);
+    for (const id of ids) {
+      if (before.get(id) !== after.get(id)) await this.webhooks.emitForRatePlan(id, 'prices');
+    }
+  }
+
+  /** Все цены тарифа одной строкой — чтобы сравнить «до» и «после» правки. */
+  private async priceSnapshot(ratePlanIds: Iterable<string>): Promise<Map<string, string>> {
+    const ids = [...new Set(ratePlanIds)];
+    const [days, seasons, standard] = await this.prisma.forTenant((tx) =>
+      Promise.all([
+        tx.rate.findMany({ where: { ratePlanId: { in: ids } } }),
+        tx.rateSeason.findMany({ where: { ratePlanId: { in: ids } } }),
+        tx.standardRate.findMany({ where: { ratePlanId: { in: ids } } }),
+      ]),
+    );
+    const day = (d: Date) => d.toISOString().slice(0, 10);
+    const lines = new Map<string, string[]>(ids.map((id) => [id, []]));
+    for (const r of days) lines.get(r.ratePlanId)?.push(`d|${r.roomTypeId}|${day(r.date)}|${r.occupancy}|${r.price}|${r.currency}`);
+    for (const r of seasons)
+      lines.get(r.ratePlanId)?.push(`s|${r.roomTypeId}|${day(r.dateFrom)}|${day(r.dateTo)}|${r.occupancy}|${r.price}|${r.currency}`);
+    for (const r of standard) lines.get(r.ratePlanId)?.push(`b|${r.roomTypeId}|${r.occupancy}|${r.price}|${r.currency}`);
+    return new Map([...lines].map(([id, l]) => [id, l.sort().join(';')]));
   }
 
   async list(filter: ListRatesFilter) {
@@ -50,6 +83,7 @@ export class RatesService {
 
   async bulkUpsert(dto: BulkUpsertRatesDto) {
     const tenantId = TenantContext.getTenantIdOrThrow();
+    const before = await this.priceSnapshot(dto.items.map((it) => it.ratePlanId));
     const result = await this.prisma.forTenant(async (tx) => {
       let written = 0;
       for (const it of dto.items) {
@@ -95,12 +129,13 @@ export class RatesService {
         },
       },
     });
-    await this.pricesChanged(dto.items.map((it) => it.ratePlanId));
+    await this.pricesChanged(dto.items.map((it) => it.ratePlanId), before);
     return result;
   }
 
   async fillRange(dto: FillRatesDto) {
     const tenantId = TenantContext.getTenantIdOrThrow();
+    const before = await this.priceSnapshot([dto.ratePlanId]);
     const from = new Date(`${dto.fromDate}T00:00:00.000Z`);
     const to = new Date(`${dto.toDate}T00:00:00.000Z`);
     if (to.getTime() < from.getTime()) {
@@ -160,13 +195,15 @@ export class RatesService {
         },
       },
     });
-    await this.pricesChanged([dto.ratePlanId]);
+    await this.pricesChanged([dto.ratePlanId], before);
     return result;
   }
 
   async remove(id: string) {
     const removed = await this.prisma.forTenant((tx) => tx.rate.delete({ where: { id } }));
-    await this.pricesChanged([removed.ratePlanId]);
+    // Строка удалена — цены изменились наверняка.
+    await InventoryService.dropPriceCache(this.redis, TenantContext.getTenantIdOrThrow());
+    await this.webhooks.emitForRatePlan(removed.ratePlanId, 'prices');
     return { ok: true };
   }
 
@@ -188,6 +225,7 @@ export class RatesService {
    */
   async setStandard(dto: SetStandardRatesDto) {
     const tenantId = TenantContext.getTenantIdOrThrow();
+    const before = await this.priceSnapshot([dto.ratePlanId]);
     const currency = dto.currency ?? 'RUB';
     await this.prisma.forTenant(async (tx) => {
       for (const it of dto.items) {
@@ -226,7 +264,7 @@ export class RatesService {
       action: 'set',
       diff: { before: {}, after: { ratePlanId: dto.ratePlanId, count: dto.items.length } },
     });
-    await this.pricesChanged([dto.ratePlanId]);
+    await this.pricesChanged([dto.ratePlanId], before);
     return this.listStandard(dto.ratePlanId);
   }
 
@@ -249,6 +287,7 @@ export class RatesService {
    */
   async replaceSeasons(dto: ReplaceSeasonsDto) {
     const tenantId = TenantContext.getTenantIdOrThrow();
+    const before = await this.priceSnapshot([dto.ratePlanId]);
     const currency = dto.currency ?? 'RUB';
 
     for (const s of dto.seasons) {
@@ -285,7 +324,7 @@ export class RatesService {
       action: 'replace',
       diff: { before: {}, after: { ratePlanId: dto.ratePlanId, seasons: dto.seasons.length } },
     });
-    await this.pricesChanged([dto.ratePlanId]);
+    await this.pricesChanged([dto.ratePlanId], before);
     return this.listSeasons(dto.ratePlanId);
   }
 }

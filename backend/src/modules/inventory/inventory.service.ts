@@ -49,6 +49,20 @@ export class InventoryService {
     return `avail:${tenantId}:${roomTypeId}:${checkIn}:${checkOut}`;
   }
 
+  /* ЦЕНЫ ТАРИФОВ ГОСТИНИЦЫ ИЗМЕНИЛИСЬ (30.09.2026, Э12) — кеш цен сбросить.
+   *
+   * Цены тарифов кешируются вместе с наличием на минуту, а правка тарифа
+   * кеш не трогала: минуту после правки предложение и БРОНЬ считались по
+   * старой цене — бронь записывала сумму, которой у гостиницы уже нет.
+   * Сквозная проба поймала: цену подняли до 4 500, бронь легла по 4 400.
+   *
+   * Статическая, как и формат ключа: сбрасывают сервисы тарифов и цен, у
+   * которых своего доступа к наличию нет и быть не должно. */
+  static async dropPriceCache(redis: RedisService, tenantId: string): Promise<void> {
+    const keys = await redis.raw.keys(`avail:${tenantId}:*:plans:*`);
+    if (keys.length) await redis.raw.del(...keys);
+  }
+
   /** Invalidate all cached availability keys that overlap with `dates`. */
   async invalidateCache(tenantId: string, roomTypeId: string, dates: Date[]): Promise<void> {
     if (!dates.length) return;

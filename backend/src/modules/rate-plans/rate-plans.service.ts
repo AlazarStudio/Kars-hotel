@@ -1,6 +1,8 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PartnerWebhookService } from '../connectivity/partner-webhook.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { RedisService } from '../../common/redis/redis.service';
+import { InventoryService } from '../inventory/inventory.service';
 import {
   PRISMA_RECORD_NOT_FOUND,
   PRISMA_UNIQUE_VIOLATION,
@@ -25,7 +27,14 @@ export class RatePlansService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly webhooks: PartnerWebhookService,
+    private readonly redis: RedisService,
   ) {}
+
+  /* Состав, условия и активность тарифов входят в кеш цен предложения —
+     после правки его сбросить, иначе минуту предлагается старое (Э12). */
+  private dropPriceCache(): Promise<void> {
+    return InventoryService.dropPriceCache(this.redis, TenantContext.getTenantIdOrThrow());
+  }
 
   async list() {
     const plans = await this.prisma.forTenant((tx) =>
@@ -59,7 +68,7 @@ export class RatePlansService {
     this.assertOperatorPlanStandsAlone(scope.partnerId != null, dto.parentRatePlanId);
     await this.assertUniquePartnerScope(scope, dto.mealPlan ?? 'NONE', dto.isActive ?? true);
     try {
-      return await this.prisma.forTenant((tx) =>
+      const created = await this.prisma.forTenant((tx) =>
         tx.ratePlan.create({
           data: {
             tenantId: TenantContext.getTenantIdOrThrow(),
@@ -82,6 +91,8 @@ export class RatePlansService {
           include: { parentRatePlan: { select: { id: true, code: true, name: true } } },
         }),
       );
+      await this.dropPriceCache();
+      return created;
     } catch (e) {
       throw this.translatePrismaError(e, dto.code);
     }
@@ -144,6 +155,7 @@ export class RatePlansService {
           },
         }),
       );
+      await this.dropPriceCache();
       // Э9 · партнёру: условия его тарифа поменялись — сверка снова нужна.
       await this.webhooks.emitForRatePlan(id, 'conditions');
       return updated;
@@ -157,6 +169,7 @@ export class RatePlansService {
     try {
       const meta = await this.webhooks.planMeta(id);
       await this.prisma.forTenant((tx) => tx.ratePlan.delete({ where: { id } }));
+      await this.dropPriceCache();
       // Э9 · партнёру: тарифа больше нет — брони по нему надо пересмотреть.
       await this.webhooks.emitTariffChanged(meta, 'removed');
       return { ok: true };
