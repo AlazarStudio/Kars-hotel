@@ -4,6 +4,15 @@ import s from './Settings.module.css';
 import f from '../../shared/Form.module.css';
 import { useTenantSettings, useUpdateTenantSettings } from '../../../../hooks/api/useTenantSettings';
 import { addGalleryPhoto, updateGallery } from '../../../../api/tenant';
+import {
+  FACILITY_ITEMS,
+  INFRASTRUCTURE_ITEMS,
+  ROOM_GROUPS,
+  aboutLocationLine,
+  buildHotelAboutText,
+  infrastructureTags,
+  parseHotelAbout,
+} from './hotelAbout';
 
 // ─── Nav sections ─────────────────────────────────────────────────────────────
 
@@ -15,6 +24,20 @@ const NAV_SECTIONS = [
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
         <polyline points="9,22 9,12 15,12 15,22" />
+      </svg>
+    ),
+  },
+  /* Описание по разделам со словарями (перенос из старой системы, сверка
+     01.10.2026): вместо одного свободного поля — отметки и уточнения. */
+  {
+    id: 'about',
+    label: 'Описание',
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <polyline points="14,2 14,8 20,8" />
+        <line x1="8" y1="13" x2="16" y2="13" />
+        <line x1="8" y1="17" x2="13" y2="17" />
       </svg>
     ),
   },
@@ -135,6 +158,11 @@ export default function Settings() {
   const [galleryBusy, setGalleryBusy] = useState(false);
   const [galleryError, setGalleryError] = useState(null);
   const galleryRef = useRef(null);
+  /* Описание по разделам: состояние редактора разбирается из сохранённого
+     текста один раз. Текст пересобирается ТОЛЬКО если редактор трогали —
+     иначе правка телефона молча переписала бы описание в новый вид. */
+  const [about, setAbout] = useState(null);
+  const [aboutDirty, setAboutDirty] = useState(false);
 
   // Populate form from loaded settings
   useEffect(() => {
@@ -162,8 +190,28 @@ export default function Settings() {
         cancellationHours: settings.cancellationHours ?? 24,
         multiPlaceEnabled: settings.multiPlaceEnabled ?? false,
       });
+      setAbout(parseHotelAbout(settings.description ?? ''));
     }
   }, [settings, form]);
+
+  const setAboutPart = useCallback((key, patch) => {
+    setAbout((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
+    setAboutDirty(true);
+  }, []);
+  const toggleAboutItem = useCallback((key, itemKey) => {
+    setAbout((prev) => {
+      const checked = prev[key].checked.includes(itemKey)
+        ? prev[key].checked.filter((k) => k !== itemKey)
+        : [...prev[key].checked, itemKey];
+      return { ...prev, [key]: { ...prev[key], checked } };
+    });
+    setAboutDirty(true);
+  }, []);
+  const aboutText = about && form
+    ? buildHotelAboutText(about, { name: form.name, location: aboutLocationLine(form) })
+    : '';
+  // Что увидят: пока редактор не трогали, сохранённый текст остаётся как есть.
+  const shownDescription = aboutDirty ? aboutText : (form?.description ?? '');
 
   const set = useCallback((field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -235,7 +283,9 @@ export default function Settings() {
         website:           form.website           || undefined,
         email:             form.email             || undefined,
         stars:             form.stars             ? Number(form.stars) : undefined,
-        description:       form.description       || undefined,
+        description:       aboutDirty ? aboutText : (form.description || undefined),
+        // Отмеченная инфраструктура — теги «рядом» в карточке Kars Avia.
+        ...(aboutDirty ? { infrastructure: infrastructureTags(about) } : {}),
         logoUrl:           form.logoUrl           || undefined,
         timezone:          form.timezone          || undefined,
         currency:          form.currency          || undefined,
@@ -251,15 +301,19 @@ export default function Settings() {
         multiPlaceEnabled: form.multiPlaceEnabled,
       };
       await updateMutation.mutateAsync(payload);
+      if (aboutDirty) {
+        set('description', aboutText);
+        setAboutDirty(false);
+      }
       setSavedSection(activeSection);
       setTimeout(() => setSavedSection(null), 3000);
     } catch (err) {
       const msg = err?.response?.data?.message ?? err.message ?? 'Ошибка сохранения';
       setSaveError(Array.isArray(msg) ? msg.join('; ') : msg);
     }
-  }, [form, activeSection, updateMutation]);
+  }, [form, activeSection, updateMutation, aboutDirty, aboutText, about, set]);
 
-  if (isLoading || !form) {
+  if (isLoading || !form || !about) {
     return (
       <div className={s.root}>
         <aside className={s.nav}>
@@ -443,15 +497,14 @@ export default function Settings() {
                 <div className={s.sectionDesc}>Описание и галерея фотографий</div>
               </div>
               <div className={s.sectionBody}>
+                {/* Описание правится по разделам — одно поле с двумя
+                    редакторами разошлось бы с самим собой. */}
                 <div className={f.field}>
                   <label className={f.label}>Описание</label>
-                  <textarea
-                    className={f.textarea}
-                    value={form.description}
-                    onChange={e => set('description', e.target.value)}
-                    placeholder="Краткое описание отеля..."
-                    rows={4}
-                  />
+                  <pre className={s.aboutPreview}>{shownDescription || 'Описание пусто'}</pre>
+                  <button type="button" className={f.btnSecondary} onClick={() => setActiveSection('about')}>
+                    Редактировать по разделам
+                  </button>
                 </div>
                 <div className={f.field}>
                   <label className={f.label}>Галерея фотографий</label>
@@ -508,6 +561,117 @@ export default function Settings() {
                   </div>
                   {galleryError && <div className={f.fieldError}>{galleryError}</div>}
                 </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ── Описание по разделам ── */}
+        {activeSection === 'about' && (
+          <>
+            <div className={s.section}>
+              <div className={s.sectionHeader}>
+                <div className={s.sectionTitle}>Описание по разделам</div>
+                <div className={s.sectionDesc}>
+                  Отметьте, что есть в гостинице и рядом. Название и локация берутся из «Основной
+                  информации». Описание видят диспетчеры Kars Avia, отмеченная инфраструктура —
+                  тегами в карточке гостиницы.
+                </div>
+              </div>
+            </div>
+            {[
+              ['infrastructure', 'Инфраструктура', 'Что рядом с гостиницей', [{ title: null, items: INFRASTRUCTURE_ITEMS }]],
+              ['facility', 'Оснащение объекта', 'Что есть в самой гостинице', [{ title: null, items: FACILITY_ITEMS }]],
+              ['rooms', 'Оснащение номерного фонда', 'Что есть в номерах', ROOM_GROUPS],
+            ].map(([key, title, desc, groups]) => (
+              <div className={s.section} key={key}>
+                <div className={s.sectionHeader}>
+                  <div className={s.sectionTitle}>{title}</div>
+                  <div className={s.sectionDesc}>{desc}</div>
+                </div>
+                <div className={s.sectionBody}>
+                  {groups.map((g) => (
+                    <div key={g.title ?? key}>
+                      {g.title && <div className={s.aboutGroupTitle}>{g.title}</div>}
+                      <div className={s.aboutChips}>
+                        {g.items.map((it) => {
+                          const on = about[key].checked.includes(it.key);
+                          return (
+                            <button
+                              key={it.key}
+                              type="button"
+                              className={`${s.aboutChip} ${on ? s.aboutChipOn : ''}`}
+                              aria-pressed={on}
+                              onClick={() => toggleAboutItem(key, it.key)}
+                            >
+                              {it.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                  <div className={f.field} style={{ marginTop: 14, marginBottom: 0 }}>
+                    <label className={f.label}>Другое</label>
+                    <input
+                      className={f.input}
+                      value={about[key].extra}
+                      onChange={(e) => setAboutPart(key, { extra: e.target.value })}
+                      placeholder="Чего нет в списке — через запятую"
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+            <div className={s.section}>
+              <div className={s.sectionHeader}>
+                <div className={s.sectionTitle}>Услуги прачечной и глажки</div>
+              </div>
+              <div className={s.sectionBody}>
+                <div className={s.toggleRow}>
+                  <div className={s.toggleInfo}>
+                    <div className={s.toggleLabel}>Прачечная</div>
+                  </div>
+                  <Toggle checked={about.laundry.laundry} onChange={(v) => setAboutPart('laundry', { laundry: v })} />
+                </div>
+                <div className={s.toggleRow}>
+                  <div className={s.toggleInfo}>
+                    <div className={s.toggleLabel}>Глажка</div>
+                  </div>
+                  <Toggle checked={about.laundry.ironing} onChange={(v) => setAboutPart('laundry', { ironing: v })} />
+                </div>
+                <div className={f.field} style={{ marginTop: 14, marginBottom: 0 }}>
+                  <label className={f.label}>Уточнение</label>
+                  <input
+                    className={f.input}
+                    value={about.laundry.extra}
+                    onChange={(e) => setAboutPart('laundry', { extra: e.target.value })}
+                    placeholder="Например: согласно договору"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className={s.section}>
+              <div className={s.sectionHeader}>
+                <div className={s.sectionTitle}>Прочее</div>
+                <div className={s.sectionDesc}>Свободный текст — идёт в конце описания отдельным абзацем</div>
+              </div>
+              <div className={s.sectionBody}>
+                <textarea
+                  className={f.textarea}
+                  value={about.other}
+                  onChange={(e) => setAbout((prev) => ({ ...prev, other: e.target.value }))}
+                  rows={5}
+                />
+              </div>
+            </div>
+            <div className={s.section}>
+              <div className={s.sectionHeader}>
+                <div className={s.sectionTitle}>Как увидят</div>
+                <div className={s.sectionDesc}>Текст описания после сохранения</div>
+              </div>
+              <div className={s.sectionBody}>
+                <pre className={s.aboutPreview}>{shownDescription || 'Описание пусто'}</pre>
               </div>
             </div>
           </>

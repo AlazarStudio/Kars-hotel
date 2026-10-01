@@ -285,3 +285,51 @@
   margin-bottom: 16px;
   line-height: 1.4;
 }
+
+/* ── Описание по разделам ─────────────────────────────────────── */
+.aboutGroupTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6B7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 12px 0 8px;
+}
+.aboutChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.aboutChip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid #D1D5DB;
+  background: #fff;
+  color: #374151;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.aboutChip:hover {
+  border-color: #9CA3AF;
+}
+.aboutChipOn {
+  border-color: #1E88E5;
+  background: #E3F2FD;
+  color: #1565C0;
+  font-weight: 600;
+}
+.aboutPreview {
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #374151;
+  background: #F9FAFB;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0 0 10px;
+  max-height: 320px;
+  overflow: auto;
+}
