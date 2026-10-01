@@ -4,6 +4,7 @@ import { ru } from 'date-fns/locale';
 import classes from './Reports.module.css';
 import { BOOKING_STATUS, BOOKING_SOURCE } from '../../constants';
 import { useTimeline } from '../../../../hooks/useTimeline';
+import AviaReportsTab from './AviaReportsTab';
 
 // ─── CSV export helper ───────────────────────────────────────────────────────
 function exportCSV(rows, filename) {
@@ -195,6 +196,7 @@ function Reports() {
           ['occupancy', 'По категориям'],
           ['source',    'По источникам'],
           ['bookings',  'Список броней'],
+          ['avia',      'Отчёты Kars Avia'],
         ].map(([key, label]) => (
           <button
             key={key}
@@ -268,6 +270,9 @@ function Reports() {
           </div>
         </div>
       )}
+
+      {/* ── Отчёты, выпущенные Kars Avia для гостиницы ── */}
+      {tab === 'avia' && <AviaReportsTab />}
 
       {/* ── Bookings list ── */}
       {tab === 'bookings' && (
