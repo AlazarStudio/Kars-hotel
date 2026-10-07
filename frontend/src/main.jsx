@@ -3,6 +3,9 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App.jsx'
+// Шрифт со своего сервера, а не с Google (152-ФЗ, Р-36): каждая загрузка
+// страницы отдавала Google адрес и устройство сотрудника гостиницы.
+import '@fontsource-variable/inter'
 import './index.css'
 import { AuthProvider } from './auth/AuthContext'
 
