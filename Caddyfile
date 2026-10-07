@@ -28,10 +28,29 @@
 	# Отдельного домена ему не нужно: ключ и права проверяет само приложение,
 	# а разводить один контур по двум именам значит завести второй сертификат
 	# и второе место, где что-нибудь однажды разойдётся.
+	# Журнал доступа (152-ФЗ, Р-13, решение владельца 24; план 12.3): 90 дней
+	# (roll_keep_for; roll_keep с запасом, чтобы резал срок, а не счётчик).
+	# Адрес с токеном — это ключ: кто прочёл журнал, тот принял бы чужое
+	# приглашение в кабинет или вошёл бы по SSO. Поэтому токены в пути
+	# (`/invite/…`, `/api/auth/invite/…`) и в параметрах `token=`, `code=` —
+	# `***`; заголовки-ключи партнёра удаляются (Authorization и Cookie Caddy
+	# скрывает сам); Referer удаляется — он уносит адрес страницы с токеном.
+	# Новый вид ссылки с токеном в пути — дописать в выражение ниже.
 	log {
 		output file /var/log/caddy/pms.log {
-			roll_size 20mb
-			roll_keep 10
+			roll_size 20MiB
+			roll_keep 500
+			roll_keep_for 2160h
+		}
+		format filter {
+			wrap json
+			fields {
+				request>uri regexp "(^/invite/|^/api/auth/invite/|[?&](?:token|code)=)[^/?&]+" "${1}***"
+				request>headers>X-Api-Key delete
+				request>headers>X-Hotel-Key delete
+				request>headers>X-Webhook-Secret delete
+				request>headers>Referer delete
+			}
 		}
 	}
 }

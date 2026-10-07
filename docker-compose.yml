@@ -12,10 +12,20 @@
 # Порты 80/443 наружу открывает только Caddy. База, Redis и MinIO во внешний
 # мир не смотрят вовсе — им незачем.
 
+# Журналы контейнеров — с ротацией (152-ФЗ, Р-13; план 12.3). Без неё
+# json-file Docker растёт без предела и хранит всё, что сервис напечатал,
+# сколько угодно долго. 5 × 20 МБ на сервис.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 20m
+    max-file: '5'
+
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?нужен пароль базы}
@@ -31,6 +41,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    logging: *logging
     volumes:
       - redisdata:/data
 
@@ -39,6 +50,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
+    logging: *logging
     environment:
       NODE_ENV: production
       PORT: 3001
@@ -80,12 +92,14 @@ services:
         # не требует пересборки.
         VITE_API_BASE_URL: /api
     restart: unless-stopped
+    logging: *logging
     depends_on:
       - api
 
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    logging: *logging
     ports:
       - '80:80'
       - '443:443'
@@ -108,6 +122,7 @@ services:
   backup:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *logging
     environment:
       PGHOST: postgres
       PGUSER: ${POSTGRES_USER:-postgres}
