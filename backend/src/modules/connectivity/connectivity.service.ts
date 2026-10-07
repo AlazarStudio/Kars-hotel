@@ -1107,6 +1107,17 @@ export class ConnectivityService {
     return { ...invite, cabinet: await this.ownerInvites.status(tenant.id) };
   }
 
+  /** Ключ гостиницы к «Отчётам Kars Avia» (план 11.3). Приходит повторно —
+   *  перезаписывается: ключ выводит партнёр, у него и правда. */
+  async setReportsKey(slug: string, key: string, partnerId: string) {
+    const tenant = await this.resolveTenant(slug);
+    await this.prisma.admin.aviaReportsKey.upsert({
+      where: { tenantId: tenant.id },
+      create: { tenantId: tenant.id, key, partnerId },
+      update: { key, partnerId },
+    });
+  }
+
   /** Все корпоративные тарифы партнёра у гостиницы — для его сверки. */
   async partnerTariffs(slug: string, partnerId: string) {
     const tenant = await this.resolveTenant(slug);

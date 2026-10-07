@@ -110,8 +110,23 @@ model Tenant {
   partnerServices PartnerService[]
   contractPrices  PartnerContractPrice[]
   ownerInvites    OwnerInvite[]
+  aviaReportsKey  AviaReportsKey?
 
   @@map("tenant")
+}
+
+/// Ключ гостиницы к «Отчётам Kars Avia» (152-ФЗ, план 11.3): выдаёт Kars Avia,
+/// PMS предъявляет его, забирая отчёты СВОЕЙ гостиницы. Отдельно от Tenant —
+/// чтобы не уехать в браузер с настройками гостиницы.
+model AviaReportsKey {
+  tenantId  String   @id @map("tenant_id") @db.Uuid
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key       String
+  /// Какой партнёр прислал (его ключ API).
+  partnerId String?  @map("partner_id") @db.Uuid
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("avia_reports_key")
 }
 
 enum RoleCode {

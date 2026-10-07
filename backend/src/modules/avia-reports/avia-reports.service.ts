@@ -7,10 +7,11 @@ import { PrismaService } from '../../common/prisma/prisma.service';
  *
  * В старой системе админ гостиницы видел свои отчёты в разделе «Отчёты» Авиа.
  * Пользователи гостиницы теперь живут здесь, в PMS, поэтому PMS забирает их
- * у партнёра: список и файл xlsx. Канал тот же, что у вебхуков (общий
- * секрет PMS → партнёр), гостиница называется своим слагом — у партнёра это
- * её идентификатор. Чужих отчётов партнёр не отдаёт: отбор по слагу на его
- * стороне, а слаг здесь берётся из арендатора пользователя, не из запроса.
+ * у партнёра: список и файл xlsx. Гостиница называется своим слагом и
+ * предъявляет СВОЙ ключ (`X-Hotel-Key`, 152-ФЗ, план 11.3) — его присылает
+ * партнёр; общий секрет вебхуков сюда больше не ходит. Ключ гостиницы А
+ * у партнёра не открывает отчёты гостиницы Б, а слаг и ключ здесь берутся
+ * из арендатора пользователя, не из запроса.
  */
 export interface AviaReport {
   id: string;
@@ -36,10 +37,6 @@ export class AviaReportsService {
     return hook ? hook.replace(/\/hotel\/webhooks\/?$/, '/hotel/connect/reports') : '';
   }
 
-  private get secret(): string {
-    return process.env.PARTNER_WEBHOOK_SECRET ?? '';
-  }
-
   private async slugOf(tenantId: string): Promise<string> {
     const rows = await this.prisma.admin.$queryRaw<{ slug: string }[]>`
       SELECT slug FROM tenant WHERE id = ${tenantId}::uuid LIMIT 1
@@ -49,14 +46,22 @@ export class AviaReportsService {
     return slug;
   }
 
+  /** Ключ гостиницы — его присылает Kars Avia при подключении кабинета. */
+  private async keyOf(tenantId: string): Promise<string> {
+    const row = await this.prisma.admin.aviaReportsKey.findUnique({ where: { tenantId } });
+    if (!row) throw new ServiceUnavailableException('Kars Avia ещё не подключила отчёты для гостиницы');
+    return row.key;
+  }
+
   private async call(path: string, tenantId: string): Promise<Response> {
-    if (!this.base || !this.secret) throw new ServiceUnavailableException('Связь с Kars Avia не настроена');
+    if (!this.base) throw new ServiceUnavailableException('Связь с Kars Avia не настроена');
     const slug = await this.slugOf(tenantId);
+    const key = await this.keyOf(tenantId);
     const sep = path.includes('?') ? '&' : '?';
     let res: Response;
     try {
       res = await fetch(`${this.base}${path}${sep}hotelId=${encodeURIComponent(slug)}`, {
-        headers: { 'X-Webhook-Secret': this.secret },
+        headers: { 'X-Hotel-Key': key },
         signal: AbortSignal.timeout(AviaReportsService.TIMEOUT_MS),
       });
     } catch {

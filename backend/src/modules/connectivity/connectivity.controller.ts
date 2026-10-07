@@ -31,6 +31,7 @@ import {
   ConnectContractPricesSyncDto,
 } from './dto/connect-contract-prices.dto';
 import { ConnectRegisterHotelDto } from './dto/connect-register-hotel.dto';
+import { ConnectReportsKeyDto } from './dto/connect-reports-key.dto';
 import { ConnectPartnerDirectoryDto } from './dto/connect-partner-directory.dto';
 import { PartnerDirectoryService } from '../partners/partner-directory.service';
 import { PartnerRequest } from './guards/partner-api-key.guard';
@@ -314,6 +315,20 @@ export class ConnectivityController {
     @Req() req: PartnerRequest,
   ) {
     return this.connectivity.inviteOwner(slug, dto, req.partner!.partnerId);
+  }
+
+  /* Ключ гостиницы к «Отчётам Kars Avia» (152-ФЗ, план 11.3): с ним её
+     кабинет забирает отчёты, выпущенные для неё, и только их. */
+  @Put('hotels/:slug/reports-key')
+  @RequireScopes(PARTNER_SCOPES.HotelsWrite)
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Set the key the hotel uses to fetch its partner reports' })
+  async setReportsKey(
+    @Param('slug') slug: string,
+    @Body() dto: ConnectReportsKeyDto,
+    @Req() req: PartnerRequest,
+  ) {
+    await this.connectivity.setReportsKey(slug, dto.key, req.partner!.partnerId);
   }
 
   @Get('hotels/:slug/corporate-tariffs')
