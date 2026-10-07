@@ -1,0 +1,36 @@
+# Обновления зависимостей (152-ФЗ, Т-35, Т-36; план 12.8).
+#
+# Сроки — по критичности: critical — 7 дней, high — 30 (CI валит сборку на
+# critical, см. .github/workflows/audit.yml). Плановые обновления: пакеты —
+# еженедельно пачкой внутри мажорной версии, образы и действия CI —
+# ежемесячно. Заявки по уязвимостям (Dependabot security updates) включают в
+# настройках репозитория: Settings → Code security → Dependabot security updates.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directories:
+      - /backend
+      - /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directories:
+      - /backend
+      - /frontend
+    schedule:
+      interval: monthly
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: monthly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

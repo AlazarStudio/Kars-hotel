@@ -1,0 +1,32 @@
+# Уязвимые зависимости (152-ФЗ, Р-15, Т-35; план 12.6, 12.8): critical в том,
+# что едет на бой, валит проверку. High — в срок 30 дней через Dependabot.
+name: Audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Раз в неделю и без коммитов: новые уязвимости публикуют в старых версиях.
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [backend, frontend]
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm audit --prod --audit-level critical

@@ -101,5 +101,11 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
+  },
+  "pnpm": {
+    "overrides": {
+      "proxy-addr": ">=2.0.8",
+      "multer": ">=2.3.0"
+    }
   }
 }
