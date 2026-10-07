@@ -77,6 +77,10 @@ services:
       # X-Webhook-Secret. Пусто — вебхуки выключены, это штатно.
       PARTNER_WEBHOOK_URL: ${PARTNER_WEBHOOK_URL:-}
       PARTNER_WEBHOOK_SECRET: ${PARTNER_WEBHOOK_SECRET:-}
+      # На бою адреса наружу — только https: с http:// в PUBLIC_URL (PMS_DOMAIN)
+      # или адресах партнёра API не стартует (152-ФЗ, план 12.1). Временный
+      # режим без доменов — ALLOW_INSECURE_HTTP=yes, осознанно.
+      ALLOW_INSECURE_HTTP: ${ALLOW_INSECURE_HTTP:-}
     depends_on:
       postgres:
         condition: service_healthy

@@ -7,8 +7,11 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { assertSecureTransport } from './common/transport-security';
 
 async function bootstrap() {
+  // На бою адреса наружу — только https (152-ФЗ, план 12.1).
+  assertSecureTransport();
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
   /* Лимит тела — 2 МБ вместо 100 КБ по умолчанию (30.09.2026). Копия договорных
      цен партнёра везёт сетки «Заполнить по договору», и у крупных гостиниц
