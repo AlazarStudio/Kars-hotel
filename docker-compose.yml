@@ -142,6 +142,29 @@ services:
       postgres:
         condition: service_healthy
 
+  # Восстановление — своей службой (152-ФЗ, Р-52; план 12.5). Не стартует с
+  # `up` (профиль restore), запускается руками:
+  #   docker compose run --rm restore                          # список копий
+  #   docker compose run --rm -e CONFIRM=yes restore <дамп>
+  # Заводит app_user без обхода RLS и проверяет изоляцию гостиниц.
+  restore:
+    image: postgres:16-alpine
+    profiles: [restore]
+    logging: *logging
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-postgres}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-kars_hotel}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?нужен пароль app_user}
+    volumes:
+      - ./backup:/backup:ro
+      - backups:/backups:ro
+    entrypoint: ['/bin/sh', '/backup/restore.sh']
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   pgdata:
   redisdata:
