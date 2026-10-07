@@ -24,6 +24,51 @@ HOUR="${BACKUP_AT_HOUR:-3}"
 
 log() { echo "[$(date -u '+%Y-%m-%d %H:%M:%S')] $*"; }
 
+# ВНЕШНЯЯ КОПИЯ (152-ФЗ, Р-14; план 12.4). Копии в томе той же машины гибнут
+# вместе с ней. Поэтому каждая удачная копия уходит наружу — зашифрованной:
+#  · `age` ОТКРЫТЫМ ключом (BACKUP_AGE_RECIPIENT, age1…): закрытого на сервере
+#    нет — свою же внешнюю копию он расшифровать не может;
+#  · `rclone` в S3-совместимое хранилище в РФ у ДРУГОГО провайдера
+#    (BACKUP_REMOTE, например `offsite:kars-hotel`). Ключ сервера — ТОЛЬКО НА
+#    ЗАПИСЬ: ни чтения, ни списка, ни удаления. Отсюда `--no-check-dest
+#    --s3-no-check-bucket --s3-no-head`: rclone по умолчанию сперва спрашивает
+#    HeadObject — с таким ключом это 403 (поймано пробой 07.10.2026).
+#  · Срок держит правило бакета (db/ старше 62 дней удаляется): удалить ключом
+#    «только на запись» нельзя.
+# Без BACKUP_REMOTE внешней копии нет — это ошибка в журнал и сигнал /fail.
+REMOTE="${BACKUP_REMOTE:-}"
+RECIPIENT="${BACKUP_AGE_RECIPIENT:-}"
+RCLONE_FLAGS="--no-check-dest --s3-no-check-bucket --s3-no-head --retries 3"
+
+offsite_db() {
+  if [ -z "$REMOTE" ]; then
+    log "ОШИБКА: внешней копии нет — BACKUP_REMOTE не задан"
+    return 1
+  fi
+  if [ -z "$RECIPIENT" ]; then
+    log "ОШИБКА: BACKUP_AGE_RECIPIENT не задан — без шифрования наружу не отправляем"
+    return 1
+  fi
+  enc="$DIR/.offsite.$$.age"
+  if age -r "$RECIPIENT" -o "$enc" "$1" && rclone copyto $RCLONE_FLAGS "$enc" "$REMOTE/db/$(basename "$1").age" 2>>"$DIR/.rclone.log"; then
+    rm -f "$enc"
+    log "внешняя копия: db/$(basename "$1").age"
+    return 0
+  fi
+  rm -f "$enc"
+  log "ОШИБКА: копия наружу не ушла (подробности — $DIR/.rclone.log)"
+  return 1
+}
+
+# ТРЕВОГА О ПРОПУЩЕННОЙ КОПИИ (план 12.4) — «пульс» во внешний монитор
+# (BACKUP_PING_URL, протокол healthchecks: успех — адрес, сбой — адрес/fail).
+# Монитор тревожит, если сигнал пришёл с /fail ИЛИ не пришёл вовсе: второе
+# ловит и упавшую службу, и мёртвый сервер целиком. Данных сигнал не несёт.
+ping() {
+  [ -n "${BACKUP_PING_URL:-}" ] || return 0
+  wget -q -T 15 -O /dev/null "${BACKUP_PING_URL%/}$1" 2>/dev/null || log "сигнал в монитор не ушёл ($1)"
+}
+
 backup_once() {
   stamp="$(date -u '+%Y-%m-%d_%H%M')"
   target="$DIR/pms-$stamp.dump"
@@ -46,6 +91,9 @@ backup_once() {
   size=$(du -h "$target" | cut -f1)
   log "готово: $(basename "$target"), $size"
 
+  # Наружу — только целая копия; не ушло — сбой всей копии (сигнал /fail).
+  offsite_db "$target" || return 1
+
   # Чистка — только теперь, когда свежая копия заведомо цела.
   removed=$(find "$DIR" -name 'pms-*.dump' -type f -mtime "+$KEEP" -print -delete | wc -l)
   [ "$removed" -gt 0 ] && log "удалено старых копий: $removed"
@@ -57,7 +105,7 @@ log "служба копирования запущена: ежедневно в
 # Копия при СТАРТЕ, если за сегодня её ещё нет: сервер могли перезагрузить в
 # час копирования, и ждать сутки ради этого незачем.
 if ! ls "$DIR"/pms-"$(date -u '+%Y-%m-%d')"_*.dump >/dev/null 2>&1; then
-  backup_once || true
+  if backup_once; then ping ""; else ping /fail; fi
 fi
 
 while true; do
@@ -68,5 +116,5 @@ while true; do
   [ "$wait_s" -le 0 ] && wait_s=$(( wait_s + 86400 ))
   log "следующая копия через $((wait_s / 3600)) ч $(((wait_s % 3600) / 60)) мин"
   sleep "$wait_s"
-  backup_once || true
+  if backup_once; then ping ""; else ping /fail; fi
 done

@@ -9,6 +9,13 @@
 #   docker compose run --rm restore                                   # список копий
 #   docker compose run --rm -e CONFIRM=yes restore pms-2026-09-02_0300.dump
 #
+# ИЗ ВНЕШНЕЙ КОПИИ (план 12.4) — когда сервер погиб вместе с томом копий. Нужны
+# две вещи, которых на сервере нет НАМЕРЕННО: закрытый ключ age (у
+# ответственного) и ключ хранилища НА ЧТЕНИЕ (ключ сервера — только на запись):
+#   docker compose run --rm -e CONFIRM=yes -v /путь/age.key:/run/age.key:ro \
+#     -e RCLONE_CONFIG_OFFSITE_ACCESS_KEY_ID=… -e RCLONE_CONFIG_OFFSITE_SECRET_ACCESS_KEY=… \
+#     restore --offsite-db [pms-….dump.age]          # без имени — последняя
+#
 # ЧТО ЭТО ДЕЛАЕТ: сносит текущие данные базы и ставит на их место содержимое
 # копии. Обратного хода нет, поэтому нужен CONFIRM=yes — случайный запуск не
 # должен стирать боевую базу.
@@ -28,6 +35,9 @@ set -eu
 
 DIR=/backups
 FILE="${1:-}"
+REMOTE="${BACKUP_REMOTE:-}"
+KEY="${BACKUP_AGE_KEY:-/run/age.key}"
+WORK=/tmp/offsite
 
 if [ -z "$FILE" ]; then
   echo "Укажите файл копии. Доступные:"
@@ -35,7 +45,24 @@ if [ -z "$FILE" ]; then
   exit 1
 fi
 
-SRC="$DIR/$(basename "$FILE")"
+if [ "$FILE" = "--offsite-db" ]; then
+  [ -n "$REMOTE" ] || { echo "Не задан BACKUP_REMOTE — где лежит внешняя копия"; exit 1; }
+  [ -f "$KEY" ] || { echo "Нет закрытого ключа age ($KEY). На сервере его нет намеренно — принесите и подключите -v …:/run/age.key:ro"; exit 1; }
+  mkdir -p "$WORK"
+  name="${2:-}"
+  if [ -z "$name" ]; then
+    out="$(rclone lsf "$REMOTE/db/")" || { echo "Хранилище не отдаёт список — нужен ключ НА ЧТЕНИЕ (ключ сервера — только на запись)"; exit 1; }
+    name="$(echo "$out" | sort | tail -1)"
+  fi
+  [ -n "$name" ] || { echo "Во внешней копии нет ни одной базы"; exit 1; }
+  echo "Получаю и расшифровываю db/$name…"
+  SRC="$WORK/$(basename "$name" .age)"
+  rclone copyto --s3-no-check-bucket "$REMOTE/db/$name" "$WORK/obj.age" && age -d -i "$KEY" -o "$SRC" "$WORK/obj.age" \
+    || { rm -f "$WORK/obj.age"; echo "Копия не получена или не расшифрована"; exit 1; }
+  rm -f "$WORK/obj.age"
+else
+  SRC="$DIR/$(basename "$FILE")"
+fi
 [ -f "$SRC" ] || { echo "Нет такого файла: $SRC"; exit 1; }
 
 echo "Проверяю архив…"
