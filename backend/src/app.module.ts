@@ -12,7 +12,7 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { RoomTypesModule } from './modules/room-types/room-types.module';
 import { RoomsModule } from './modules/rooms/rooms.module';
-import { DemoSeedModule } from './modules/demo-seed/demo-seed.module';
+import { demoSeedModules } from './modules/demo-seed/demo-seed.module';
 import { RatePlansModule } from './modules/rate-plans/rate-plans.module';
 import { RatesModule } from './modules/rates/rates.module';
 import { RestrictionsModule } from './modules/restrictions/restrictions.module';
@@ -57,7 +57,7 @@ import { ConnectivityModule } from './modules/connectivity/connectivity.module';
     HealthModule,
     RoomTypesModule,
     RoomsModule,
-    DemoSeedModule,
+    ...demoSeedModules(),
     RatePlansModule,
     RatesModule,
     RestrictionsModule,
