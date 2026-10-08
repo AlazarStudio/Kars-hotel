@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { PartnerScope } from './decorators/partner-scopes.decorator';
+import { PARTNER_SCOPES, PartnerScope } from './decorators/partner-scopes.decorator';
 
 /** Identity attached to the request after a successful key verification. */
 export interface VerifiedPartner {
@@ -60,6 +60,12 @@ export class PartnerKeyService {
     /** Код партнёра, которому выдаётся ключ (29.09.2026). */
     partnerCode?: string;
   }): Promise<MintedKey> {
+    /* Вход диспетчеров — отдельным ключом (152-ФЗ, Р-34; план 13.3): sso:create
+       выписывает вход по e-mail из запроса, держать его в общем ключе
+       интеграции значит отдать вход каждому, у кого есть доступ к броням. */
+    if (params.scopes.includes(PARTNER_SCOPES.SsoCreate) && params.scopes.length > 1) {
+      throw new Error('Ключ с sso:create выпускается отдельно, без других прав');
+    }
     const partnerCode = params.partnerCode ?? 'kars-avia';
     const partner = await this.prisma.admin.partner.findUnique({ where: { code: partnerCode } });
     if (!partner) throw new Error(`Партнёр «${partnerCode}» не найден`);

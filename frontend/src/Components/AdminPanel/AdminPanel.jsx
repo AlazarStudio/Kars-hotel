@@ -59,6 +59,11 @@ const DIVIDER_BEFORE = 'create';
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
+/* Диспетчеру Kars Avia (152-ФЗ, Р-34; план 13.3) — только обзор и отели со
+   входом «от имени»: сотрудники гостиниц, заведение и выключение гостиниц,
+   настройки платформы — суперадмину (сервер отвечает ему 403). */
+const DISPATCHER_SECTIONS = ['overview', 'hotels'];
+
 function AdminSidebar({ activeId }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -74,7 +79,7 @@ function AdminSidebar({ activeId }) {
       </div>
 
       <nav className={classes.nav}>
-        {NAV_ITEMS.map((item) => (
+        {NAV_ITEMS.filter((item) => !user?.isDispatcher || DISPATCHER_SECTIONS.includes(item.id)).map((item) => (
           <React.Fragment key={item.id}>
             {item.id === DIVIDER_BEFORE && <div className={classes.divider} />}
             <div
@@ -161,7 +166,8 @@ function OverviewSection() {
 // ─── Hotels ───────────────────────────────────────────────────────────────────
 
 function HotelsSection() {
-  const { impersonate } = useAuth();
+  const { impersonate, user } = useAuth();
+  const isDispatcher = user?.isDispatcher === true;
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [search, setSearch] = React.useState('');
@@ -199,7 +205,9 @@ function HotelsSection() {
             <svg className={classes.searchIcon} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input className={classes.searchInput} placeholder="Поиск…" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
-          <button className={classes.btnPrimary} onClick={() => navigate('/admin/create')}>+ Добавить отель</button>
+          {!isDispatcher && (
+            <button className={classes.btnPrimary} onClick={() => navigate('/admin/create')}>+ Добавить отель</button>
+          )}
         </div>
       </div>
 
@@ -223,9 +231,11 @@ function HotelsSection() {
                       <button className={classes.btnAction} onClick={() => handleImpersonate(t)} disabled={!t.isActive || impersonatingId === t.id} title="Войти от имени">
                         {impersonatingId === t.id ? '…' : 'Войти'}
                       </button>
-                      <button className={`${classes.btnAction} ${t.isActive ? classes.btnActionOff : classes.btnActionOn}`} onClick={() => toggleActive.mutate(t.id)} disabled={toggleActive.isPending}>
-                        {t.isActive ? 'Откл.' : 'Вкл.'}
-                      </button>
+                      {!isDispatcher && (
+                        <button className={`${classes.btnAction} ${t.isActive ? classes.btnActionOff : classes.btnActionOn}`} onClick={() => toggleActive.mutate(t.id)} disabled={toggleActive.isPending}>
+                          {t.isActive ? 'Откл.' : 'Вкл.'}
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -512,8 +522,10 @@ function fmt(dateStr) {
 
 export default function AdminPanel() {
   const location = useLocation();
+  const { user } = useAuth();
   const parts = location.pathname.split('/').filter(Boolean); // ['admin', 'hotels']
-  const activeId = parts[1] || 'overview';
+  const requested = parts[1] || 'overview';
+  const activeId = user?.isDispatcher && !DISPATCHER_SECTIONS.includes(requested) ? 'overview' : requested;
 
   function renderContent() {
     switch (activeId) {

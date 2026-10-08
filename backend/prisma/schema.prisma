@@ -138,6 +138,9 @@ enum RoleCode {
   CHANNEL_MANAGER
   READ_ONLY
   SUPER_ADMIN
+  /// Диспетчер Kars Avia (152-ФЗ, Р-34; план 13.3): не суперадмин — в панели
+  /// платформы только гостиницы и вход «от имени».
+  DISPATCHER
 }
 
 /// Per-tenant role. Seven default roles are seeded at tenant registration.

@@ -44,6 +44,7 @@ function makeService(overrides: {
       },
       role: { findFirst: fn().mockResolvedValue(overrides.ownerRole ?? null) },
     },
+    writeAuditLog: jest.fn(async () => undefined),
   };
   const jwtService = { signAsync: jest.fn(async (payload: unknown) => JSON.stringify(payload)) };
   const service = Object.create(AuthService.prototype) as AuthService;
@@ -65,7 +66,7 @@ describe('вход диспетчера в гостиницу', () => {
           { permission: { code: 'reservation.create' } },
         ],
       },
-      actor: { id: DISPATCHER, email: 'dispatcher@kars.ru', fullName: 'Диспетчер' },
+      actor: { id: DISPATCHER, email: 'dispatcher@kars.ru', fullName: 'Диспетчер', isActive: true },
     });
 
     await service.issueImpersonationToken(TENANT, DISPATCHER);
@@ -149,6 +150,7 @@ describe('продление сессии «от имени»', () => {
           findUnique: jest.fn(async () => ({
             id: DISPATCHER,
             email: 'dispatcher@kars.ru',
+            isActive: true,
           })),
         },
         role: {
@@ -157,6 +159,7 @@ describe('продление сессии «от имени»', () => {
           })),
         },
       },
+      writeAuditLog: jest.fn(async () => undefined),
     };
     const signed: Record<string, unknown>[] = [];
     const jwtService = {

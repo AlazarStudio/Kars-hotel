@@ -327,6 +327,8 @@ export class AuthService implements OnModuleInit {
       roleCode: tokenRow.user.role.code,
       permissions,
       isSuperAdmin,
+      // Диспетчер остаётся диспетчером и после продления (роль DISPATCHER — не суперадмин).
+      isDispatcher: tokenRow.user.isDispatcher,
       ip,
       userAgent,
     });
@@ -436,7 +438,11 @@ export class AuthService implements OnModuleInit {
     operatorUserId: string,
     ip?: string,
     userAgent?: string,
+    fromTenantId?: string,
   ): Promise<AuthTokens> {
+    if (fromTenantId) {
+      await this.auditImpersonation('impersonation.end', fromTenantId, operatorUserId, null, ip, userAgent);
+    }
     const user = await this.prisma.admin.user.findUnique({
       where: { id: operatorUserId },
       include: {
@@ -487,38 +493,20 @@ export class AuthService implements OnModuleInit {
       throw new ForbiddenException('Tenant not found or inactive');
     }
 
-    // Владелец гостиницы, если он есть.
-    const owner = await this.prisma.admin.user.findFirst({
-      where: { tenantId: targetTenantId, isActive: true },
-      include: {
-        role: { include: { rolePermissions: { include: { permission: true } } } },
-      },
-      orderBy: { createdAt: 'asc' },
-    });
-    if (owner) {
-      return {
-        userId: owner.id,
-        email: owner.email,
-        roleCode: owner.role.code,
-        permissions: owner.role.rolePermissions.map((rp) => rp.permission.code),
-      };
-    }
-
-    /* Гостиница БЕЗ СВОИХ СОТРУДНИКОВ — обычное дело, а не сбой: из 392
-     * перенесённых из старой системы логин был лишь у десяти, остальные ведёт
-     * оператор. Заходим ОТ СВОЕГО ИМЕНИ: `sub` — тот, кто пришёл, права — по
-     * роли «Владелец» этой гостиницы. Это честнее и там, где сотрудник есть:
-     * занимать чужую учётку ради входа не нужно, а в журнале остаётся живой
-     * человек, а не «владелец», которым действовал кто-то другой. */
+    /* Входят ВСЕГДА ОТ СВОЕГО ИМЕНИ (152-ФЗ, Р-33; план 13.4): `sub` — тот,
+     * кто пришёл, права — по роли «Владелец» этой гостиницы. Раньше, если у
+     * гостиницы был сотрудник, диспетчер занимал ЕГО учётку — и в журнале
+     * гостиницы его действия значились действиями её сотрудника. Отключённый
+     * диспетчер или суперадмин не входит и не продлевает вход. */
     const ownerRole = await this.prisma.admin.role.findFirst({
       where: { tenantId: targetTenantId, code: RoleCode.OWNER },
       include: { rolePermissions: { include: { permission: true } } },
     });
     const actor = await this.prisma.admin.user.findUnique({
       where: { id: adminUserId },
-      select: { id: true, email: true },
+      select: { id: true, email: true, isActive: true },
     });
-    if (!actor) throw new ForbiddenException('Operator account not found');
+    if (!actor || !actor.isActive) throw new ForbiddenException('Operator account not found or inactive');
     return {
       userId: actor.id,
       email: actor.email,
@@ -541,8 +529,11 @@ export class AuthService implements OnModuleInit {
   async issueImpersonationToken(
     targetTenantId: string,
     adminUserId: string,
+    ip?: string,
+    userAgent?: string,
   ): Promise<{ accessToken: string; accessTtlSeconds: number }> {
     const who = await this.resolveImpersonation(targetTenantId, adminUserId);
+    await this.auditImpersonation('impersonation.start', targetTenantId, adminUserId, 'admin-panel', ip, userAgent);
     const accessPayload: JwtAccessPayload = {
       sub: who.userId,
       tid: targetTenantId,
@@ -594,35 +585,29 @@ export class AuthService implements OnModuleInit {
     fullName: string;
   }): Promise<{ id: string }> {
     const email = dispatcher.email.trim().toLowerCase();
+    const role = await this.dispatcherRole();
     const existing = await this.prisma.admin.user.findUnique({
       where: { email },
-      select: { id: true, isDispatcher: true },
+      select: { id: true, isDispatcher: true, isActive: true, roleId: true },
     });
     if (existing) {
-      // Legacy/edge: an account with this email exists but wasn't flagged — make
-      // it a dispatcher so labels/attribution are correct.
+      /* Чужую учётку входом диспетчера не занять (Р-34): раньше адрес
+       * сотрудника гостиницы или суперадмина, пришедший в запросе SSO, молча
+       * превращался в диспетчера. */
       if (!existing.isDispatcher) {
+        throw new ForbiddenException('Этот адрес занят учёткой гостиницы или платформы');
+      }
+      /* Отключённого (вслед за Авиа) — включаем: вход по ссылке выписывает
+       * только Авиа и только действующему диспетчеру. */
+      if (!existing.isActive || existing.roleId !== role.id) {
         await this.prisma.admin.user.update({
           where: { id: existing.id },
-          data: { isDispatcher: true },
+          data: { isActive: true, roleId: role.id },
         });
       }
       return { id: existing.id };
     }
-    const platform = await this.prisma.admin.tenant.findUnique({
-      where: { slug: 'platform' },
-      select: { id: true },
-    });
-    if (!platform) {
-      throw new ForbiddenException('Platform tenant is not provisioned');
-    }
-    const role = await this.prisma.admin.role.findFirst({
-      where: { tenantId: platform.id, code: RoleCode.SUPER_ADMIN },
-      select: { id: true },
-    });
-    if (!role) {
-      throw new ForbiddenException('Platform SUPER_ADMIN role is missing');
-    }
+    const platform = { id: role.tenantId };
     const passwordHash = await bcrypt.hash(crypto.randomBytes(24).toString('base64url'), 10);
     const created = await this.prisma.admin.user.create({
       data: {
@@ -687,6 +672,7 @@ export class AuthService implements OnModuleInit {
     // Hotel mode: dispatcher works inside one hotel, tagged with their id.
     if (entry.tenantId) {
       const who = await this.resolveImpersonation(entry.tenantId, entry.dispatcherUserId);
+      await this.auditImpersonation('impersonation.start', entry.tenantId, entry.dispatcherUserId, 'kars-avia-sso', ip, userAgent);
       const tokens = await this.issueTokens({
         userId: who.userId,
         tenantId: entry.tenantId,
@@ -716,18 +702,82 @@ export class AuthService implements OnModuleInit {
     if (!dispatcher || !dispatcher.isActive) {
       throw new ForbiddenException('Dispatcher account is inactive');
     }
+    // Не суперадмин (Р-34): панель платформы — только гостиницы и вход «от имени».
     const tokens = await this.issueTokens({
       userId: dispatcher.id,
       tenantId: dispatcher.tenantId,
       email: dispatcher.email,
       roleCode: dispatcher.role.code,
       permissions: dispatcher.role.rolePermissions.map((rp) => rp.permission.code),
-      isSuperAdmin: true,
+      isSuperAdmin: false,
       isDispatcher: true,
       ip,
       userAgent,
     });
     return { ...tokens, mode: 'admin' };
+  }
+
+  /* Роль диспетчера в тенанте платформы (миграция 20261008100100 заводит её;
+   * на чистой установке — первый вход диспетчера). */
+  private async dispatcherRole(): Promise<{ id: string; tenantId: string }> {
+    const platform = await this.prisma.admin.tenant.findUnique({
+      where: { slug: 'platform' },
+      select: { id: true },
+    });
+    if (!platform) throw new ForbiddenException('Platform tenant is not provisioned');
+    return this.prisma.admin.role.upsert({
+      where: { tenantId_code: { tenantId: platform.id, code: RoleCode.DISPATCHER } },
+      create: { tenantId: platform.id, code: RoleCode.DISPATCHER, name: 'Диспетчер Kars Avia', isSystem: true },
+      update: {},
+      select: { id: true, tenantId: true },
+    });
+  }
+
+  /* Отключение вслед за Авиа (Р-34; план 13.3): уволенный или отключённый в
+   * Авиа диспетчер в PMS больше не входит и не продлевает уже открытые входы.
+   * Неизвестный адрес — не ошибка: в PMS он мог и не заходить. */
+  async deactivateDispatcher(email: string): Promise<{ deactivated: boolean }> {
+    const user = await this.prisma.admin.user.findUnique({
+      where: { email: email.trim().toLowerCase() },
+      select: { id: true, tenantId: true, isDispatcher: true },
+    });
+    if (!user || !user.isDispatcher) return { deactivated: false };
+    await this.prisma.admin.$transaction([
+      this.prisma.admin.user.update({ where: { id: user.id }, data: { isActive: false } }),
+      this.prisma.admin.refreshToken.updateMany({
+        where: { userId: user.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+    await this.prisma.writeAuditLog({
+      tenantId: user.tenantId,
+      entity: 'user',
+      entityId: user.id,
+      action: 'dispatcher.deactivated',
+    });
+    return { deactivated: true };
+  }
+
+  /* Вход «от имени» — в журнал ГОСТИНИЦЫ (152-ФЗ, Р-33; план 13.4): кто
+   * (userId — сам диспетчер или суперадмин), откуда, с какого адреса. */
+  private async auditImpersonation(
+    action: 'impersonation.start' | 'impersonation.end',
+    tenantId: string,
+    actorId: string,
+    via: string | null,
+    ip?: string,
+    userAgent?: string,
+  ): Promise<void> {
+    await this.prisma.writeAuditLog({
+      tenantId,
+      userId: actorId,
+      entity: 'session',
+      entityId: actorId,
+      action,
+      ...(via ? { diff: { before: {}, after: { via } } } : {}),
+      ip,
+      userAgent,
+    });
   }
 
   // ─── Internals ──────────────────────────────────────────────────────────────

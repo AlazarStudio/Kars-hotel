@@ -147,6 +147,7 @@ export class AuthController {
       user.impersonatedBy,
       req.ip,
       req.headers['user-agent'],
+      user.tenantId,
     );
     /* Кука одна на браузер: пока шла работа в гостинице, в ней лежала сессия
        гостиницы. Заменяем — иначе через час обновление вернуло бы человека в

@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { TenantPlan } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
 import { RegisterTenantDto } from '../auth/dto/register-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
+import { AuthenticatedRequestUser } from '../auth/strategies/jwt.strategy';
 
 @Injectable()
 export class SuperAdminService {
@@ -122,8 +123,20 @@ export class SuperAdminService {
 
   // ─── Impersonation ──────────────────────────────────────────────────────────
 
-  async impersonate(tenantId: string, adminUserId: string) {
-    return this.auth.issueImpersonationToken(tenantId, adminUserId);
+  /* Диспетчер входит только в действующую гостиницу, видимую партнёру (или
+     заведённую им разово), — тот же круг, что отдаёт партнёрский API.
+     Суперадмин — в любую действующую. */
+  async impersonate(tenantId: string, actor: AuthenticatedRequestUser, ip?: string, userAgent?: string) {
+    if (!actor.isSuperAdmin) {
+      const t = await this.prisma.admin.tenant.findUnique({
+        where: { id: tenantId },
+        select: { isActive: true, partnerVisible: true, provisional: true, slug: true },
+      });
+      if (!t || !t.isActive || t.slug === 'platform' || (!t.partnerVisible && !t.provisional)) {
+        throw new ForbiddenException('Гостиница недоступна диспетчеру');
+      }
+    }
+    return this.auth.issueImpersonationToken(tenantId, actor.userId, ip, userAgent);
   }
 
   // ─── Users ──────────────────────────────────────────────────────────────────

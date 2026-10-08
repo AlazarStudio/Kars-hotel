@@ -15,6 +15,8 @@ export interface AuthenticatedRequestUser {
   isSuperAdmin: boolean;
   /** Set when this token was issued via impersonation (stores the admin's userId). */
   impersonatedBy?: string;
+  /** Диспетчер Kars Avia (роль DISPATCHER): панель платформы — только гостиницы и вход «от имени». */
+  isDispatcher?: boolean;
 }
 
 @Injectable()
@@ -41,6 +43,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       permissions: payload.perms ?? [],
       isSuperAdmin: payload.isa === true,
       impersonatedBy: payload.imp,
+      isDispatcher: payload.disp === true,
     };
   }
 }

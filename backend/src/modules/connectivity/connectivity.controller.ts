@@ -76,6 +76,18 @@ export class ConnectivityController {
     return this.directory.get(req.partner!.partnerId);
   }
 
+  /* Отключение диспетчера вслед за Авиа (152-ФЗ, Р-34; план 13.3): учётка
+     выключается, открытые входы гаснут. Тем же отдельным ключом, что вход. */
+  @Post('dispatchers/deactivate')
+  @HttpCode(HttpStatus.OK)
+  @RequireScopes(PARTNER_SCOPES.SsoCreate)
+  @ApiOperation({ summary: 'Deactivate a dispatcher account and revoke its sessions' })
+  deactivateDispatcher(@Body() body: { email?: string }) {
+    const email = body?.email?.trim();
+    if (!email) throw new BadRequestException('email is required');
+    return this.connectivity.deactivateDispatcher(email);
+  }
+
   @Post('sso')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(PARTNER_SCOPES.SsoCreate)

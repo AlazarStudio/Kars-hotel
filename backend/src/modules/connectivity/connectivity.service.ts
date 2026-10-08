@@ -211,6 +211,10 @@ export class ConnectivityService {
     return { code, expiresInSeconds };
   }
 
+  async deactivateDispatcher(email: string) {
+    return this.auth.deactivateDispatcher(email);
+  }
+
   async getHotel(slug: string) {
     const tenant = await this.resolveTenant(slug);
     const { roomTypes, ratePlans, standardRates, services } = await this.prisma.forTenantExplicit(

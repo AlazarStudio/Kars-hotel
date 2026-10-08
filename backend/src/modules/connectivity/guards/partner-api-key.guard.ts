@@ -8,7 +8,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { PartnerKeyService, VerifiedPartner } from '../partner-key.service';
-import { PARTNER_SCOPES_KEY, PartnerScope } from '../decorators/partner-scopes.decorator';
+import { PARTNER_SCOPES, PARTNER_SCOPES_KEY, PartnerScope } from '../decorators/partner-scopes.decorator';
 
 /** Express request augmented with the verified partner identity. */
 export interface PartnerRequest extends Request {
@@ -48,6 +48,11 @@ export class PartnerApiKeyGuard implements CanActivate {
     const missing = required.filter((s) => !partner.scopes.includes(s));
     if (missing.length) {
       throw new ForbiddenException(`Partner key missing scope(s): ${missing.join(', ')}`);
+    }
+    /* Вход диспетчеров — только отдельным ключом (план 13.3): общий ключ с
+       sso:create вдобавок к броням не годится, даже если такой остался. */
+    if (required.includes(PARTNER_SCOPES.SsoCreate) && partner.scopes.length > 1) {
+      throw new ForbiddenException('Вход диспетчеров — только отдельным ключом (sso:create без других прав)');
     }
 
     req.partner = partner;
