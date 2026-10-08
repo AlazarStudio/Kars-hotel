@@ -602,7 +602,7 @@ export class AuthService implements OnModuleInit {
       if (!existing.isActive || existing.roleId !== role.id) {
         await this.prisma.admin.user.update({
           where: { id: existing.id },
-          data: { isActive: true, roleId: role.id },
+          data: { isActive: true, deactivatedAt: null, roleId: role.id },
         });
       }
       return { id: existing.id };
@@ -743,7 +743,7 @@ export class AuthService implements OnModuleInit {
     });
     if (!user || !user.isDispatcher) return { deactivated: false };
     await this.prisma.admin.$transaction([
-      this.prisma.admin.user.update({ where: { id: user.id }, data: { isActive: false } }),
+      this.prisma.admin.user.update({ where: { id: user.id }, data: { isActive: false, deactivatedAt: new Date() } }),
       this.prisma.admin.refreshToken.updateMany({
         where: { userId: user.id, revokedAt: null },
         data: { revokedAt: new Date() },

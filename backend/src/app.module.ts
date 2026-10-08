@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
 import { pinoHttpOptions } from './common/logging';
+import { RetentionModule } from './modules/retention/retention.module';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
 import { StorageModule } from './common/storage/storage.module';
@@ -45,6 +46,7 @@ import { ConnectivityModule } from './modules/connectivity/connectivity.module';
     RoomTypesModule,
     RoomsModule,
     ...demoSeedModules(),
+    RetentionModule,
     RatePlansModule,
     RatesModule,
     RestrictionsModule,

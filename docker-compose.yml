@@ -84,6 +84,8 @@ services:
       # Оферта с поручением (план 13.11): версия (0 — не опубликована) и адрес текста.
       PMS_OFFER_VERSION: ${PMS_OFFER_VERSION:-0}
       PMS_OFFER_URL: ${PMS_OFFER_URL:-}
+      # Сроки хранения ПДн (план 13.9): off (по умолчанию) / dry — только счёт / on.
+      PMS_RETENTION_MODE: ${PMS_RETENTION_MODE:-off}
     depends_on:
       postgres:
         condition: service_healthy

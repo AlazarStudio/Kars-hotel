@@ -105,7 +105,7 @@ export class SuperAdminService {
     if (!user || user.tenant.slug === 'platform') throw new NotFoundException('User not found');
     return this.prisma.admin.user.update({
       where: { id: userId },
-      data: { isActive: !user.isActive },
+      data: { isActive: !user.isActive, deactivatedAt: user.isActive ? new Date() : null },
       select: { id: true, isActive: true },
     });
   }

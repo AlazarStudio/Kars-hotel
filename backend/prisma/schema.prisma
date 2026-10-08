@@ -108,6 +108,10 @@ model Tenant {
   incidentContactName  String? @map("incident_contact_name")
   incidentContactPhone String? @map("incident_contact_phone")
   incidentContactEmail String? @map("incident_contact_email")
+  /// Сроки хранения, сокращённые гостиницей (152-ФЗ, решение 21; план 13.9).
+  /// Пусто — системные: 30 дн. (отмена/неявка), 92 дн. (телефон и почта).
+  retentionCancelledDays Int? @map("retention_cancelled_days")
+  retentionContactsDays  Int? @map("retention_contacts_days")
 
   users     User[]
   roles     Role[]
@@ -226,6 +230,8 @@ model User {
   roleId       String    @map("role_id") @db.Uuid
   role         Role      @relation(fields: [roleId], references: [id])
   isActive     Boolean   @default(true)
+  /// Когда выключен: уволенного обезличивают через срок (план 13.9).
+  deactivatedAt DateTime? @map("deactivated_at")
   /// True for Kars Avia dispatcher accounts auto-provisioned via partner SSO.
   /// They hold the SUPER_ADMIN role (full rights) but are labelled
   /// «Администратор/Диспетчер» in the UI, not «Суперадминистратор».

@@ -321,7 +321,7 @@ export class TenantService {
       where: { id: userId },
       data: {
         ...(dto.roleId ? { roleId: dto.roleId } : {}),
-        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive, deactivatedAt: dto.isActive ? null : new Date() } : {}),
         ...(dto.fullName ? { fullName: dto.fullName } : {}),
       },
       select: {
@@ -344,7 +344,7 @@ export class TenantService {
 
     await this.prisma.admin.user.update({
       where: { id: userId },
-      data: { isActive: false },
+      data: { isActive: false, deactivatedAt: new Date() },
     });
     return { deleted: true, id: userId };
   }
