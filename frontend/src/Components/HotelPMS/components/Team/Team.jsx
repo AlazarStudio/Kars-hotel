@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useTenantUsers, useDeleteUser } from '../../../../hooks/api/useTenantUsers';
+import { useTenantUsers, useDeleteUser, useResetUserPassword } from '../../../../hooks/api/useTenantUsers';
 import InviteUserModal from './InviteUserModal';
 
 const ROLE_LABELS = {
@@ -15,7 +15,18 @@ const ROLE_LABELS = {
 export default function Team() {
   const { data: users = [], isLoading } = useTenantUsers();
   const deleteMutation = useDeleteUser();
+  const resetMutation = useResetUserPassword();
   const [showInvite, setShowInvite] = useState(false);
+  const [reset, setReset] = useState(null);
+
+  const handleReset = async (user) => {
+    if (!window.confirm(`Сбросить пароль сотрудника ${user.email}? Его текущие входы завершатся.`)) return;
+    try {
+      setReset(await resetMutation.mutateAsync(user.id));
+    } catch (err) {
+      window.alert(err.response?.data?.message ?? 'Не удалось сбросить пароль');
+    }
+  };
 
   const handleDeactivate = async (userId) => {
     if (!window.confirm('Деактивировать сотрудника?')) return;
@@ -68,12 +79,20 @@ export default function Team() {
                 </td>
                 <td className="px-4 py-3 text-right">
                   {user.role.code !== 'OWNER' && user.isActive && (
-                    <button
-                      onClick={() => handleDeactivate(user.id)}
-                      className="text-sm text-red-600 hover:underline"
-                    >
-                      Деактивировать
-                    </button>
+                    <>
+                      <button
+                        onClick={() => handleReset(user)}
+                        className="text-sm text-blue-600 hover:underline mr-4"
+                      >
+                        Сбросить пароль
+                      </button>
+                      <button
+                        onClick={() => handleDeactivate(user.id)}
+                        className="text-sm text-red-600 hover:underline"
+                      >
+                        Деактивировать
+                      </button>
+                    </>
                   )}
                 </td>
               </tr>
@@ -83,6 +102,22 @@ export default function Team() {
       </div>
 
       {showInvite && <InviteUserModal onClose={() => setShowInvite(false)} />}
+      {reset && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl space-y-3">
+            <h2 className="text-lg font-semibold">Пароль сброшен</h2>
+            <p><strong>Email:</strong> {reset.email}</p>
+            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded">
+              <p className="text-sm font-medium text-yellow-800">Временный пароль (показывается один раз):</p>
+              <code className="text-lg font-mono text-yellow-900">{reset.temporaryPassword}</code>
+            </div>
+            <p className="text-sm text-gray-500">Передайте его сотруднику лично. Прежние входы сотрудника завершены.</p>
+            <button onClick={() => setReset(null)} className="w-full mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg">
+              Закрыть
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

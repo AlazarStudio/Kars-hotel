@@ -12,5 +12,8 @@ export const createUser = (data) =>
 export const updateUser = (userId, data) =>
   api.patch(`/tenant/users/${userId}`, data).then((r) => r.data);
 
+export const resetUserPassword = (userId) =>
+  api.post(`/tenant/users/${userId}/reset-password`).then((r) => r.data);
+
 export const deleteUser = (userId) =>
   api.delete(`/tenant/users/${userId}`).then((r) => r.data);

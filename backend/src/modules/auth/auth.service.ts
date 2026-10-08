@@ -17,6 +17,8 @@ import { RegisterTenantDto } from './dto/register-tenant.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtAccessPayload, JwtRefreshPayload } from './types/jwt-payload';
 import { slugifyHotelName } from './slug.util';
+import { LoginThrottle, MAX_PER_EMAIL } from './login-throttle';
+import { RedisService } from '../../common/redis/redis.service';
 
 export interface AuthTokens {
   accessToken: string;
@@ -40,11 +42,23 @@ export interface AuthenticatedUser {
 export class AuthService implements OnModuleInit {
   private readonly logger = new Logger(AuthService.name);
 
+  private readonly throttle: LoginThrottle;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
-  ) {}
+    redis: RedisService,
+  ) {
+    // Клиент Redis появляется в onModuleInit — берём его при каждом вызове.
+    this.throttle = new LoginThrottle({
+      get: (k) => redis.raw.get(k),
+      incr: (k) => redis.raw.incr(k),
+      expire: (k, s) => redis.raw.expire(k, s),
+      del: (k) => redis.raw.del(k),
+      ttl: (k) => redis.raw.ttl(k),
+    });
+  }
 
   // ─── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -177,6 +191,10 @@ export class AuthService implements OnModuleInit {
     user: AuthenticatedUser;
     tokens: AuthTokens;
   }> {
+    const email = dto.email.toLowerCase();
+    // Лимит неудач и журнал (152-ФЗ, план 13.2): см. login-throttle.ts.
+    await this.throttle.assertAllowed(email, ip);
+
     // Email is globally unique → one query finds the user (and their tenant).
     const user = await this.prisma.admin.user.findUnique({
       where: { email: dto.email.toLowerCase() },
@@ -189,14 +207,27 @@ export class AuthService implements OnModuleInit {
         },
       },
     });
-    if (!user || !user.isActive || !user.tenant.isActive) {
+    const ok = !!user && (await bcrypt.compare(dto.password, user.passwordHash));
+    if (!user || !ok || !user.isActive || !user.tenant.isActive) {
+      const failures = await this.throttle.fail(email, ip);
+      /* Неудача по известному сотруднику — в журнал ЕГО гостиницы: она видит,
+       * что пароль её человека подбирают. По неизвестному адресу журнала
+       * гостиницы нет — только счётчик по IP. */
+      if (user) {
+        await this.prisma.writeAuditLog({
+          tenantId: user.tenantId,
+          userId: user.id,
+          entity: 'user',
+          entityId: user.id,
+          action: failures >= MAX_PER_EMAIL ? 'login.locked' : 'login.failed',
+          diff: { before: {}, after: { failures } },
+          ip,
+          userAgent,
+        });
+      }
       throw new UnauthorizedException('Неверный email или пароль');
     }
-
-    const ok = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!ok) {
-      throw new UnauthorizedException('Неверный email или пароль');
-    }
+    await this.throttle.success(email);
 
     await this.prisma.admin.user.update({
       where: { id: user.id },

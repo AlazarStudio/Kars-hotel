@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import classes from './Auth.module.css';
 import { useAuth } from '../../auth/AuthContext';
 import PasswordInput from './PasswordInput';
@@ -91,10 +91,7 @@ export default function Login() {
           </div>
         </form>
         <div className={classes.footer}>
-          Нет аккаунта?
-          <Link to="/register" className={classes.footerLink}>
-            Зарегистрировать отель
-          </Link>
+          Кабинет гостиницы — по приглашению Kars Avia.
         </div>
       </div>
     </div>

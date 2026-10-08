@@ -146,6 +146,14 @@ export class TenantController {
     return this.service.updateUser(user.tenantId, userId, dto);
   }
 
+  @Post('users/:userId/reset-password')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('user.update')
+  @ApiOperation({ summary: 'Reset a team member password (temporary password, sessions revoked)' })
+  resetPassword(@CurrentUser() user: AuthenticatedRequestUser, @Param('userId') userId: string) {
+    return this.service.resetPassword(user.tenantId, userId, user.userId);
+  }
+
   @Delete('users/:userId')
   @HttpCode(HttpStatus.OK)
   @RequirePermissions('user.delete')

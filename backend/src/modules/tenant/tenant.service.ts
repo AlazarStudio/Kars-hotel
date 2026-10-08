@@ -268,6 +268,39 @@ export class TenantService {
       : { id: user.id, email: user.email, temporaryPassword };
   }
 
+  /* СБРОС ПАРОЛЯ СОТРУДНИКУ (152-ФЗ, Р-45; план 13.2). Сброса не было вовсе:
+   * забытый пароль означал нового сотрудника. Почты в PMS нет, поэтому сброс
+   * делает тот, кто ведёт команду: новый временный пароль показывается ему
+   * один раз (как при добавлении), все сессии сотрудника гаснут. Владельца так
+   * не сбросить — иначе менеджер забрал бы его кабинет. В журнал — без пароля. */
+  async resetPassword(tenantId: string, userId: string, actorId: string) {
+    const user = await this.prisma.admin.user.findFirst({
+      where: { id: userId, tenantId },
+      include: { role: { select: { code: true } } },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.role.code === 'OWNER') throw new ForbiddenException('Пароль владельца так не сбросить');
+    if (!user.isActive) throw new ForbiddenException('Сотрудник деактивирован');
+
+    const temporaryPassword = crypto.randomBytes(8).toString('hex');
+    const passwordHash = await bcrypt.hash(temporaryPassword, 10);
+    await this.prisma.admin.$transaction([
+      this.prisma.admin.user.update({ where: { id: userId }, data: { passwordHash } }),
+      this.prisma.admin.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+    await this.prisma.writeAuditLog({
+      tenantId,
+      userId: actorId,
+      entity: 'user',
+      entityId: userId,
+      action: 'password.reset',
+    });
+    return { id: user.id, email: user.email, temporaryPassword };
+  }
+
   async updateUser(tenantId: string, userId: string, dto: UpdateTenantUserDto) {
     const user = await this.prisma.admin.user.findFirst({
       where: { id: userId, tenantId },

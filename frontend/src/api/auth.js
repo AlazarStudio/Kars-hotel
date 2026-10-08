@@ -5,12 +5,6 @@ import {
   performRefresh,
 } from "./client";
 
-export async function registerTenant(payload) {
-  const { data } = await api.post("/auth/register-tenant", payload);
-  setAccessToken(data.accessToken);
-  return data; // { tenantId, userId, accessToken, accessTtlSeconds }
-}
-
 /* Приглашение владельца (Э10): что за гостиница, и принять — задать пароль. */
 export async function peekOwnerInvite(token) {
   const { data } = await api.get(`/auth/invite/${encodeURIComponent(token)}`);

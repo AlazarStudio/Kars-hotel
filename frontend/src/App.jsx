@@ -1,7 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import HotelPMS from './Components/HotelPMS/HotelPMS';
 import Login from './Components/Auth/Login';
-import Register from './Components/Auth/Register';
 import SsoEntry from './Components/Auth/SsoEntry';
 import InviteAccept from './Components/Auth/InviteAccept';
 import AdminPanel from './Components/AdminPanel/AdminPanel';
@@ -26,7 +25,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
+      <Route path="/register" element={<Navigate to="/login" replace />} />
       {/* Вход по одноразовой SSO-ссылке из диспетчерской Kars Avia */}
       <Route path="/sso" element={<SsoEntry />} />
       {/* Приглашение владельца в кабинет гостиницы (Э10) */}

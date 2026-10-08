@@ -105,14 +105,6 @@ export function AuthProvider({ children }) {
     return data;
   }, []);
 
-  const registerTenant = useCallback(async (payload) => {
-    const data = await authApi.registerTenant(payload);
-    const profile = await authApi.me();
-    setUser(profile);
-    setStatus(STATUS.AUTHENTICATED);
-    return { ...data, profile };
-  }, []);
-
   const logout = useCallback(async () => {
     setImpersonatingFlag(false);
     try {
@@ -197,7 +189,6 @@ export function AuthProvider({ children }) {
       user,
       status,
       login,
-      registerTenant,
       logout,
       hasPermission,
       impersonatedTenant,
@@ -212,7 +203,6 @@ export function AuthProvider({ children }) {
       user,
       status,
       login,
-      registerTenant,
       logout,
       hasPermission,
       impersonatedTenant,

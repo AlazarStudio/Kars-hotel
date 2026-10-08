@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -17,7 +18,6 @@ import { AcceptOwnerInviteDto } from './dto/accept-owner-invite.dto';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
-import { RegisterTenantDto } from './dto/register-tenant.dto';
 import { LoginDto } from './dto/login.dto';
 import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -64,30 +64,18 @@ export class AuthController {
     return { user, accessToken: tokens.accessToken, accessTtlSeconds: tokens.accessTtlSeconds };
   }
 
+  /* Открытая регистрация ЗАКРЫТА (152-ФЗ, Р-45, решение владельца 12; план
+     13.2): самозарегистрированный владелец получал все права гостиницы, а
+     гостиница в системе — это обработка ПДн по поручению. Кабинет теперь
+     только по приглашению Kars Avia (`/invite/:token`); гостиницу заводит
+     партнёр (connect API) или администратор платформы. Ручка оставлена, чтобы
+     старые клиенты получали понятный отказ, а не 404. */
   @Public()
   @Post('register-tenant')
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Register a brand-new tenant and its OWNER user' })
-  @ApiResponse({ status: 201, description: 'Tenant + OWNER created, tokens issued' })
-  @ApiResponse({ status: 409, description: 'Slug already taken' })
-  @ApiBody({ type: RegisterTenantDto })
-  async registerTenant(
-    @Body() dto: RegisterTenantDto,
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ) {
-    const { tenantId, userId, tokens } = await this.auth.registerTenant(
-      dto,
-      req.ip,
-      req.headers['user-agent'],
-    );
-    this.setRefreshCookie(res, tokens.refreshToken, tokens.refreshTtlSeconds);
-    return {
-      tenantId,
-      userId,
-      accessToken: tokens.accessToken,
-      accessTtlSeconds: tokens.accessTtlSeconds,
-    };
+  @ApiOperation({ summary: 'Closed: hotels join by Kars Avia invitation only' })
+  @ApiResponse({ status: 403, description: 'Registration is by invitation only' })
+  registerTenant(): never {
+    throw new ForbiddenException('Регистрация гостиниц — только по приглашению Kars Avia');
   }
 
   @Public()
