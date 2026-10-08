@@ -118,8 +118,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
           entityId: params.entityId ?? null,
           action: params.action,
           diff: params.diff ? (params.diff as object) : Prisma.DbNull,
-          ip: params.ip ?? null,
-          userAgent: params.userAgent ?? null,
+          /* Адрес и устройство — из запроса, если вызывающий их не передал
+             (152-ФЗ, Р-12; план 13.5): раньше почти все записи шли без них. */
+          ip: params.ip ?? TenantContext.get()?.ip ?? null,
+          userAgent: params.userAgent ?? TenantContext.get()?.userAgent ?? null,
         },
       });
     } catch (err) {

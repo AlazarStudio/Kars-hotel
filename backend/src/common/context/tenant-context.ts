@@ -13,6 +13,9 @@ export interface RequestContext {
   roleCode: string;
   permissions: string[];
   isSuperAdmin?: boolean;
+  /** Адрес и устройство запроса — для журнала (152-ФЗ, Р-12; план 13.5). */
+  ip?: string;
+  userAgent?: string;
 }
 
 class TenantContextHolder {

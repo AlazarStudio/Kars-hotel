@@ -19,6 +19,9 @@ async function bootstrap() {
      копия тихо переставала обновляться. Файлы идут multipart, их это не
      касается. */
   app.useBodyParser('json', { limit: '2mb' });
+  /* Перед API ровно один прокси — Caddy (152-ФЗ, Р-12; план 13.5): без этого
+     req.ip — адрес прокси, и журнал записывал бы один адрес на всех. */
+  app.set('trust proxy', 1);
 
   app.useLogger(app.get(PinoLogger));
   app.use(helmet());

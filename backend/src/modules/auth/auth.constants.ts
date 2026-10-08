@@ -52,6 +52,11 @@ export const SYSTEM_PERMISSIONS: ReadonlyArray<{ code: string; name: string }> =
   { code: 'report.view.operations', name: 'View operational reports' },
   { code: 'report.view.finance', name: 'View financial reports' },
   { code: 'report.export', name: 'Export reports to XLSX/PDF' },
+  /* Отчёты Kars Avia — в них ФИО гостей и суммы (152-ФЗ, Р-44, решение
+     владельца 13; план 13.5): только владелец, менеджер и бухгалтер. Код без
+     `.read`/`.view` намеренно: «Только просмотр» получает все такие права
+     шаблоном, а этот отчёт ему не положен. */
+  { code: 'avia-report.access', name: 'Отчёты Kars Avia (ФИО гостей)' },
 
   // ── Settings ────────────────────────────────────────────────────────────────
   { code: 'settings.property.update', name: 'Update hotel/property settings' },
@@ -91,6 +96,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, ReadonlyArray<string>> = {
     'report.view.operations',
     'report.view.finance',
     'report.export',
+    'avia-report.access',
   ],
   CHANNEL_MANAGER: [
     'user.read',

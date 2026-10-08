@@ -53,6 +53,17 @@ export class ReservationsController {
     return this.reservationsService.getMealsForDay(date);
   }
 
+  /* Открыли карточку брони — в журнал гостиницы (152-ФЗ, Г-25; план 13.5).
+     Брони шахматка получает пачкой, карточку открывает интерфейс — он и
+     сообщает об открытии. Чужая бронь под RLS не видна — 404. */
+  @Post(':id/view')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequirePermissions('reservation.read')
+  @ApiOperation({ summary: 'Record that the reservation card was opened' })
+  async viewed(@Param('id') id: string, @CurrentUser() user: AuthenticatedRequestUser) {
+    await this.reservationsService.recordView(id, user.userId);
+  }
+
   @Get(':id/meals')
   @HttpCode(HttpStatus.OK)
   @RequirePermissions('reservation.read')

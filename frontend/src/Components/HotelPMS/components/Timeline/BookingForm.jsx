@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { differenceInDays, parseISO } from 'date-fns';
 import classes from './Timeline.module.css';
 import { BOOKING_STATUS, BOOKING_SOURCE } from '../../constants';
-import { cancelReservation } from '../../../../api/reservations';
+import { cancelReservation, markReservationViewed } from '../../../../api/reservations';
 import { useFolio, useAddPayment } from '../../../../hooks/api/useFolio';
 import { useReservationMeals } from '../../../../hooks/api/useMeals';
 import { format } from 'date-fns';
@@ -187,6 +187,11 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
 
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('booking'); // 'booking' | 'folio' | 'meals'
+
+  // Открытие карточки — в журнал гостиницы (план 13.5). Не мешает работе.
+  useEffect(() => {
+    if (booking.id) markReservationViewed(booking.id).catch(() => {});
+  }, [booking.id]);
 
   // In-app cancellation dialog (replaces native confirm/prompt)
   const [showCancel, setShowCancel] = useState(false);

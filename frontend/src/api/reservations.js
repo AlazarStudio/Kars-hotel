@@ -91,3 +91,9 @@ export async function cancelReservation(id, reason) {
   const resp = await api.post(`/reservations/${id}/cancel`, { reason });
   return resp.data;
 }
+
+/* Открыли карточку брони — сервер пишет это в журнал гостиницы (152-ФЗ,
+ * Г-25; план 13.5). */
+export async function markReservationViewed(id) {
+  await api.post(`/reservations/${encodeURIComponent(id)}/view`);
+}

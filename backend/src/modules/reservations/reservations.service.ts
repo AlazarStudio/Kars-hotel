@@ -606,6 +606,16 @@ export class ReservationsService {
     return { id: result.id, status: 'CHECKED_IN', version: result.version };
   }
 
+  /** Открытие карточки брони — в журнал (план 13.5). Чужая бронь — 404. */
+  async recordView(id: string, userId: string): Promise<void> {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    const found = await this.prisma.forTenant((tx) =>
+      tx.reservation.findUnique({ where: { id }, select: { id: true } }),
+    );
+    if (!found) throw new NotFoundException('Reservation not found');
+    await this.prisma.writeAuditLog({ tenantId, userId, entity: 'reservation', entityId: id, action: 'view' });
+  }
+
   // ─── Check-out ────────────────────────────────────────────────────────────────
 
   async checkOut(id: string, userId: string) {

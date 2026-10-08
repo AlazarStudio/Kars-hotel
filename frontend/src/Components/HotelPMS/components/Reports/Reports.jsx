@@ -5,6 +5,7 @@ import classes from './Reports.module.css';
 import { BOOKING_STATUS, BOOKING_SOURCE } from '../../constants';
 import { useTimeline } from '../../../../hooks/useTimeline';
 import AviaReportsTab from './AviaReportsTab';
+import { useAuth } from '../../../../auth/AuthContext';
 
 // ─── CSV export helper ───────────────────────────────────────────────────────
 function exportCSV(rows, filename) {
@@ -30,6 +31,9 @@ function Reports() {
     format(new Date(today.getFullYear(), today.getMonth() + 1, 0), 'yyyy-MM-dd'),
   );
   const [tab, setTab] = useState('occupancy');
+  // Отчёты Kars Avia — владелец, менеджер, бухгалтер (план 13.5).
+  const { hasPermission } = useAuth();
+  const canAvia = hasPermission('avia-report.access');
 
   // Derive timeline params from date range
   const fromDate = useMemo(() => { try { return parseISO(dateFrom); } catch { return new Date(); } }, [dateFrom]);
@@ -196,7 +200,7 @@ function Reports() {
           ['occupancy', 'По категориям'],
           ['source',    'По источникам'],
           ['bookings',  'Список броней'],
-          ['avia',      'Отчёты Kars Avia'],
+          ...(canAvia ? [['avia', 'Отчёты Kars Avia']] : []),
         ].map(([key, label]) => (
           <button
             key={key}
@@ -272,7 +276,7 @@ function Reports() {
       )}
 
       {/* ── Отчёты, выпущенные Kars Avia для гостиницы ── */}
-      {tab === 'avia' && <AviaReportsTab />}
+      {tab === 'avia' && canAvia && <AviaReportsTab />}
 
       {/* ── Bookings list ── */}
       {tab === 'bookings' && (
