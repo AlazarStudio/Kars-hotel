@@ -1,0 +1,49 @@
+# Минимальный CI PMS (152-ФЗ, Р-11; план 13.13): проверка типов и тесты
+# бэкенда, сборка кабинета. До него у PMS не было ни одной автоматической
+# проверки — правила доступа (RLS, роли, открытые ручки) держались на
+# внимательности. Тесты бэкенда — без базы: правила проверяются на подменах.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      # Клиент Prisma не в git; generate к базе не подключается.
+      - run: pnpm exec prisma generate
+      - run: pnpm exec tsc -p tsconfig.json --noEmit
+      - run: pnpm exec jest --ci
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vite build
