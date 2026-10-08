@@ -36,6 +36,10 @@ export const SYSTEM_PERMISSIONS: ReadonlyArray<{ code: string; name: string }> =
   // ── Guests (phase H) ────────────────────────────────────────────────────────
   { code: 'guest.read', name: 'View guests' },
   { code: 'guest.update', name: 'Update guest profiles' },
+  /* Обезличить бронь и выгрузить данные гостя по его запросу (152-ФЗ, Р-49;
+     план 13.7) — владелец и менеджер. Коды без .read/.view намеренно. */
+  { code: 'guest.anonymize', name: 'Обезличить бронь гостя' },
+  { code: 'guest.export', name: 'Выгрузить данные гостя по запросу' },
 
   // ── Finance (phase I) ───────────────────────────────────────────────────────
   { code: 'folio.read', name: 'View folios' },

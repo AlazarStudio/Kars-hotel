@@ -5,6 +5,8 @@ import { useQuery } from '@tanstack/react-query';
 import classes from './Bookings.module.css';
 import { BOOKING_STATUS, BOOKING_SOURCE } from '../../constants';
 import BookingForm from '../Timeline/BookingForm';
+import GuestExportModal from './GuestExportModal';
+import { useAuth } from '../../../../auth/AuthContext';
 import { useTimeline } from '../../../../hooks/useTimeline';
 import {
   createReservation,
@@ -68,6 +70,10 @@ function Bookings() {
   };
 
   const [search, setSearch] = useState('');
+  // Выгрузка данных гостя по его запросу (152-ФЗ, план 13.7).
+  const { hasPermission } = useAuth();
+  const canExport = hasPermission('guest.export');
+  const [showExport, setShowExport] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState(null);
@@ -248,6 +254,11 @@ function Bookings() {
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
+          {canExport && (
+            <button className={classes.btnAdd} onClick={() => setShowExport(true)} style={{ background: '#fff', color: '#2563eb', border: '1px solid #2563eb' }}>
+              Данные гостя
+            </button>
+          )}
           <button className={classes.btnAdd} onClick={openNew}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -441,6 +452,7 @@ function Bookings() {
           savingError={savingError}
         />
       )}
+      {showExport && <GuestExportModal onClose={() => setShowExport(false)} />}
     </div>
   );
 }

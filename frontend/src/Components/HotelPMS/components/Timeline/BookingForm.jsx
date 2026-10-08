@@ -2,7 +2,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { differenceInDays, parseISO } from 'date-fns';
 import classes from './Timeline.module.css';
 import { BOOKING_STATUS, BOOKING_SOURCE } from '../../constants';
-import { cancelReservation, markReservationViewed } from '../../../../api/reservations';
+import { anonymizeReservation, cancelReservation, markReservationViewed } from '../../../../api/reservations';
+import { useAuth } from '../../../../auth/AuthContext';
 import { useFolio, useAddPayment } from '../../../../hooks/api/useFolio';
 import { useReservationMeals } from '../../../../hooks/api/useMeals';
 import { format } from 'date-fns';
@@ -187,6 +188,20 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
 
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('booking'); // 'booking' | 'folio' | 'meals'
+
+  // Обезличить можно завершённую бронь (152-ФЗ, план 13.7).
+  const { hasPermission } = useAuth();
+  const canAnonymize =
+    !isNew && hasPermission('guest.anonymize') && ['checked_out', 'cancelled', 'no_show'].includes(booking?.status);
+  const handleAnonymize = async () => {
+    if (!window.confirm('Обезличить бронь? ФИО, телефон, почта и комментарий гостя будут стёрты безвозвратно — и в журнале тоже.')) return;
+    try {
+      await anonymizeReservation(booking.id);
+      onClose();
+    } catch (err) {
+      window.alert(err?.response?.data?.message ?? 'Не удалось обезличить');
+    }
+  };
 
   // Открытие карточки — в журнал гостиницы (план 13.5). Не мешает работе.
   useEffect(() => {
@@ -496,6 +511,11 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
           {!isNew && !isChannelManaged && ['new', 'confirmed'].includes(booking?.status) && (
             <button className={classes.btnDanger} onClick={openCancel}>
               Отменить бронь
+            </button>
+          )}
+          {canAnonymize && (
+            <button className={classes.btnSecondary} onClick={handleAnonymize}>
+              Обезличить
             </button>
           )}
           <button className={classes.btnSecondary} onClick={onClose}>Закрыть</button>

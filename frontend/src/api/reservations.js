@@ -97,3 +97,16 @@ export async function cancelReservation(id, reason) {
 export async function markReservationViewed(id) {
   await api.post(`/reservations/${encodeURIComponent(id)}/view`);
 }
+
+/* Обезличить завершённую бронь (152-ФЗ, Р-49; план 13.7). */
+export async function anonymizeReservation(id) {
+  const resp = await api.post(`/reservations/${encodeURIComponent(id)}/anonymize`);
+  return resp.data;
+}
+
+/* Всё, что гостиница хранит о госте, — по точному телефону, почте или ФИО
+ * (152-ФЗ, ст. 14; план 13.7). */
+export async function exportGuestData(params) {
+  const resp = await api.get('/reservations/guest-export', { params });
+  return resp.data;
+}

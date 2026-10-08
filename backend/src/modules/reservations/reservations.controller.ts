@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { ReservationsService } from './reservations.service';
+import { GuestDataService } from './guest-data.service';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
 import { SwapReservationsDto } from './dto/swap-reservations.dto';
@@ -24,7 +25,35 @@ import { AuthenticatedRequestUser } from '../auth/strategies/jwt.strategy';
 @ApiTags('Reservations')
 @Controller('reservations')
 export class ReservationsController {
-  constructor(private readonly reservationsService: ReservationsService) {}
+  constructor(
+    private readonly reservationsService: ReservationsService,
+    private readonly guestData: GuestDataService,
+  ) {}
+
+  /* Выгрузка всего, что гостиница хранит о госте, по его запросу (152-ФЗ,
+     ст. 14, Г-22; план 13.7): по точному телефону, почте или ФИО. */
+  @Get('guest-export')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('guest.export')
+  @ApiOperation({ summary: 'Export all data the hotel holds about a guest (exact phone, email or full name)' })
+  guestExport(
+    @Query('phone') phone: string | undefined,
+    @Query('email') email: string | undefined,
+    @Query('name') name: string | undefined,
+    @CurrentUser() user: AuthenticatedRequestUser,
+  ) {
+    return this.guestData.export({ phone, email, name }, user.userId);
+  }
+
+  /* Обезличить завершённую бронь — по команде гостиницы или требованию гостя
+     (152-ФЗ, Р-49, ст. 21; план 13.7). */
+  @Post(':id/anonymize')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('guest.anonymize')
+  @ApiOperation({ summary: 'Anonymize a finished reservation (name, phone, email, notes; journal traces)' })
+  anonymize(@Param('id') id: string, @CurrentUser() user: AuthenticatedRequestUser) {
+    return this.guestData.anonymize(id, user.userId);
+  }
 
   @Get('arrivals')
   @HttpCode(HttpStatus.OK)

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ReservationsService } from './reservations.service';
+import { GuestDataService } from './guest-data.service';
 import { ReservationsController } from './reservations.controller';
 import { TimelineModule } from '../timeline/timeline.module';
 import { FolioModule } from '../folio/folio.module';
@@ -12,7 +13,7 @@ import { PartnerWebhookService } from '../connectivity/partner-webhook.service';
 @Module({
   imports: [TimelineModule, FolioModule, HousekeepingModule],
   controllers: [ReservationsController],
-  providers: [ReservationsService, PartnerWebhookService],
+  providers: [ReservationsService, PartnerWebhookService, GuestDataService],
   exports: [ReservationsService],
 })
 export class ReservationsModule {}
