@@ -170,6 +170,23 @@ export class StorageService implements OnModuleInit {
     }
   }
 
+  /** Все файлы гостиницы — при её уходе из PMS (152-ФЗ, план 13.8). */
+  async deleteTenantFiles(tenantId: string): Promise<number> {
+    let n = 0;
+    for (const prefix of [`room-type-photos/${tenantId}/`, `tenant-logos/${tenantId}/`, `tenant-gallery/${tenantId}/`]) {
+      const keys: string[] = [];
+      await new Promise<void>((resolve, reject) => {
+        const stream = this.client.listObjectsV2(this.bucket, prefix, true);
+        stream.on('data', (o) => o.name && keys.push(o.name));
+        stream.on('error', reject);
+        stream.on('end', () => resolve());
+      });
+      if (keys.length) await this.client.removeObjects(this.bucket, keys);
+      n += keys.length;
+    }
+    return n;
+  }
+
   private publicUrl(key: string): string {
     return `${this.publicBase}/${this.bucket}/${key}`;
   }

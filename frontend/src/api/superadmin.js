@@ -49,3 +49,19 @@ export async function impersonate(tenantId) {
   const { data } = await api.post(`/admin/impersonate/${tenantId}`);
   return data; // { accessToken, accessTtlSeconds }
 }
+
+/* Уход гостиницы (152-ФЗ, план 13.8): выгрузка, затем уничтожение по акту. */
+export async function exportTenant(id) {
+  const { data, headers } = await api.get(`/admin/tenants/${id}/export`, { responseType: 'blob' });
+  const name = /filename="?([^"]+)"?/.exec(headers['content-disposition'] ?? '')?.[1] ?? 'hotel.json';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(data);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+export async function destroyTenant(id, confirmSlug) {
+  const { data } = await api.post(`/admin/tenants/${id}/destroy`, { confirmSlug });
+  return data;
+}

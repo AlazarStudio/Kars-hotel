@@ -141,6 +141,24 @@ model TenantOfferAcceptance {
   @@map("tenant_offer_acceptance")
 }
 
+/// Акт ухода гостиницы из PMS (152-ФЗ, Г-22; план 13.8): выгрузка, затем
+/// уничтожение. Без ПДн и без внешнего ключа — переживает гостиницу.
+model TenantExitAct {
+  id           String    @id @default(uuid()) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  tenantSlug   String    @map("tenant_slug")
+  tenantName   String    @map("tenant_name")
+  exportedAt   DateTime  @default(now()) @map("exported_at")
+  exportedBy   String    @map("exported_by") @db.Uuid
+  exportSha256 String    @map("export_sha256")
+  destroyedAt  DateTime? @map("destroyed_at")
+  destroyedBy  String?   @map("destroyed_by") @db.Uuid
+  counts       Json?     @db.JsonB
+
+  @@index([tenantId])
+  @@map("tenant_exit_act")
+}
+
 /// Ключ гостиницы к «Отчётам Kars Avia» (152-ФЗ, план 11.3): выдаёт Kars Avia,
 /// PMS предъявляет его, забирая отчёты СВОЕЙ гостиницы. Отдельно от Tenant —
 /// чтобы не уехать в браузер с настройками гостиницы.

@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
-import { Request } from 'express';
+import { Body, Controller, Get, Param, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Request, Response } from 'express';
 import { PlatformOperatorGuard, SuperAdminGuard } from './super-admin.guard';
 import { SuperAdminService } from './super-admin.service';
+import { TenantExitService } from './tenant-exit.service';
 import { RegisterTenantDto } from '../auth/dto/register-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { AuthenticatedRequestUser } from '../auth/strategies/jwt.strategy';
@@ -11,7 +12,10 @@ import { AuthenticatedRequestUser } from '../auth/strategies/jwt.strategy';
    ручка без гарда сюда не пройдёт незамеченной: тест super-admin-guards. */
 @Controller('admin')
 export class SuperAdminController {
-  constructor(private readonly svc: SuperAdminService) {}
+  constructor(
+    private readonly svc: SuperAdminService,
+    private readonly exit: TenantExitService,
+  ) {}
 
   // ─── Stats ──────────────────────────────────────────────────────────────────
 
@@ -45,6 +49,24 @@ export class SuperAdminController {
   @UseGuards(SuperAdminGuard)
   updateTenant(@Param('id') id: string, @Body() dto: UpdateTenantDto) {
     return this.svc.updateTenant(id, dto);
+  }
+
+  /* Уход гостиницы (152-ФЗ, план 13.8): выгрузка, затем уничтожение по акту. */
+  @Get('tenants/:id/export')
+  @UseGuards(SuperAdminGuard)
+  async exportTenant(@Param('id') id: string, @Req() req: Request, @Res() res: Response) {
+    const user = req.user as AuthenticatedRequestUser;
+    const { fileName, json } = await this.exit.export(id, user.userId);
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.send(json);
+  }
+
+  @Post('tenants/:id/destroy')
+  @UseGuards(SuperAdminGuard)
+  destroyTenant(@Param('id') id: string, @Body() body: { confirmSlug?: string }, @Req() req: Request) {
+    const user = req.user as AuthenticatedRequestUser;
+    return this.exit.destroy(id, body?.confirmSlug, user.userId);
   }
 
   @Patch('tenants/:id/toggle-active')

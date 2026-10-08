@@ -184,6 +184,32 @@ function HotelsSection() {
     !search || t.name.toLowerCase().includes(search.toLowerCase()) || (t.city ?? '').toLowerCase().includes(search.toLowerCase())
   );
 
+  /* Уход гостиницы (152-ФЗ, план 13.8): выгрузка, затем уничтожение —
+     только выключенной, при выгрузке не старше 7 дней, с вводом её кода. */
+  async function handleExport(tenant) {
+    try {
+      await superAdminApi.exportTenant(tenant.id);
+    } catch (err) {
+      alert('Ошибка выгрузки: ' + (err?.response?.data?.message ?? err.message));
+    }
+  }
+
+  async function handleDestroy(tenant) {
+    const code = window.prompt(
+      `Уничтожить «${tenant.name}» безвозвратно? Брони, гости, счета, сотрудники, журнал и файлы будут стёрты.
+` +
+        `Для подтверждения введите код гостиницы: ${tenant.slug}`,
+    );
+    if (code === null) return;
+    try {
+      const res = await superAdminApi.destroyTenant(tenant.id, code);
+      alert(`Уничтожено по акту ${res.actId}.`);
+      qc.invalidateQueries({ queryKey: ['admin'] });
+    } catch (err) {
+      alert(err?.response?.data?.message ?? err.message);
+    }
+  }
+
   async function handleImpersonate(tenant) {
     setImpersonatingId(tenant.id);
     try {
@@ -234,6 +260,16 @@ function HotelsSection() {
                       {!isDispatcher && (
                         <button className={`${classes.btnAction} ${t.isActive ? classes.btnActionOff : classes.btnActionOn}`} onClick={() => toggleActive.mutate(t.id)} disabled={toggleActive.isPending}>
                           {t.isActive ? 'Откл.' : 'Вкл.'}
+                        </button>
+                      )}
+                      {!isDispatcher && (
+                        <button className={classes.btnAction} onClick={() => handleExport(t)} title="Выгрузить все данные гостиницы">
+                          Выгрузить
+                        </button>
+                      )}
+                      {!isDispatcher && !t.isActive && (
+                        <button className={`${classes.btnAction} ${classes.btnActionOff}`} onClick={() => handleDestroy(t)} title="Уничтожить по акту">
+                          Уничтожить
                         </button>
                       )}
                     </div>
