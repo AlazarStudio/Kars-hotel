@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
+import { pinoHttpOptions } from './common/logging';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
 import { StorageModule } from './common/storage/storage.module';
@@ -34,22 +35,8 @@ import { ConnectivityModule } from './modules/connectivity/connectivity.module';
       isGlobal: true,
       envFilePath: ['.env'],
     }),
-    LoggerModule.forRoot({
-      pinoHttp: {
-        level: process.env.LOG_LEVEL ?? 'info',
-        transport:
-          process.env.NODE_ENV !== 'production'
-            ? {
-                target: 'pino-pretty',
-                options: {
-                  singleLine: true,
-                  translateTime: 'SYS:HH:MM:ss',
-                  ignore: 'pid,hostname,req.headers,res.headers',
-                },
-              }
-            : undefined,
-      },
-    }),
+    // Без ключей и токенов в журнале (152-ФЗ, план 13.6).
+    LoggerModule.forRoot({ pinoHttp: pinoHttpOptions() }),
     PrismaModule,
     RedisModule,
     StorageModule,
