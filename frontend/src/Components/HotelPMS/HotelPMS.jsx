@@ -2,6 +2,7 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import classes from './HotelPMS.module.css';
 import Sidebar from './components/Sidebar/Sidebar';
+import OfferGate from './components/OfferGate/OfferGate';
 import Dashboard from './components/Dashboard/Dashboard';
 import Timeline from './components/Timeline/Timeline';
 import Bookings from './components/Bookings/Bookings';
@@ -56,6 +57,7 @@ function HotelPMS() {
       <Sidebar hotel={hotel} />
       <div className={classes.body}>
         <ImpersonationBanner />
+        <OfferGate />
         <main className={classes.content}>
           {renderContent()}
         </main>

@@ -81,6 +81,9 @@ services:
       # или адресах партнёра API не стартует (152-ФЗ, план 12.1). Временный
       # режим без доменов — ALLOW_INSECURE_HTTP=yes, осознанно.
       ALLOW_INSECURE_HTTP: ${ALLOW_INSECURE_HTTP:-}
+      # Оферта с поручением (план 13.11): версия (0 — не опубликована) и адрес текста.
+      PMS_OFFER_VERSION: ${PMS_OFFER_VERSION:-0}
+      PMS_OFFER_URL: ${PMS_OFFER_URL:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -95,6 +98,8 @@ services:
         # Относительный адрес: кабинет и API на одном домене, и смена домена
         # не требует пересборки.
         VITE_API_BASE_URL: /api
+        # Адрес политики обработки ПДн (план 13.11); пусто — app.karsavia.ru/privacy.
+        VITE_PRIVACY_URL: ${PRIVACY_URL:-}
     restart: unless-stopped
     logging: *logging
     depends_on:

@@ -9,12 +9,15 @@ import {
   Param,
   Patch,
   Post,
+  Req,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { TenantService } from './tenant.service';
+import { OfferService } from './offer.service';
+import type { Request } from 'express';
 import { UpdateTenantSettingsDto } from './dto/update-tenant-settings.dto';
 import { UpdateGalleryDto } from './dto/update-gallery.dto';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
@@ -28,7 +31,10 @@ import { MAX_PHOTO_BYTES, UploadedFile as MediaFile } from '../../common/storage
 @ApiBearerAuth()
 @Controller('tenant')
 export class TenantController {
-  constructor(private readonly service: TenantService) {}
+  constructor(
+    private readonly service: TenantService,
+    private readonly offer: OfferService,
+  ) {}
 
   @Get('settings')
   @RequirePermissions('room.read')
@@ -65,6 +71,25 @@ export class TenantController {
   @ApiOperation({ summary: 'Delete a partner-facing service' })
   deletePartnerService(@Param('id') id: string) {
     return this.service.deletePartnerService(id);
+  }
+
+  /* Оферта PMS с поручением (152-ФЗ, Р-29; план 13.11): статус видит любой
+     сотрудник гостиницы, принимает — владелец сам. */
+  @Get('offer')
+  @ApiOperation({ summary: 'Offer (data processing agreement) status for this hotel' })
+  offerStatus(@CurrentUser() user: AuthenticatedRequestUser) {
+    return this.offer.status(user.tenantId);
+  }
+
+  @Post('offer/accept')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Accept the current offer version (owner only)' })
+  acceptOffer(
+    @CurrentUser() user: AuthenticatedRequestUser,
+    @Body() dto: { version?: number; incidentContact?: { name?: string; phone?: string; email?: string } },
+    @Req() req: Request,
+  ) {
+    return this.offer.accept(user, dto, req.ip, req.headers['user-agent']);
   }
 
   @Patch('settings')

@@ -38,3 +38,14 @@ export async function updateGallery(photos) {
   const { data } = await api.patch('/tenant/gallery', { photos });
   return data; // updated tenant
 }
+
+/* Оферта PMS с поручением (152-ФЗ, план 13.11). */
+export async function getOfferStatus() {
+  const { data } = await api.get('/tenant/offer');
+  return data;
+}
+
+export async function acceptOffer(payload) {
+  const { data } = await api.post('/tenant/offer/accept', payload);
+  return data;
+}

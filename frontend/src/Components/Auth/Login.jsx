@@ -6,6 +6,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import classes from './Auth.module.css';
 import { useAuth } from '../../auth/AuthContext';
 import PasswordInput from './PasswordInput';
+import { PRIVACY_URL } from '../../privacy';
 
 const schema = z.object({
   email: z.string().email('Неверный email'),
@@ -91,7 +92,10 @@ export default function Login() {
           </div>
         </form>
         <div className={classes.footer}>
-          Кабинет гостиницы — по приглашению Kars Avia.
+          Кабинет гостиницы — по приглашению Kars Avia.{' '}
+          <a href={PRIVACY_URL} target="_blank" rel="noreferrer" className={classes.footerLink}>
+            Политика обработки персональных данных
+          </a>
         </div>
       </div>
     </div>

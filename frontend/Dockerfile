@@ -17,6 +17,9 @@ COPY . .
 # умолчание относительное — тогда смена домена не требует пересборки.
 ARG VITE_API_BASE_URL=/api
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+# Политика обработки ПДн — на стороне Kars Avia (план 13.11).
+ARG VITE_PRIVACY_URL=
+ENV VITE_PRIVACY_URL=${VITE_PRIVACY_URL}
 RUN pnpm run build
 
 # --- раздача статики. Caddy и так стоит перед контуром, поэтому здесь он же:

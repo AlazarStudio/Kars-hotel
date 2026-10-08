@@ -7,6 +7,7 @@ import classes from './Auth.module.css';
 import { useAuth } from '../../auth/AuthContext';
 import { peekOwnerInvite } from '../../api/auth';
 import PasswordInput from './PasswordInput';
+import { PRIVACY_URL } from '../../privacy';
 
 /* ПРИГЛАШЕНИЕ ВЛАДЕЛЬЦА В КАБИНЕТ (30.09.2026, Э10).
  *
@@ -118,6 +119,9 @@ export default function InviteAccept() {
             </div>
             <div className={classes.subtitle} style={{ marginTop: 8 }}>
               Ссылка действует до {new Date(invite.expiresAt).toLocaleDateString('ru-RU')} и срабатывает один раз.
+            </div>
+            <div className={classes.subtitle} style={{ marginTop: 4 }}>
+              <a href={PRIVACY_URL} target="_blank" rel="noreferrer">Политика обработки персональных данных</a>
             </div>
           </form>
         )}

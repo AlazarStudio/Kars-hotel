@@ -103,6 +103,11 @@ model Tenant {
   /// «показывать ли сейчас», а этот — «что это за запись». Заключили договор →
   /// снимаем признак, и гостиница появляется везде.
   provisional       Boolean    @default(false)
+  /// Контакт гостиницы для уведомления об инциденте с ПДн (152-ФЗ, Р-29;
+  /// план 13.11): спрашивается при принятии оферты.
+  incidentContactName  String? @map("incident_contact_name")
+  incidentContactPhone String? @map("incident_contact_phone")
+  incidentContactEmail String? @map("incident_contact_email")
 
   users     User[]
   roles     Role[]
@@ -111,8 +116,25 @@ model Tenant {
   contractPrices  PartnerContractPrice[]
   ownerInvites    OwnerInvite[]
   aviaReportsKey  AviaReportsKey?
+  offerAcceptances TenantOfferAcceptance[]
 
   @@map("tenant")
+}
+
+/// Принятие оферты PMS с поручением на обработку ПДн (152-ФЗ, Р-29; план
+/// 13.11): кто, когда и какую версию. Не переписывается — версия = строка.
+model TenantOfferAcceptance {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  version    Int
+  userId     String   @map("user_id") @db.Uuid
+  ip         String?
+  userAgent  String?  @map("user_agent")
+  acceptedAt DateTime @default(now()) @map("accepted_at")
+
+  @@unique([tenantId, version], map: "tenant_offer_acceptance_tenant_version_key")
+  @@map("tenant_offer_acceptance")
 }
 
 /// Ключ гостиницы к «Отчётам Kars Avia» (152-ФЗ, план 11.3): выдаёт Kars Avia,
