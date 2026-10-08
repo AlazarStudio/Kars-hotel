@@ -36,8 +36,12 @@ export class FolioController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions('folio.update')
   @ApiOperation({ summary: 'Remove a charge line' })
-  deleteCharge(@Param('chargeId') chargeId: string) {
-    return this.folioService.deleteCharge(chargeId);
+  deleteCharge(
+    @Param('reservationId') reservationId: string,
+    @Param('chargeId') chargeId: string,
+    @CurrentUser() user: AuthenticatedRequestUser,
+  ) {
+    return this.folioService.deleteCharge(reservationId, chargeId, user.userId);
   }
 
   @Post('payments')
