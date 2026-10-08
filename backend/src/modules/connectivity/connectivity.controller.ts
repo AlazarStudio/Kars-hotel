@@ -192,8 +192,8 @@ export class ConnectivityController {
   @Get('hotels/:slug/reservations/:id')
   @RequireScopes(PARTNER_SCOPES.ReservationsRead)
   @ApiOperation({ summary: 'Fetch a reservation' })
-  getReservation(@Param('slug') slug: string, @Param('id') id: string) {
-    return this.connectivity.getReservation(slug, id);
+  getReservation(@Param('slug') slug: string, @Param('id') id: string, @Req() req: PartnerRequest) {
+    return this.connectivity.getReservation(slug, id, req.partner!.partnerId);
   }
 
   /* Правка брони партнёра. PATCH, а не PUT: партнёр присылает только то, что
@@ -213,8 +213,9 @@ export class ConnectivityController {
     @Param('slug') slug: string,
     @Param('id') id: string,
     @Body() dto: ConnectUpdateReservationDto,
+    @Req() req: PartnerRequest,
   ) {
-    return this.connectivity.updateReservation(slug, id, dto);
+    return this.connectivity.updateReservation(slug, id, dto, req.partner!.partnerId);
   }
 
   /* Раскладка питания по дням. PUT — присланный набор заменяет прежний
@@ -233,22 +234,23 @@ export class ConnectivityController {
     @Param('slug') slug: string,
     @Param('id') id: string,
     @Body() dto: ConnectReservationMealsDto,
+    @Req() req: PartnerRequest,
   ) {
-    return this.connectivity.setReservationMeals(slug, id, dto);
+    return this.connectivity.setReservationMeals(slug, id, dto, req.partner!.partnerId);
   }
 
   @Get('hotels/:slug/reservations/:id/meals')
   @RequireScopes(PARTNER_SCOPES.ReservationsRead)
   @ApiOperation({ summary: 'Read the meal plan of a reservation' })
-  getReservationMeals(@Param('slug') slug: string, @Param('id') id: string) {
-    return this.connectivity.getReservationMeals(slug, id);
+  getReservationMeals(@Param('slug') slug: string, @Param('id') id: string, @Req() req: PartnerRequest) {
+    return this.connectivity.getReservationMeals(slug, id, req.partner!.partnerId);
   }
 
   @Get('hotels/:slug/reservations/:id/facts')
   @RequireScopes(PARTNER_SCOPES.ReservationsRead)
   @ApiOperation({ summary: 'Stay facts for reconciliation' })
-  getFacts(@Param('slug') slug: string, @Param('id') id: string) {
-    return this.connectivity.getFacts(slug, id);
+  getFacts(@Param('slug') slug: string, @Param('id') id: string, @Req() req: PartnerRequest) {
+    return this.connectivity.getFacts(slug, id, req.partner!.partnerId);
   }
 
   /* Э6 · Зеркало закупочных цен договора. PUT, а не POST: приложение одно на
@@ -392,7 +394,8 @@ export class ConnectivityController {
     @Param('slug') slug: string,
     @Param('id') id: string,
     @Body() dto: ConnectCancelDto,
+    @Req() req: PartnerRequest,
   ) {
-    return this.connectivity.cancelReservation(slug, id, dto.reason);
+    return this.connectivity.cancelReservation(slug, id, req.partner!.partnerId, dto.reason);
   }
 }

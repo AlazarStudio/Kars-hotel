@@ -768,6 +768,11 @@ model Reservation {
   /// lifecycle: hotel staff may view it but cannot cancel it from the PMS — only
   /// the partner can release it through the connectivity API.
   channelManaged Boolean        @default(false) @map("channel_managed")
+  /// Партнёр, заведший бронь (152-ФЗ, Р-35; план 13.10): его API видит только свои.
+  partnerId   String?           @map("partner_id") @db.Uuid
+  /// Фактические заезд и выезд (Р-41): ставятся при заселении и выселении.
+  checkedInAt  DateTime?        @map("checked_in_at")
+  checkedOutAt DateTime?        @map("checked_out_at")
   /// Вид брони партнёра; пусто — не указан (собственные брони отеля).
   guestKind   GuestKind?        @map("guest_kind")
   notes       String?

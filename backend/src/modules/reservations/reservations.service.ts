@@ -566,6 +566,7 @@ export class ReservationsService {
       const [res] = await tx.$queryRaw<{ id: string; version: number }[]>`
         UPDATE reservation
         SET status = 'CHECKED_IN'::"ReservationStatus",
+            checked_in_at = now(),
             version = version + 1,
             "updatedAt" = now()
         WHERE id = ${id}::uuid
@@ -640,6 +641,7 @@ export class ReservationsService {
       const [res] = await tx.$queryRaw<{ id: string; version: number }[]>`
         UPDATE reservation
         SET status = 'CHECKED_OUT'::"ReservationStatus",
+            checked_out_at = now(),
             version = version + 1,
             "updatedAt" = now()
         WHERE id = ${id}::uuid

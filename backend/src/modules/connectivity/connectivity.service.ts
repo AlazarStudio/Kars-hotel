@@ -645,6 +645,11 @@ export class ConnectivityService {
         totalPrice,
       });
 
+      // Бронь помнит партнёра: его API видит только свои брони (план 13.10).
+      await this.prisma.forTenantExplicit(tenant.id, (tx) =>
+        tx.reservation.update({ where: { id: created.id }, data: { partnerId } }),
+      );
+
       this.logger.log(
         `Partner reservation created in hotel ${slug}: ${created.id} (ref=${dto.operatorRef ?? '-'})`,
       );
@@ -652,9 +657,13 @@ export class ConnectivityService {
     });
   }
 
-  async getReservation(slug: string, id: string) {
+  /* ТОЛЬКО СВОИ БРОНИ (152-ФЗ, Р-35; план 13.10). RLS отсекает чужую
+   * гостиницу, а внутри гостиницы партнёру видна только бронь, которую завёл
+   * он сам: бронь гостиницы и бронь другого партнёра неотличимы от
+   * несуществующей. Раньше по UUID читалась (и отменялась) любая. Через этот
+   * метод идут и правка, и отмена, и питание, и факты. */
+  async getReservation(slug: string, id: string, partnerId: string) {
     const tenant = await this.resolveTenant(slug);
-    // RLS guarantees this only resolves if the reservation belongs to `tenant`.
     // Pull the room number so the partner can show which room was assigned.
     const row = await this.prisma.forTenantExplicit(tenant.id, (tx) =>
       tx.reservation.findUnique({
@@ -662,7 +671,9 @@ export class ConnectivityService {
         include: { room: { select: { number: true } } },
       }),
     );
-    if (!row) throw new NotFoundException(`Reservation ${id} not found in hotel ${slug}`);
+    if (!row || !row.channelManaged || row.partnerId !== partnerId) {
+      throw new NotFoundException(`Reservation ${id} not found in hotel ${slug}`);
+    }
     return this.mapReservation(tenant, row);
   }
 
@@ -684,11 +695,11 @@ export class ConnectivityService {
    * не сопоставить ни с одной заявкой, и править их снаружи он не вправе.
    * Признак тот же, по которому работает отмена: `channelManaged`.
    */
-  async updateReservation(slug: string, id: string, dto: ConnectUpdateReservationDto) {
+  async updateReservation(slug: string, id: string, dto: ConnectUpdateReservationDto, partnerId: string) {
     const tenant = await this.resolveTenant(slug);
     /* Заодно убеждаемся, что бронь принадлежит ЭТОЙ гостинице: RLS не пустит
        к чужой, и `getReservation` бросит «не найдено» раньше правки. */
-    const before = await this.getReservation(slug, id);
+    const before = await this.getReservation(slug, id, partnerId);
 
     const row = await this.prisma.forTenantExplicit(tenant.id, (tx) =>
       tx.reservation.findUnique({
@@ -718,7 +729,7 @@ export class ConnectivityService {
       } as never),
     );
 
-    const after = await this.getReservation(slug, id);
+    const after = await this.getReservation(slug, id, partnerId);
     this.logger.log(
       `Partner reservation updated in hotel ${slug}: ${id} (${before.checkIn}…${before.checkOut} → ${after.checkIn}…${after.checkOut})`,
     );
@@ -727,10 +738,10 @@ export class ConnectivityService {
     return after;
   }
 
-  async cancelReservation(slug: string, id: string, reason?: string) {
+  async cancelReservation(slug: string, id: string, partnerId: string, reason?: string) {
     const tenant = await this.resolveTenant(slug);
-    // Ensure it belongs to this hotel before touching it.
-    await this.getReservation(slug, id);
+    // Только своя бронь партнёра: бронь гостиницы снаружи не отменить.
+    await this.getReservation(slug, id, partnerId);
     // fromChannel: the partner owns this booking, so it is allowed to release it
     // even though hotel staff are blocked from cancelling channel-managed rows.
     return this.runAsTenant(tenant.id, () =>
@@ -758,9 +769,10 @@ export class ConnectivityService {
     slug: string,
     id: string,
     dto: ConnectReservationMealsDto,
+    partnerId: string,
   ) {
     const tenant = await this.resolveTenant(slug);
-    const reservation = await this.getReservation(slug, id);
+    const reservation = await this.getReservation(slug, id, partnerId);
 
     const from = reservation.checkIn;
     const to = reservation.checkOut;
@@ -804,13 +816,13 @@ export class ConnectivityService {
     this.logger.log(
       `Partner meals set for reservation ${id} in hotel ${slug}: ${dto.days.length} day(s)`,
     );
-    return this.getReservationMeals(slug, id);
+    return this.getReservationMeals(slug, id, partnerId);
   }
 
   /** Раскладка питания брони — то, что гостиница готовит по дням. */
-  async getReservationMeals(slug: string, id: string) {
+  async getReservationMeals(slug: string, id: string, partnerId: string) {
     const tenant = await this.resolveTenant(slug);
-    await this.getReservation(slug, id);
+    await this.getReservation(slug, id, partnerId);
     const rows = await this.prisma.forTenantExplicit(tenant.id, (tx) =>
       tx.reservationMealDay.findMany({
         where: { reservationId: id },
@@ -834,8 +846,8 @@ export class ConnectivityService {
   }
 
   /** Stay facts for reconciliation on the partner side. */
-  async getFacts(slug: string, id: string) {
-    const r = await this.getReservation(slug, id);
+  async getFacts(slug: string, id: string, partnerId: string) {
+    const r = await this.getReservation(slug, id, partnerId);
     const arrived = r.status === 'CHECKED_IN' || r.status === 'CHECKED_OUT';
     const guestsBooked = r.adults + r.children;
     return {
@@ -844,8 +856,9 @@ export class ConnectivityService {
       noShow: r.status === 'NO_SHOW',
       guestsBooked,
       guestsArrived: arrived ? guestsBooked : 0,
-      checkedInAt: r.status === 'CHECKED_IN' || r.status === 'CHECKED_OUT' ? r.updatedAt : null,
-      checkedOutAt: r.status === 'CHECKED_OUT' ? r.updatedAt : null,
+      // Фактическое время (Р-41), а не время последней правки брони.
+      checkedInAt: arrived ? r.checkedInAt : null,
+      checkedOutAt: r.status === 'CHECKED_OUT' ? r.checkedOutAt : null,
     };
   }
 
@@ -1448,6 +1461,8 @@ export class ConnectivityService {
       notes: string | null;
       createdAt: Date;
       updatedAt: Date;
+      checkedInAt?: Date | null;
+      checkedOutAt?: Date | null;
       room?: { number: string } | null;
     },
   ) {
@@ -1473,6 +1488,8 @@ export class ConnectivityService {
       notes: r.notes,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
+      checkedInAt: r.checkedInAt ?? null,
+      checkedOutAt: r.checkedOutAt ?? null,
     };
   }
 }
