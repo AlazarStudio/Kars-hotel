@@ -28,7 +28,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     container_name: kars-hotel-redis
     restart: unless-stopped
     ports:
