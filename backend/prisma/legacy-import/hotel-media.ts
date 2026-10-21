@@ -161,6 +161,13 @@ async function main() {
     : {};
   const saveMap = () => writeFileSync(mapPath, JSON.stringify(uploaded, null, 1), 'utf8');
 
+  /* Карта «категория старой системы → категория PMS» от hotel-additions.ts:
+     если есть — категория берётся по ней, без угадывания (21.10.2026). */
+  const typeMapPath = join(DATA, 'room-type-map.json');
+  const typeMap: Record<string, string> = existsSync(typeMapPath)
+    ? JSON.parse(readFileSync(typeMapPath, 'utf8'))
+    : {};
+
   const slugMap: Record<string, { slug: string }> = JSON.parse(
     readFileSync(join(DATA, 'hotel-slug-map.json'), 'utf8'),
   );
@@ -265,14 +272,15 @@ async function main() {
       const kImages = (k.images ?? []).filter(Boolean);
       if (!kImages.length) continue;
       const want = norm(k.name);
+      const mapped = tenantTypes.find((t) => t.id === typeMap[oid(k._id) ?? '']);
       const byCode = tenantTypes.find((t) => t.code === code);
       const byName = want ? tenantTypes.filter((t) => norm(t.name) === want) : [];
-      const type =
+      const type = mapped ?? (
         byCode && (!want || norm(byCode.name) === want)
           ? byCode
           : byName.length === 1
             ? byName[0]
-            : null;
+            : null);
       if (!type) {
         problems.push(
           `категория ${h.name} / ${k.name ?? category} (${code}): ` +
