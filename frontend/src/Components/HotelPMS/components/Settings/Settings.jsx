@@ -117,6 +117,19 @@ const CURRENCIES = [
   { value: 'UZS', label: 'UZS — Узбекский сум' },
 ];
 
+/* Окно питания PMS хранит одной строкой «07:00–10:00» (так его и показывает
+   карточка Kars Avia), а правится двумя полями времени. */
+function splitMeal(v) {
+  const [start = '', end = ''] = String(v ?? '').split(/\s*[–-]\s*/);
+  return { start, end };
+}
+function joinMeal({ start, end }) {
+  if (!start && !end) return null;
+  return start && end ? `${start}–${end}` : (start || end);
+}
+// Пустое поле — «не указано» (null), а не «оставить как было».
+const numOrNull = (v) => (v === '' || v == null ? null : Number(v));
+
 // ─── Toggle component ──────────────────────────────────────────────────────────
 
 function Toggle({ checked, onChange }) {
@@ -189,6 +202,16 @@ export default function Settings() {
         checkOutTime:      settings.checkOutTime      ?? '12:00',
         cancellationHours: settings.cancellationHours ?? 24,
         multiPlaceEnabled: settings.multiPlaceEnabled ?? false,
+        guestRating:       settings.guestRating       ?? '',
+        capacity:          settings.capacity          ?? '',
+        airportCode:       settings.airportCode       ?? '',
+        airportMinutes:    settings.airportMinutes    ?? '',
+        mealBreakfast:     splitMeal(settings.mealBreakfast),
+        mealLunch:         splitMeal(settings.mealLunch),
+        mealDinner:        splitMeal(settings.mealDinner),
+        partnerVisible:    settings.partnerVisible    ?? true,
+        retentionCancelledDays: settings.retentionCancelledDays ?? '',
+        retentionContactsDays:  settings.retentionContactsDays  ?? '',
       });
       setAbout(parseHotelAbout(settings.description ?? ''));
     }
@@ -282,7 +305,7 @@ export default function Settings() {
         phone:             form.phone             || undefined,
         website:           form.website           || undefined,
         email:             form.email             || undefined,
-        stars:             form.stars             ? Number(form.stars) : undefined,
+        stars:             form.stars             ? Number(form.stars) : null,
         description:       aboutDirty ? aboutText : (form.description || undefined),
         // Отмеченная инфраструктура — теги «рядом» в карточке Kars Avia.
         ...(aboutDirty ? { infrastructure: infrastructureTags(about) } : {}),
@@ -299,6 +322,17 @@ export default function Settings() {
         checkOutTime:      form.checkOutTime      || undefined,
         cancellationHours: Number(form.cancellationHours),
         multiPlaceEnabled: form.multiPlaceEnabled,
+        // Профиль для диспетчеров Kars Avia: его они видят в карточке гостиницы.
+        guestRating:       numOrNull(form.guestRating),
+        capacity:          numOrNull(form.capacity),
+        airportCode:       form.airportCode.trim().toUpperCase() || null,
+        airportMinutes:    numOrNull(form.airportMinutes),
+        mealBreakfast:     joinMeal(form.mealBreakfast),
+        mealLunch:         joinMeal(form.mealLunch),
+        mealDinner:        joinMeal(form.mealDinner),
+        partnerVisible:    form.partnerVisible,
+        retentionCancelledDays: numOrNull(form.retentionCancelledDays),
+        retentionContactsDays:  numOrNull(form.retentionContactsDays),
       };
       await updateMutation.mutateAsync(payload);
       if (aboutDirty) {
@@ -487,6 +521,105 @@ export default function Settings() {
                     onChange={e => set('address', e.target.value)}
                     placeholder="ул. Тверская, д. 1"
                   />
+                </div>
+              </div>
+            </div>
+
+            {/* Всё, что Kars Avia показывает в карточке гостиницы, правится
+                здесь же: поля без редактора приходили только переносом из
+                старой системы, и изменить их было негде. */}
+            <div className={s.section}>
+              <div className={s.sectionHeader}>
+                <div className={s.sectionTitle}>Для диспетчеров Kars Avia</div>
+                <div className={s.sectionDesc}>Это видят диспетчеры, когда выбирают, куда селить экипаж и пассажиров</div>
+              </div>
+              <div className={s.sectionBody}>
+                <div className={f.row}>
+                  <div className={f.field}>
+                    <label className={f.label}>Рейтинг гостей (0–5)</label>
+                    <input
+                      className={f.input}
+                      type="number"
+                      min="0"
+                      max="5"
+                      step="0.1"
+                      value={form.guestRating}
+                      onChange={e => set('guestRating', e.target.value)}
+                      placeholder="4.5"
+                    />
+                  </div>
+                  <div className={f.field}>
+                    <label className={f.label}>Вместимость, мест</label>
+                    <input
+                      className={f.input}
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={form.capacity}
+                      onChange={e => set('capacity', e.target.value)}
+                      placeholder="37"
+                    />
+                  </div>
+                </div>
+                <div className={f.row}>
+                  <div className={f.field}>
+                    <label className={f.label}>Аэропорт (код IATA)</label>
+                    <input
+                      className={f.input}
+                      value={form.airportCode}
+                      maxLength={8}
+                      onChange={e => set('airportCode', e.target.value)}
+                      placeholder="VOG"
+                    />
+                    <div className={f.hint}>По этому коду диспетчер находит гостиницу под аэропорт заявки</div>
+                  </div>
+                  <div className={f.field}>
+                    <label className={f.label}>До аэропорта, минут</label>
+                    <input
+                      className={f.input}
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={form.airportMinutes}
+                      onChange={e => set('airportMinutes', e.target.value)}
+                      placeholder="28"
+                    />
+                  </div>
+                </div>
+                {[
+                  ['mealBreakfast', 'Завтрак'],
+                  ['mealLunch', 'Обед'],
+                  ['mealDinner', 'Ужин'],
+                ].map(([key, label]) => (
+                  <div className={f.row} key={key}>
+                    <div className={f.field}>
+                      <label className={f.label}>{label} — с</label>
+                      <input
+                        className={f.input}
+                        type="time"
+                        value={form[key].start}
+                        onChange={e => set(key, { ...form[key], start: e.target.value })}
+                      />
+                    </div>
+                    <div className={f.field}>
+                      <label className={f.label}>{label} — до</label>
+                      <input
+                        className={f.input}
+                        type="time"
+                        value={form[key].end}
+                        onChange={e => set(key, { ...form[key], end: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                ))}
+                <div className={s.toggleRow}>
+                  <div className={s.toggleInfo}>
+                    <div className={s.toggleLabel}>Показывать в каталоге Kars Avia</div>
+                    <div className={s.toggleDesc}>
+                      Выключение не закрывает гостиницу — она просто не предлагается диспетчерам
+                    </div>
+                  </div>
+                  <Toggle checked={form.partnerVisible} onChange={v => set('partnerVisible', v)} />
                 </div>
               </div>
             </div>
@@ -811,6 +944,33 @@ export default function Settings() {
                 />
                 <div className={f.hint}>0 = невозвратная бронь</div>
               </div>
+              <div className={f.row}>
+                <div className={f.field}>
+                  <label className={f.label}>Хранить отменённые и неявки, дней (1–30)</label>
+                  <input
+                    className={f.input}
+                    type="number"
+                    min="1"
+                    max="30"
+                    value={form.retentionCancelledDays}
+                    onChange={e => set('retentionCancelledDays', e.target.value)}
+                    placeholder="30"
+                  />
+                </div>
+                <div className={f.field}>
+                  <label className={f.label}>Хранить телефон и почту гостя, дней (1–92)</label>
+                  <input
+                    className={f.input}
+                    type="number"
+                    min="1"
+                    max="92"
+                    value={form.retentionContactsDays}
+                    onChange={e => set('retentionContactsDays', e.target.value)}
+                    placeholder="92"
+                  />
+                </div>
+              </div>
+              <div className={f.hint}>Пусто — системный срок. Сократить можно, удлинить нельзя.</div>
             </div>
           </div>
         )}

@@ -98,7 +98,7 @@ function Sidebar({ hotel }) {
       <div className={classes.logo}>
         <div className={classes.logoTitle}>{hotel?.name || 'Управление отелем'}</div>
         <div className={classes.logoSubtitle}>{hotel?.city} · {hotel?.address}</div>
-        <div className={classes.logoStars}>{'★'.repeat(hotel?.stars || 3)}</div>
+        <div className={classes.logoStars}>{'★'.repeat(hotel?.stars || 0)}</div>
       </div>
 
       <nav className={classes.nav}>

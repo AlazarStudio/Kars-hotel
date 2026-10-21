@@ -8,6 +8,7 @@ import {
 } from "react";
 import * as authApi from "../api/auth";
 import * as superAdminApi from "../api/superadmin";
+import { getTenantSettings } from "../api/tenant";
 import {
   clearStoredSession,
   readStoredSession,
@@ -66,13 +67,26 @@ export function AuthProvider({ children }) {
       try {
         await authApi.refresh();
         const profile = await authApi.me();
+        /* Кука сессии по ссылке возвращает работу в гостинице — значит, и
+           баннер «Вы работаете от имени …» должен вернуться. Но кука общая на
+           браузер: вход по ссылке в ДРУГУЮ гостиницу в соседней вкладке
+           переписывает её, и эта вкладка после обновления оказывается уже там.
+           Название из записи вкладки тогда врёт (21.10.2026: баннер «3А
+           Казань» над данными Magrib Caspiy), поэтому берём его с сервера —
+           ту гостиницу, куда на самом деле пойдёт «Сохранить». */
+        let tenant = null;
+        if (stored?.tenant) {
+          const actual = await getTenantSettings().catch(() => null);
+          tenant = actual
+            ? { ...stored.tenant, id: actual.id, slug: actual.slug, name: actual.name }
+            : stored.tenant;
+        }
         if (!cancelled) {
           setUser(profile);
-          /* Кука сессии по ссылке возвращает работу В ТОЙ ЖЕ гостинице —
-             значит, и баннер «Вы работаете от имени …» должен вернуться.
-             Название берём из записи вкладки: в профиле его нет, а работать
-             в чужой гостинице, не видя чьей, нельзя. */
-          if (stored?.tenant) setImpersonatedTenant(stored.tenant);
+          if (tenant) {
+            setImpersonatedTenant(tenant);
+            persistImpersonatedTenant(tenant);
+          }
           setStatus(STATUS.AUTHENTICATED);
         }
       } catch {
