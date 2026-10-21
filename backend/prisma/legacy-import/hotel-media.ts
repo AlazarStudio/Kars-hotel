@@ -248,7 +248,13 @@ async function main() {
 
     /* ── Фото категорий: код повторяет правило hotels.ts — категория старой
      * системы + суффикс при повторе, в порядке RoomKind.json. Сверяемся по
-     * имени: разойдётся порядок — лучше пропустить, чем прикрепить чужие. */
+     * имени: разойдётся порядок — лучше пропустить, чем прикрепить чужие.
+     * 21.10.2026: в свежем дампе порядок категорий сдвинулся, и одно правило
+     * кодов разложило 1846 фото по соседним категориям («Семейный номер» →
+     * «Улучшенный TWIN»). Теперь код берётся, только если совпало название;
+     * иначе — единственная категория гостиницы с таким названием. */
+    const norm = (s: string | null | undefined) => (s ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const tenantTypes = await prisma.roomType.findMany({ where: { tenantId: tenant.id } });
     const usedCodes = new Set<string>();
     for (const k of kindList) {
       const category = clean(k.category) ?? 'other';
@@ -258,11 +264,20 @@ async function main() {
       usedCodes.add(code);
       const kImages = (k.images ?? []).filter(Boolean);
       if (!kImages.length) continue;
-      const type = await prisma.roomType.findUnique({
-        where: { tenantId_code: { tenantId: tenant.id, code } },
-      });
+      const want = norm(k.name);
+      const byCode = tenantTypes.find((t) => t.code === code);
+      const byName = want ? tenantTypes.filter((t) => norm(t.name) === want) : [];
+      const type =
+        byCode && (!want || norm(byCode.name) === want)
+          ? byCode
+          : byName.length === 1
+            ? byName[0]
+            : null;
       if (!type) {
-        problems.push(`категория ${h.name} / ${k.name ?? category} (${code}): нет в PMS`);
+        problems.push(
+          `категория ${h.name} / ${k.name ?? category} (${code}): ` +
+            (byName.length > 1 ? 'в PMS несколько с таким названием' : 'нет в PMS'),
+        );
         continue;
       }
       const typeUrls: string[] = [];
