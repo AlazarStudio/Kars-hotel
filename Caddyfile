@@ -18,6 +18,15 @@
 		reverse_proxy api:3001
 	}
 
+	# Фото гостиниц и категорий: публичное чтение бакета MinIO путём
+	# /<бакет>/<ключ> — ровно таким адресом их пишет StorageService
+	# (S3_PUBLIC_URL + /kars-hotel/...). Загрузка идёт только через api.
+	handle /kars-hotel/* {
+		@read method GET HEAD
+		reverse_proxy @read minio:9000
+		respond 405
+	}
+
 	handle {
 		reverse_proxy web:8080
 	}
