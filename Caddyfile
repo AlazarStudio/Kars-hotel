@@ -22,9 +22,11 @@
 	# /<бакет>/<ключ> — ровно таким адресом их пишет StorageService
 	# (S3_PUBLIC_URL + /kars-hotel/...). Загрузка идёт только через api.
 	handle /kars-hotel/* {
-		@read method GET HEAD
-		reverse_proxy @read minio:9000
-		respond 405
+		# respond в Caddy исполняется РАНЬШЕ reverse_proxy, поэтому запрет —
+		# с условием на метод, а не «всё остальное» после прокси.
+		@write not method GET HEAD
+		respond @write 405
+		reverse_proxy minio:9000
 	}
 
 	handle {
