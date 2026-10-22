@@ -746,8 +746,9 @@ function Timeline({ multiPlaceEnabled = true }) {
                               </svg>
                             </button>
                           )}
-                          <div className={classes.roomNumber}>№{room.number}</div>
-                          <div className={classes.roomCategory}>{cat.name}</div>
+                          <div className={classes.roomNumber} title={`№${room.number} · ${cat.name}`}>
+                            №{room.number} <span className={classes.roomCategory}>{cat.name}</span>
+                          </div>
                           {/* Пометка видна ВСЕГДА, не только в режиме «Резерв»:
                               администратор селит из обычной шахматки, и узнать
                               о договорённости он должен там же. */}

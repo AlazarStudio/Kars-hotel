@@ -1,4 +1,7 @@
 .root {
+  /* Ширина колонки номеров — одна на шапку, строку наличия, категории, номера
+     и места (23.10.2026: 210 → 320, адреса апартаментов не помещались). */
+  --tl-label-w: 320px;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -218,7 +221,7 @@
 }
 
 .headerCorner {
-  width: 210px;
+  width: var(--tl-label-w);
   flex-shrink: 0;
   position: sticky;
   left: 0;
@@ -288,7 +291,7 @@
 }
 
 .availCorner {
-  width: 210px;
+  width: var(--tl-label-w);
   flex-shrink: 0;
   position: sticky;
   left: 0;
@@ -332,7 +335,7 @@
 }
 
 .categoryLabel {
-  width: 210px;
+  width: var(--tl-label-w);
   flex-shrink: 0;
   position: sticky;
   left: 0;
@@ -385,7 +388,7 @@
 }
 
 .capGroupLabel {
-  width: 210px;
+  width: var(--tl-label-w);
   flex-shrink: 0;
   position: sticky;
   left: 0;
@@ -478,7 +481,7 @@
 .placeRow:last-child { border-bottom: 1px solid #DDE5F0; }
 
 .placeLabel {
-  width: 210px;
+  width: var(--tl-label-w);
   flex-shrink: 0;
   position: sticky;
   left: 0;
@@ -506,7 +509,7 @@
 }
 
 .roomLabel {
-  width: 210px;
+  width: var(--tl-label-w);
   flex-shrink: 0;
   position: sticky;
   left: 0;
@@ -515,21 +518,31 @@
   border-right: 1px solid #E8EDF3;
   display: flex;
   align-items: center;
-  padding: 0 12px;
-  gap: 8px;
+  padding: 0 10px;
+  gap: 6px;
   transition: background 0.1s;
 }
 
+/* Номер апартаментов — адрес (до 100 символов): мелко, до двух строк с
+   переносом, категория — серым тем же абзацем. Полный текст — в подсказке. */
 .roomNumber {
-  font-size: 14px;
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.25;
   font-weight: 700;
   color: #1B2A47;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
 .roomCategory {
-  font-size: 11px;
+  font-size: 10px;
+  font-weight: 400;
   color: #8896AB;
-  flex: 1;
 }
 
 .hkDotWrap {
