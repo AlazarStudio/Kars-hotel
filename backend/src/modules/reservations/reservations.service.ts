@@ -185,7 +185,13 @@ export class ReservationsService {
     const tenantId = TenantContext.getTenantIdOrThrow();
 
     type TxResult =
-      | { ok: true; id: string; version: number; status: string }
+      | {
+          ok: true;
+          id: string;
+          version: number;
+          status: string;
+          changes: { before: Record<string, unknown>; after: Record<string, unknown> };
+        }
       | {
           ok: false;
           reason:
@@ -377,7 +383,28 @@ export class ReservationsService {
       `;
 
       this.logger.log(`Reservation updated: ${res.id} place ${placeNumber}`);
-      return { ok: true, ...res };
+      /* Что именно поменялось — в журнал (23.10.2026): «взрослых 1 → 2» на
+         брони 0913 восстанавливали по журналу прокси, потому что запись
+         правки хранила только новый статус и номер версии. */
+      const was: Record<string, unknown> = {
+        roomId: cur.room_id, checkIn: format(cur.check_in, 'yyyy-MM-dd'), checkOut: format(cur.check_out, 'yyyy-MM-dd'),
+        guestName: cur.guest_name, phone: cur.phone, email: cur.email, adults: cur.adults, children: cur.children,
+        status: cur.status, source: cur.source, notes: cur.notes,
+        totalPrice: cur.total_price ? Number(cur.total_price) : null, placeNumber: cur.place_number,
+      };
+      const now: Record<string, unknown> = {
+        roomId, checkIn: checkInStr, checkOut: checkOutStr, guestName, phone, email, adults, children,
+        status, source, notes, totalPrice, placeNumber,
+      };
+      const before: Record<string, unknown> = {};
+      const after: Record<string, unknown> = {};
+      for (const k of Object.keys(now)) {
+        if (String(was[k] ?? '') !== String(now[k] ?? '')) {
+          before[k] = was[k];
+          after[k] = now[k];
+        }
+      }
+      return { ok: true, ...res, changes: { before, after } };
     });
 
     if (!result.ok) {
@@ -413,7 +440,11 @@ export class ReservationsService {
       entity: 'reservation',
       entityId: result.id,
       action: 'update',
-      diff: { before: {}, after: { status: result.status, version: result.version } },
+      // Кто правил — из контекста запроса (writeAuditLog); откуда — партнёр или кабинет.
+      diff: {
+        before: result.changes.before,
+        after: { ...result.changes.after, version: result.version, ...(opts.fromChannel ? { via: 'partner-api' } : {}) },
+      },
     });
 
     /* Правка брони партнёра — ему сообщается ЗДЕСЬ, откуда бы она ни пришла:

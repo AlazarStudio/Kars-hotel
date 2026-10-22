@@ -113,7 +113,11 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       await this.admin.auditLog.create({
         data: {
           tenantId: params.tenantId,
-          userId: params.userId ?? null,
+          /* Кто — тоже из запроса, если вызывающий не передал (23.10.2026): правка
+             брони писалась без пользователя, и «кто сменил 1 → 2 взрослых»
+             пришлось искать по журналу прокси. Партнёрский API идёт с пустым
+             userId — это «никто из кабинета», а не пользователь. */
+          userId: params.userId || TenantContext.get()?.userId || null,
           entity: params.entity,
           entityId: params.entityId ?? null,
           action: params.action,
