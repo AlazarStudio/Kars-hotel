@@ -17,8 +17,11 @@ export class CreateRoomDto {
   roomTypeId!: string;
 
   @ApiProperty({ description: 'Room number — unique per tenant', example: '101' })
+  /* 100, а не 16 (22.10.2026): перенесённые из старой системы номера бывают
+     адресом квартиры («ул. 40 лет Победы 3 кв 58») — 824 из них длиннее 16,
+     и при пределе 16 такой номер нельзя было даже пересохранить. */
   @IsString()
-  @MaxLength(16)
+  @MaxLength(100)
   number!: string;
 
   @ApiPropertyOptional({ default: 1 })

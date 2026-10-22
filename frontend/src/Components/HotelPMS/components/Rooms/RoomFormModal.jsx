@@ -68,7 +68,8 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
     const e = {};
     if (!values.roomTypeId) e.roomTypeId = 'Выберите категорию';
     if (!values.number || values.number.trim().length === 0) e.number = 'Обязательно';
-    if (values.number && values.number.length > 16) e.number = 'Максимум 16 символов';
+    // Тот же предел, что на сервере (CreateRoomDto): номер бывает и адресом квартиры.
+    if (values.number && values.number.length > 100) e.number = 'Максимум 100 символов';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -143,7 +144,7 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
               onChange={(e) => set('number', e.target.value)}
               aria-invalid={errors.number ? 'true' : 'false'}
               placeholder="101"
-              maxLength={16}
+              maxLength={100}
             />
             {errors.number && <div className={formClasses.fieldError}>{errors.number}</div>}
           </div>
