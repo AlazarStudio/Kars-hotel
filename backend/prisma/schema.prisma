@@ -396,6 +396,48 @@ model AuditLog {
   @@map("audit_log")
 }
 
+// Журнал действий (23.10.2026): каждый запрос, меняющий данные, и каждое
+// нажатие в кабинете — чтобы задним числом восстановить, кто, когда, что нажал
+// и что из этого вышло. audit_log остаётся журналом смысловых событий. Пишет
+// только сервер (admin-клиент), app_user доступа не имеет. Хранится бессрочно.
+// Секреты в тело не попадают — src/common/journal/journal-redact.ts.
+model ActionJournal {
+  id            String   @id @default(uuid()) @db.Uuid
+  at            DateTime @default(now())
+  // 'request' — запрос к серверу; 'ui' — действие в кабинете.
+  kind          String
+  tenantId      String?  @map("tenant_id") @db.Uuid
+  userId        String?  @map("user_id") @db.Uuid
+  email         String?
+  impersonatedBy String? @map("impersonated_by")
+  // Партнёр (Kars Avia) по ключу API — у него нет пользователя кабинета.
+  partnerId     String?  @map("partner_id")
+  sessionId     String?  @map("session_id")
+  actionId      String?  @map("action_id")
+  method        String?
+  route         String?
+  path          String?
+  page          String?
+  status        Int?
+  durationMs    Int?     @map("duration_ms")
+  body          Json?    @db.JsonB
+  query         Json?    @db.JsonB
+  error         String?
+  event         String?
+  label         String?
+  target        String?
+  meta          Json?    @db.JsonB
+  ip            String?
+  userAgent     String?  @map("user_agent")
+
+  @@index([at])
+  @@index([tenantId, at])
+  @@index([userId, at])
+  @@index([sessionId, at])
+  @@index([actionId])
+  @@map("action_journal")
+}
+
 // ─── Connectivity — Partner API keys (channel-manager / OTA integration) ─────
 
 /// API credential for external partner systems (e.g. the Kars Avia dispatcher

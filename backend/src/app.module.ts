@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { JournalModule } from './common/journal/journal.module';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
@@ -61,6 +62,7 @@ import { ConnectivityModule } from './modules/connectivity/connectivity.module';
     FolioModule,
     HousekeepingModule,
     ConnectivityModule,
+    JournalModule,
   ],
   providers: [
     // Global guard — every controller is protected unless explicitly marked @Public().

@@ -7,7 +7,7 @@ import AdminPanel from './Components/AdminPanel/AdminPanel';
 import ProtectedRoute from './auth/ProtectedRoute';
 import { PMS_SECTIONS } from './Components/HotelPMS/sections';
 
-const ADMIN_SECTIONS = ['hotels', 'features', 'users', 'create', 'settings'];
+const ADMIN_SECTIONS = ['hotels', 'features', 'journal', 'users', 'create', 'settings'];
 
 const ProtectedPMS = () => (
   <ProtectedRoute>

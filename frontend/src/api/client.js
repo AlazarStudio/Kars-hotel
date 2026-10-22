@@ -1,4 +1,5 @@
 import axios from "axios";
+import { journalHeaders } from "../lib/journal";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
@@ -105,6 +106,8 @@ api.interceptors.request.use((cfg) => {
     cfg.headers = cfg.headers || {};
     cfg.headers.Authorization = `Bearer ${accessToken}`;
   }
+  // Журнал действий: вкладка, экран и нажатие, от которого пошёл запрос.
+  if (cfg.headers?.set) journalHeaders(cfg.headers);
   return cfg;
 });
 

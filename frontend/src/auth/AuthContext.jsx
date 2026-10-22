@@ -9,8 +9,11 @@ import {
 import * as authApi from "../api/auth";
 import * as superAdminApi from "../api/superadmin";
 import { getTenantSettings } from "../api/tenant";
+import { flushJournal, startJournal } from "../lib/journal";
 import {
+  API_BASE_URL,
   clearStoredSession,
+  getAccessToken,
   readStoredSession,
   setAccessToken,
   setImpersonatedTenant as persistImpersonatedTenant,
@@ -119,7 +122,15 @@ export function AuthProvider({ children }) {
     return data;
   }, []);
 
+  // Журнал действий: след нажатий и переходов, пока человек вошёл (lib/journal.js).
+  useEffect(() => {
+    if (!user?.id) return undefined;
+    return startJournal(`${API_BASE_URL}/journal/ui`, getAccessToken);
+  }, [user?.id]);
+
   const logout = useCallback(async () => {
+    // Нажатие «Выйти» и всё до него — в журнал, пока токен ещё жив.
+    flushJournal();
     setImpersonatingFlag(false);
     try {
       await authApi.logout();

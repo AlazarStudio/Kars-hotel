@@ -8,6 +8,8 @@ import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { assertSecureTransport } from './common/transport-security';
+import { journalMiddleware } from './common/journal/journal.middleware';
+import { JournalService } from './common/journal/journal.service';
 
 async function bootstrap() {
   // На бою адреса наружу — только https (152-ФЗ, план 12.1).
@@ -26,6 +28,8 @@ async function bootstrap() {
   app.useLogger(app.get(PinoLogger));
   app.use(helmet());
   app.use(cookieParser());
+  // Журнал действий: каждый запрос, меняющий данные, — строкой (journal.middleware.ts).
+  app.use(journalMiddleware(app.get(JournalService)));
   app.enableCors({
     origin: process.env.CORS_ORIGIN?.split(',') ?? ['http://localhost:5173'],
     credentials: true,

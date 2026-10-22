@@ -31,7 +31,8 @@ export default function Modal({ open, title, onClose, width = 'md', children, fo
         if (e.target === e.currentTarget) onClose?.();
       }}
     >
-      <div className={`${classes.dialog} ${classes[`width_${width}`] || ''}`}>
+      {/* role и подпись — и для экранного диктора, и для журнала действий (lib/journal.js видит окна по role). */}
+      <div className={`${classes.dialog} ${classes[`width_${width}`] || ''}`} role="dialog" aria-modal="true" aria-label={title}>
         <div className={classes.header}>
           <div className={classes.title}>{title}</div>
           <button type="button" className={classes.close} onClick={onClose} aria-label="Закрыть">

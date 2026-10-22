@@ -77,3 +77,10 @@ export async function applyFeature(feature, enabled, tenantIds) {
   const { data } = await api.post('/admin/features/apply', { feature, enabled, tenantIds });
   return data; // { feature, enabled, changed, requested }
 }
+
+/** Журнал действий (23.10.2026): каждый запрос и каждое нажатие, по всем гостиницам. */
+export async function listJournal(params = {}) {
+  const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '' && v !== false));
+  const { data } = await api.get('/admin/journal', { params: clean });
+  return data;
+}
