@@ -123,16 +123,18 @@ export class SuperAdminService {
 
   // ─── Impersonation ──────────────────────────────────────────────────────────
 
-  /* Диспетчер входит только в действующую гостиницу, видимую партнёру (или
-     заведённую им разово), — тот же круг, что отдаёт партнёрский API.
-     Суперадмин — в любую действующую. */
+  /* Диспетчер входит только в действующую гостиницу — тот же круг, что
+     отдаёт партнёрский API. Скрытая из каталога (partnerVisible=false) —
+     тоже: её не видят авиакомпании, а диспетчер как раз и доделывает её
+     карточку (решение владельца Kars Avia 22.10.2026). Суперадмин — в любую
+     действующую. */
   async impersonate(tenantId: string, actor: AuthenticatedRequestUser, ip?: string, userAgent?: string) {
     if (!actor.isSuperAdmin) {
       const t = await this.prisma.admin.tenant.findUnique({
         where: { id: tenantId },
-        select: { isActive: true, partnerVisible: true, provisional: true, slug: true },
+        select: { isActive: true, slug: true },
       });
-      if (!t || !t.isActive || t.slug === 'platform' || (!t.partnerVisible && !t.provisional)) {
+      if (!t || !t.isActive || t.slug === 'platform') {
         throw new ForbiddenException('Гостиница недоступна диспетчеру');
       }
     }

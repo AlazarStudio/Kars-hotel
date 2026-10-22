@@ -616,7 +616,7 @@ export default function Settings() {
                   <div className={s.toggleInfo}>
                     <div className={s.toggleLabel}>Показывать в каталоге Kars Avia</div>
                     <div className={s.toggleDesc}>
-                      Выключение не закрывает гостиницу — она просто не предлагается диспетчерам
+                      Выключение не закрывает гостиницу: диспетчеры Kars Avia её видят и селят, авиакомпаниям она не показывается
                     </div>
                   </div>
                   <Toggle checked={form.partnerVisible} onChange={v => set('partnerVisible', v)} />

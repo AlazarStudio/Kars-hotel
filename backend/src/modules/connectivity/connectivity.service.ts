@@ -62,20 +62,32 @@ export class ConnectivityService {
    * По умолчанию их НЕТ: диспетчер, размещающий экипаж планово, не должен
    * натыкаться на гостиницу, куда однажды ночью отвезли людей и с которой нет
    * договора. Просит их ровно один экран — проживание сбойной заявки.
+   *
+   * `includeHidden` — вместе со скрытыми (`partnerVisible=false`), а
+   * `includeInactive` — с выключенными. Решение владельца Kars Avia
+   * 22.10.2026, как в старой системе: скрытая — рабочая гостиница, которую
+   * ещё не доделали; её видят диспетчеры, но не авиакомпании, а выключенную —
+   * только администратор. Кому что показать, решает партнёр по правам своих
+   * людей, поэтому здесь это просьба, а не отбор: признаки едут в карточке
+   * (`partnerVisible`, `isActive`).
    */
-  async listHotels(opts: { includeProvisional?: boolean } = {}) {
+  async listHotels(
+    opts: { includeProvisional?: boolean; includeHidden?: boolean; includeInactive?: boolean } = {},
+  ) {
     const tenants = await this.prisma.admin.tenant.findMany({
       /* В3 · partnerVisible скрывает отель из каталога, не выключая его самого:
        * «пока не берём заявки» не должно означать «сотрудники не могут войти». */
       where: {
-        isActive: true,
+        ...(opts.includeInactive ? {} : { isActive: true }),
         slug: { not: ConnectivityService.PLATFORM_SLUG },
-        /* Разовая гостиница видимости в каталоге не имеет по определению,
-           поэтому при `includeProvisional` условие снимается целиком: иначе
-           фильтр по partnerVisible отсёк бы ровно то, что просили. */
-        ...(opts.includeProvisional
-          ? { OR: [{ partnerVisible: true }, { provisional: true }] }
-          : { partnerVisible: true, provisional: false }),
+        /* Разовая гостиница видимости в каталоге не имеет по определению
+           (partnerVisible у неё выключен), поэтому она идёт своей веткой, а не
+           «скрытой»: иначе `includeHidden` подмешивал бы разовые туда, где их
+           не просили. */
+        OR: [
+          { provisional: false, ...(opts.includeHidden ? {} : { partnerVisible: true }) },
+          ...(opts.includeProvisional ? [{ provisional: true }] : []),
+        ],
       },
       orderBy: { name: 'asc' },
     });
@@ -216,7 +228,7 @@ export class ConnectivityService {
   }
 
   async getHotel(slug: string) {
-    const tenant = await this.resolveTenant(slug);
+    const tenant = await this.resolveTenant(slug, { allowInactive: true });
     const { roomTypes, ratePlans, standardRates, services } = await this.prisma.forTenantExplicit(
       tenant.id,
       async (tx) => {
@@ -315,7 +327,7 @@ export class ConnectivityService {
    * внутренняя кухня гостиницы.
    */
   async listRooms(slug: string) {
-    const tenant = await this.resolveTenant(slug);
+    const tenant = await this.resolveTenant(slug, { allowInactive: true });
     const rooms = await this.prisma.forTenantExplicit(tenant.id, (tx) =>
       tx.room.findMany({
         where: { isActive: true },
@@ -1141,20 +1153,21 @@ export class ConnectivityService {
     return this.runAsTenant(tenant.id, () => this.ratePlans.partnerTariffs(partnerId));
   }
 
-  private async resolveTenant(slug: string) {
+  private async resolveTenant(slug: string, opts: { allowInactive?: boolean } = {}) {
     if (slug === ConnectivityService.PLATFORM_SLUG) {
       throw new NotFoundException(`Hotel '${slug}' not found`);
     }
     const tenant = await this.prisma.admin.tenant.findUnique({ where: { slug } });
-    /* Скрытый отель не отдаём и по прямой ссылке: иначе флаг убирал бы его
-     * только из списка, а бронь по сохранённому id всё равно проходила бы.
+    /* Скрытую (`partnerVisible=false`) отдаём (решение владельца Kars Avia
+     * 22.10.2026): это рабочая гостиница, которую ещё не доделали, —
+     * диспетчеры селят в неё и доделывают карточку, не видят её только
+     * авиакомпании. Это различие людей партнёра, а не гостиницы, поэтому
+     * проводит его партнёр; раньше 404 здесь ломал заявки и договоры 98
+     * перенесённых из старой системы гостиниц.
      *
-     * Разовая — не скрытая: `partnerVisible` у неё выключен потому, что ей не
-     * место в ОБЩЕМ каталоге, а не потому, что её прячут от партнёра. Партнёр
-     * сам её и завёл, у него в сбойной заявке лежит её slug — карточка по
-     * прямой ссылке обязана открываться. Раньше два разных смысла сходились в
-     * одном условии, и своя же гостиница отвечала 404. */
-    if (!tenant || !tenant.isActive || (!tenant.partnerVisible && !tenant.provisional)) {
+     * Выключенную — только на чтение (`allowInactive`: карточка и номерной
+     * фонд, их смотрит администратор): бронь и наличие мест в неё закрыты. */
+    if (!tenant || (!tenant.isActive && !opts.allowInactive)) {
       throw new NotFoundException(`Hotel '${slug}' not found`);
     }
     return tenant;
@@ -1370,6 +1383,8 @@ export class ConnectivityService {
     mealDinner: string | null;
     infrastructure: unknown;
     provisional?: boolean;
+    partnerVisible?: boolean;
+    isActive?: boolean;
   }) {
     return {
       id: t.id,
@@ -1378,6 +1393,10 @@ export class ConnectivityService {
       /* Разовая гостиница: заведена партнёром под конкретный случай, договора
          нет. Партнёр показывает её только там, где она и появилась. */
       provisional: t.provisional ?? false,
+      /* Скрыта из общего каталога и выключена (22.10.2026): каталог и карточку
+         партнёр получает и такими, кому их показать — решает он. */
+      partnerVisible: t.partnerVisible ?? true,
+      isActive: t.isActive ?? true,
       city: t.city,
       address: t.address,
       country: t.country,

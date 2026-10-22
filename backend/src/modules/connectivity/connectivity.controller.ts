@@ -118,11 +118,21 @@ export class ConnectivityController {
     summary: 'List all connected hotels',
     description:
       'includeProvisional=1 — вместе с разовыми, заведёнными партнёром под ' +
-      'конкретный случай. По умолчанию их нет: договора с ними не заключено.',
+      'конкретный случай. По умолчанию их нет: договора с ними не заключено. ' +
+      'includeHidden=1 — со скрытыми из каталога (partnerVisible=false), ' +
+      'includeInactive=1 — с выключенными (isActive=false); кому их показать, ' +
+      'решает партнёр.',
   })
-  listHotels(@Query('includeProvisional') includeProvisional?: string) {
+  listHotels(
+    @Query('includeProvisional') includeProvisional?: string,
+    @Query('includeHidden') includeHidden?: string,
+    @Query('includeInactive') includeInactive?: string,
+  ) {
+    const on = (v?: string) => v === '1' || v === 'true';
     return this.connectivity.listHotels({
-      includeProvisional: includeProvisional === '1' || includeProvisional === 'true',
+      includeProvisional: on(includeProvisional),
+      includeHidden: on(includeHidden),
+      includeInactive: on(includeInactive),
     });
   }
 
