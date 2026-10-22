@@ -65,3 +65,15 @@ export async function destroyTenant(id, confirmSlug) {
   const { data } = await api.post(`/admin/tenants/${id}/destroy`, { confirmSlug });
   return data;
 }
+
+/* Функции гостиниц массово (22.10.2026): каталог с состоянием у каждой
+   гостиницы и включение / выключение сразу у выбранных. */
+export async function listFeatures() {
+  const { data } = await api.get('/admin/features');
+  return data; // { features: [{ key, label, description }], tenants: [{ id, name, city, isActive, features }] }
+}
+
+export async function applyFeature(feature, enabled, tenantIds) {
+  const { data } = await api.post('/admin/features/apply', { feature, enabled, tenantIds });
+  return data; // { feature, enabled, changed, requested }
+}

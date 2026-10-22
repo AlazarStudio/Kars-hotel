@@ -5,6 +5,8 @@ import { AuthService } from '../auth/auth.service';
 import { RegisterTenantDto } from '../auth/dto/register-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { AuthenticatedRequestUser } from '../auth/strategies/jwt.strategy';
+import { ApplyFeatureDto } from './dto/apply-feature.dto';
+import { TENANT_FEATURES, isTenantFeature } from './tenant-features';
 
 @Injectable()
 export class SuperAdminService {
@@ -12,6 +14,59 @@ export class SuperAdminService {
     private readonly prisma: PrismaService,
     private readonly auth: AuthService,
   ) {}
+
+  // ─── Функции гостиниц (массово) ─────────────────────────────────────────────
+
+  /** Каталог функций и состояние каждой у каждой гостиницы. */
+  async listFeatures() {
+    const tenants = await this.prisma.admin.tenant.findMany({
+      where: { slug: { not: 'platform' } },
+      select: { id: true, name: true, city: true, isActive: true, multiPlaceEnabled: true },
+      orderBy: { name: 'asc' },
+    });
+    return {
+      features: TENANT_FEATURES,
+      tenants: tenants.map((t) => ({
+        id: t.id,
+        name: t.name,
+        city: t.city,
+        isActive: t.isActive,
+        features: Object.fromEntries(TENANT_FEATURES.map((f) => [f.key, t[f.key] === true])),
+      })),
+    };
+  }
+
+  /* Включить или выключить функцию у выбранных гостиниц. Платформенная запись
+     не трогается, даже если её id прислали. Каждая изменённая гостиница
+     получает строку в своём журнале — «кто включил мне многоместность». */
+  async applyFeature(dto: ApplyFeatureDto, actor: AuthenticatedRequestUser) {
+    if (!isTenantFeature(dto.feature)) throw new NotFoundException('Unknown feature');
+    const key = dto.feature;
+    const ids = [...new Set(dto.tenantIds)];
+    const changed = await this.prisma.admin.tenant.findMany({
+      where: { id: { in: ids }, slug: { not: 'platform' }, [key]: { not: dto.enabled } },
+      select: { id: true },
+    });
+    if (changed.length > 0) {
+      await this.prisma.admin.$transaction([
+        this.prisma.admin.tenant.updateMany({
+          where: { id: { in: changed.map((t) => t.id) } },
+          data: { [key]: dto.enabled },
+        }),
+        this.prisma.admin.auditLog.createMany({
+          data: changed.map((t) => ({
+            tenantId: t.id,
+            userId: actor.userId,
+            entity: 'tenant',
+            entityId: t.id,
+            action: 'feature.apply',
+            diff: { [key]: [!dto.enabled, dto.enabled] },
+          })),
+        }),
+      ]);
+    }
+    return { feature: key, enabled: dto.enabled, changed: changed.length, requested: ids.length };
+  }
 
   // ─── Tenants ────────────────────────────────────────────────────────────────
 

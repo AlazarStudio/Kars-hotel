@@ -19,9 +19,11 @@ describe('Панель платформы — гарды', () => {
     expect(handlers.filter((h) => guardsOf(h).length === 0)).toEqual([]);
   });
 
-  it('диспетчеру — ровно сводка, список гостиниц и вход «от имени»', () => {
+  /* + функции гостиниц массово (решение владельца 22.10.2026): персональных
+     данных в них нет. */
+  it('диспетчеру — ровно сводка, список гостиниц, вход «от имени» и функции гостиниц', () => {
     const forDispatcher = handlers.filter((h) => guardsOf(h).includes(PlatformOperatorGuard)).sort();
-    expect(forDispatcher).toEqual(['getStats', 'impersonate', 'listTenants']);
+    expect(forDispatcher).toEqual(['applyFeature', 'getStats', 'impersonate', 'listFeatures', 'listTenants']);
     expect(handlers.filter((h) => !forDispatcher.includes(h)).every((h) => guardsOf(h).includes(SuperAdminGuard))).toBe(true);
   });
 

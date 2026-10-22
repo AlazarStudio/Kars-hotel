@@ -49,6 +49,7 @@ const ICONS = {
 const NAV_ITEMS = [
   { id: 'overview',  label: 'Обзор',          icon: 'overview',  path: '/admin' },
   { id: 'hotels',    label: 'Отели',           icon: 'hotels',    path: '/admin/hotels' },
+  { id: 'features',  label: 'Функции гостиниц', icon: 'settings', path: '/admin/features' },
   { id: 'users',     label: 'Пользователи',    icon: 'users',     path: '/admin/users' },
   { id: 'create',    label: 'Добавить отель',  icon: 'create',    path: '/admin/create' },
   { id: 'settings',  label: 'Настройки',       icon: 'settings',  path: '/admin/settings' },
@@ -61,8 +62,9 @@ const DIVIDER_BEFORE = 'create';
 
 /* Диспетчеру Kars Avia (152-ФЗ, Р-34; план 13.3) — только обзор и отели со
    входом «от имени»: сотрудники гостиниц, заведение и выключение гостиниц,
-   настройки платформы — суперадмину (сервер отвечает ему 403). */
-const DISPATCHER_SECTIONS = ['overview', 'hotels'];
+   настройки платформы — суперадмину (сервер отвечает ему 403). Функции
+   гостиниц массово — и диспетчеру (решение владельца 22.10.2026). */
+const DISPATCHER_SECTIONS = ['overview', 'hotels', 'features'];
 
 function AdminSidebar({ activeId }) {
   const { user, logout } = useAuth();
@@ -281,6 +283,158 @@ function HotelsSection() {
           </table>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── Функции гостиниц (массово) ───────────────────────────────────────────────
+
+/* Включить функцию (например, многоместные номера) сразу у многих гостиниц:
+   выбрать нужные или «Выбрать все» и применить. Сами гостиницы по-прежнему
+   могут переключить её у себя в «Настройки → Функции». */
+function FeaturesSection() {
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery({ queryKey: ['admin', 'features'], queryFn: superAdminApi.listFeatures });
+  const features = data?.features ?? [];
+  const tenants = data?.tenants ?? [];
+  const [featureKey, setFeatureKey] = React.useState(null);
+  const [search, setSearch] = React.useState('');
+  const [state, setState] = React.useState('all'); // all | on | off
+  const [selected, setSelected] = React.useState(() => new Set());
+  const [result, setResult] = React.useState(null);
+  const [error, setError] = React.useState(null);
+
+  const feature = features.find((f) => f.key === featureKey) ?? features[0];
+  const isOn = (t) => feature && t.features?.[feature.key] === true;
+  const onCount = tenants.filter(isOn).length;
+
+  const q = search.trim().toLowerCase();
+  const shown = tenants.filter(
+    (t) =>
+      (!q || t.name.toLowerCase().includes(q) || (t.city ?? '').toLowerCase().includes(q)) &&
+      (state === 'all' || (state === 'on') === isOn(t)),
+  );
+  const allShownSelected = shown.length > 0 && shown.every((t) => selected.has(t.id));
+
+  const toggle = (id) =>
+    setSelected((cur) => {
+      const next = new Set(cur);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  const toggleAllShown = () =>
+    setSelected((cur) => {
+      const next = new Set(cur);
+      for (const t of shown) allShownSelected ? next.delete(t.id) : next.add(t.id);
+      return next;
+    });
+
+  const apply = useMutation({
+    mutationFn: (enabled) => superAdminApi.applyFeature(feature.key, enabled, [...selected]),
+    onSuccess: (r) => {
+      setError(null);
+      setResult(r);
+      setSelected(new Set());
+      qc.invalidateQueries({ queryKey: ['admin', 'features'] });
+    },
+    onError: (err) => {
+      setResult(null);
+      const msg = err?.response?.data?.message ?? err.message;
+      setError(Array.isArray(msg) ? msg.join(', ') : msg);
+    },
+  });
+
+  const run = (enabled) => {
+    const verb = enabled ? 'Включить' : 'Выключить';
+    if (!window.confirm(`${verb} «${feature.label}» у выбранных гостиниц (${selected.size})?`)) return;
+    apply.mutate(enabled);
+  };
+
+  return (
+    <div className={classes.page}>
+      <div className={classes.pageHeader}>
+        <h1 className={classes.pageTitle}>Функции гостиниц</h1>
+      </div>
+
+      {isLoading ? <div className={classes.loading}>Загрузка…</div> : (
+        <>
+          <div className={classes.featureList}>
+            {features.map((f) => {
+              const n = tenants.filter((t) => t.features?.[f.key] === true).length;
+              return (
+                <button
+                  type="button"
+                  key={f.key}
+                  className={`${classes.featureCard} ${feature?.key === f.key ? classes.featureCardActive : ''}`}
+                  onClick={() => { setFeatureKey(f.key); setResult(null); }}
+                >
+                  <div className={classes.featureTitle}>{f.label}</div>
+                  <div className={classes.featureDesc}>{f.description}</div>
+                  <div className={classes.featureCount}>Включено у {n} из {tenants.length}</div>
+                </button>
+              );
+            })}
+          </div>
+
+          {feature && (
+            <div className={classes.card}>
+              <div className={classes.featureToolbar}>
+                <div className={classes.searchWrap}>
+                  <svg className={classes.searchIcon} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <input className={classes.searchInput} placeholder="Поиск: название, город" value={search} onChange={(e) => setSearch(e.target.value)} />
+                </div>
+                <div className={classes.segTabs}>
+                  {[['all', `Все · ${tenants.length}`], ['on', `Включено · ${onCount}`], ['off', `Выключено · ${tenants.length - onCount}`]].map(([v, label]) => (
+                    <button type="button" key={v} className={`${classes.segTab} ${state === v ? classes.segTabActive : ''}`} onClick={() => setState(v)}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className={classes.featureActions}>
+                  <span className={classes.muted}>Выбрано: {selected.size}</span>
+                  <button className={classes.btnPrimary} disabled={selected.size === 0 || apply.isPending} onClick={() => run(true)}>
+                    Включить у выбранных
+                  </button>
+                  <button className={classes.btnAction} disabled={selected.size === 0 || apply.isPending} onClick={() => run(false)}>
+                    Выключить у выбранных
+                  </button>
+                </div>
+              </div>
+              {result && (
+                <div className={classes.formSuccess} style={{ margin: '0 20px 12px' }}>
+                  {result.enabled ? 'Включено' : 'Выключено'} у {result.changed} из {result.requested} выбранных
+                  {result.changed < result.requested ? ' (у остальных уже было так)' : ''}.
+                </div>
+              )}
+              {error && <div className={classes.formError} style={{ margin: '0 20px 12px' }}>{error}</div>}
+              <table className={classes.table}>
+                <thead>
+                  <tr>
+                    <th style={{ width: 44 }}>
+                      <input type="checkbox" checked={allShownSelected} onChange={toggleAllShown} title="Выбрать все показанные" aria-label="Выбрать все" />
+                    </th>
+                    <th>Название</th><th>Город</th><th>Статус</th><th>{feature.label}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shown.map((t) => (
+                    <tr key={t.id} className={!t.isActive ? classes.rowInactive : ''} onClick={() => toggle(t.id)} style={{ cursor: 'pointer' }}>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <input type="checkbox" checked={selected.has(t.id)} onChange={() => toggle(t.id)} aria-label={t.name} />
+                      </td>
+                      <td className={classes.bold}>{t.name}</td>
+                      <td className={classes.muted}>{t.city ?? '—'}</td>
+                      <td><StatusBadge active={t.isActive} /></td>
+                      <td><span className={isOn(t) ? classes.statusOn : classes.muted}>{isOn(t) ? 'Включено' : 'Выключено'}</span></td>
+                    </tr>
+                  ))}
+                  {shown.length === 0 && <tr><td colSpan={5} className={classes.empty}>Ничего не найдено</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -566,6 +720,7 @@ export default function AdminPanel() {
   function renderContent() {
     switch (activeId) {
       case 'hotels':   return <HotelsSection />;
+      case 'features': return <FeaturesSection />;
       case 'users':    return <UsersSection />;
       case 'create':   return <CreateSection />;
       case 'settings': return <SettingsSection />;

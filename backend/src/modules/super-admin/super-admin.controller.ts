@@ -5,6 +5,7 @@ import { SuperAdminService } from './super-admin.service';
 import { TenantExitService } from './tenant-exit.service';
 import { RegisterTenantDto } from '../auth/dto/register-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
+import { ApplyFeatureDto } from './dto/apply-feature.dto';
 import { AuthenticatedRequestUser } from '../auth/strategies/jwt.strategy';
 
 /* Гард — у каждой ручки: диспетчеру (PlatformOperatorGuard) открыты только
@@ -73,6 +74,24 @@ export class SuperAdminController {
   @UseGuards(SuperAdminGuard)
   toggleActive(@Param('id') id: string) {
     return this.svc.toggleActive(id);
+  }
+
+  // ─── Функции гостиниц (массово) ─────────────────────────────────────────────
+
+  /* Диспетчеру тоже (решение владельца 22.10.2026): включать функции разом у
+     многих гостиниц — работа Kars Avia над каталогом, персональных данных в
+     ней нет. На уровень платформы диспетчер попадает только из «Гостиниц»
+     Kars Avia администратором (В27). */
+  @Get('features')
+  @UseGuards(PlatformOperatorGuard)
+  listFeatures() {
+    return this.svc.listFeatures();
+  }
+
+  @Post('features/apply')
+  @UseGuards(PlatformOperatorGuard)
+  applyFeature(@Body() dto: ApplyFeatureDto, @Req() req: Request) {
+    return this.svc.applyFeature(dto, req.user as AuthenticatedRequestUser);
   }
 
   // ─── Users ──────────────────────────────────────────────────────────────────
