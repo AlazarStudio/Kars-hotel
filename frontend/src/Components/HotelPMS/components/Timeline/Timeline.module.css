@@ -1,7 +1,8 @@
 .root {
   /* Ширина колонки номеров — одна на шапку, строку наличия, категории, номера
-     и места (23.10.2026: 210 → 320, адреса апартаментов не помещались). */
-  --tl-label-w: 320px;
+     и места. 210: шире — появляется прокрутка вбок (23.10.2026); длинному
+     адресу-номеру место даёт высота строки, а не ширина. */
+  --tl-label-w: 210px;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -429,7 +430,8 @@
 
 /* Expanded header row — compact, no interaction */
 .roomRowExpanded {
-  height: 34px;
+  /* 48, а не 34: адрес-номер апартаментов — до трёх строк (23.10.2026). */
+  height: 48px;
   background: #F4F7FB;
   border-bottom: 1px solid #DDE5F0;
 }
@@ -523,8 +525,9 @@
   transition: background 0.1s;
 }
 
-/* Номер апартаментов — адрес (до 100 символов): мелко, до двух строк с
-   переносом, категория — серым тем же абзацем. Полный текст — в подсказке. */
+/* Номер апартаментов — адрес (до 100 символов): мелко, до трёх строк с
+   переносом. Категория написана над группой номеров, у номера — только в
+   подсказке вместе с полным текстом. */
 .roomNumber {
   flex: 1;
   min-width: 0;
@@ -533,16 +536,10 @@
   font-weight: 700;
   color: #1B2A47;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   overflow-wrap: anywhere;
-}
-
-.roomCategory {
-  font-size: 10px;
-  font-weight: 400;
-  color: #8896AB;
 }
 
 .hkDotWrap {

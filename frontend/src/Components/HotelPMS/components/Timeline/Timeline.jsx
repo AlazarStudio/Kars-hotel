@@ -747,7 +747,7 @@ function Timeline({ multiPlaceEnabled = true }) {
                             </button>
                           )}
                           <div className={classes.roomNumber} title={`№${room.number} · ${cat.name}`}>
-                            №{room.number} <span className={classes.roomCategory}>{cat.name}</span>
+                            №{room.number}
                           </div>
                           {/* Пометка видна ВСЕГДА, не только в режиме «Резерв»:
                               администратор селит из обычной шахматки, и узнать
