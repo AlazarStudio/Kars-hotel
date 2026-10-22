@@ -13,6 +13,7 @@ import { TenantContext, RequestContext } from '../../common/context/tenant-conte
 import { AuthService } from '../auth/auth.service';
 import { AvailabilityService } from '../inventory/availability.service';
 import { ReservationsService } from '../reservations/reservations.service';
+import { roomFits, type PlaceHolder } from '../reservations/room-places';
 import { ConnectAvailabilityDto } from './dto/connect-availability.dto';
 import { ConnectCreateReservationDto } from './dto/connect-create-reservation.dto';
 import { ConnectUpdateReservationDto } from './dto/connect-update-reservation.dto';
@@ -619,6 +620,7 @@ export class ConnectivityService {
           dto.categoryId,
           dto.checkIn,
           dto.checkOut,
+          (dto.adults ?? 1) + ((dto as { children?: number }).children ?? 0),
         );
       } else {
         roomId = await this.pickAvailableRoom(
@@ -1190,9 +1192,15 @@ export class ConnectivityService {
 
   /**
    * List the physical rooms in a category with their parameters and whether each
-   * has a free place for the requested stay. A room is `available` when its
-   * occupied places (overlapping, non-released reservations) are fewer than its
-   * capacity. Ordered floor then number so the partner UI reads naturally.
+   * has a free place for the requested stay. Ordered floor then number so the
+   * partner UI reads naturally.
+   *
+   * Свободен ли номер — ОДНИМ правилом мест (room-places.ts), тем же, что у
+   * брони в кабинете гостиницы (23.10.2026). Раньше здесь складывали людей
+   * всех броней, пересекающих период: двое, живущие на одном месте ДРУГ ЗА
+   * ДРУГОМ (21–27 и 28.10–13.11), давали «2 из 2», и номер со свободным с 24-го
+   * местом показывался занятым — диспетчер не мог в него поселить, хотя в
+   * шахматке место пустое.
    */
   private async listRoomsForCategory(
     tenantId: string,
@@ -1222,36 +1230,15 @@ export class ConnectivityService {
           bed_type: string;
           view: string;
           partner_hold: string;
-          occupied_places: bigint;
         }>
       >`
-        SELECT
-          r.id,
-          r.number,
-          r.floor,
-          r.capacity,
-          r.bed_type,
-          r.view,
-          r.partner_hold,
-          (
-            /* Занятые места — правилом room-places.ts: обычная гостиница
-               отдаёт номер брони целиком, койко-места — по числу людей. */
-            SELECT COALESCE(SUM(
-              CASE WHEN tn.multi_place_enabled
-                THEN GREATEST(res.adults + COALESCE(res.children, 0), 1)
-                ELSE r.capacity END), 0)
-            FROM reservation res
-            JOIN tenant tn ON tn.id = res.tenant_id
-            WHERE res.room_id = r.id
-              AND res.check_in  < ${checkOut}::date
-              AND res.check_out > ${checkIn}::date
-              AND res.status NOT IN ('CANCELLED', 'NO_SHOW')
-          ) AS occupied_places
+        SELECT r.id, r.number, r.floor, r.capacity, r.bed_type, r.view, r.partner_hold
         FROM room r
         WHERE r.room_type_id = ${roomTypeId}::uuid
           AND r.is_active = true
         ORDER BY r.floor ASC, r.number ASC
       `;
+      const fits = await this.roomsFitByPlaces(tx, tenantId, rows, checkIn, checkOut, 1);
       return rows.map((r) => ({
         id: r.id,
         number: r.number,
@@ -1259,7 +1246,7 @@ export class ConnectivityService {
         capacity: r.capacity,
         bedType: r.bed_type,
         view: r.view,
-        available: Number(r.occupied_places) < r.capacity,
+        available: fits.get(r.id) === true,
         // Признак информационный: занятость считается одинаково для всех
         // номеров, блок лишь подсказывает диспетчеру, что номер «его».
         hold: r.partner_hold,
@@ -1278,29 +1265,12 @@ export class ConnectivityService {
     roomTypeId: string,
     checkIn: string,
     checkOut: string,
+    /** Сколько людей в брони — при койко-местах столько мест и нужно. */
+    guests = 1,
   ): Promise<string> {
     return this.prisma.forTenantExplicit(tenantId, async (tx) => {
-      const rows = await tx.$queryRaw<
-        Array<{ id: string; room_type_id: string; capacity: number; occupied_places: bigint }>
-      >`
-        SELECT
-          r.id,
-          r.room_type_id,
-          r.capacity,
-          (
-            /* Занятые места — правилом room-places.ts: обычная гостиница
-               отдаёт номер брони целиком, койко-места — по числу людей. */
-            SELECT COALESCE(SUM(
-              CASE WHEN tn.multi_place_enabled
-                THEN GREATEST(res.adults + COALESCE(res.children, 0), 1)
-                ELSE r.capacity END), 0)
-            FROM reservation res
-            JOIN tenant tn ON tn.id = res.tenant_id
-            WHERE res.room_id = r.id
-              AND res.check_in  < ${checkOut}::date
-              AND res.check_out > ${checkIn}::date
-              AND res.status NOT IN ('CANCELLED', 'NO_SHOW')
-          ) AS occupied_places
+      const rows = await tx.$queryRaw<Array<{ id: string; room_type_id: string; capacity: number }>>`
+        SELECT r.id, r.room_type_id, r.capacity
         FROM room r
         WHERE r.id = ${roomId}::uuid
           AND r.is_active = true
@@ -1311,7 +1281,8 @@ export class ConnectivityService {
       if (room.room_type_id !== roomTypeId) {
         throw new ConflictException('Chosen room does not belong to the requested category');
       }
-      if (Number(room.occupied_places) >= room.capacity) {
+      const fits = await this.roomsFitByPlaces(tx, tenantId, [room], checkIn, checkOut, guests);
+      if (fits.get(room.id) !== true) {
         throw new ConflictException('Chosen room is no longer available for the selected dates');
       }
       return room.id;
@@ -1328,32 +1299,67 @@ export class ConnectivityService {
     guests = 1,
   ): Promise<string | null> {
     return this.prisma.forTenantExplicit(tenantId, async (tx) => {
-      const rows = await tx.$queryRaw<Array<{ id: string }>>`
-        SELECT r.id
+      const rows = await tx.$queryRaw<Array<{ id: string; capacity: number }>>`
+        SELECT r.id, r.capacity
         FROM room r
         WHERE r.room_type_id = ${roomTypeId}::uuid
           AND r.is_active = true
-          AND (
-            -- Занятые места — правилом room-places.ts (см. listRoomsForCategory).
-            SELECT COALESCE(SUM(
-              CASE WHEN tn.multi_place_enabled
-                THEN GREATEST(res.adults + COALESCE(res.children, 0), 1)
-                ELSE r.capacity END), 0)
-            FROM reservation res
-            JOIN tenant tn ON tn.id = res.tenant_id
-            WHERE res.room_id = r.id
-              AND res.check_in  < ${checkOut}::date
-              AND res.check_out > ${checkIn}::date
-              AND res.status NOT IN ('CANCELLED', 'NO_SHOW')
-          ) + (
-            SELECT CASE WHEN tn2.multi_place_enabled THEN ${guests} ELSE r.capacity END
-            FROM tenant tn2 WHERE tn2.id = r.tenant_id
-          ) <= r.capacity
         ORDER BY r.number ASC
-        LIMIT 1
       `;
-      return rows[0]?.id ?? null;
+      const fits = await this.roomsFitByPlaces(tx, tenantId, rows, checkIn, checkOut, guests);
+      return rows.find((r) => fits.get(r.id) === true)?.id ?? null;
     });
+  }
+
+  /* Какие из номеров примут бронь на `guests` человек на эти даты — правилом
+     room-places.ts (roomFits): обычная гостиница — номер целиком, только если
+     в нём никого; койко-места — нужно столько мест, ни одно из которых не
+     занято НИ ОДНОЙ пересекающейся бронью. Брони — одним запросом на все
+     номера. Выезд в день заезда не пересекается (check_out > check_in). */
+  private async roomsFitByPlaces(
+    tx: { $queryRaw: PrismaService['$queryRaw'] },
+    tenantId: string,
+    rooms: Array<{ id: string; capacity: number }>,
+    checkIn: string,
+    checkOut: string,
+    guests: number,
+  ): Promise<Map<string, boolean>> {
+    const out = new Map<string, boolean>();
+    if (rooms.length === 0) return out;
+    const tenant = await this.prisma.admin.tenant.findUnique({
+      where: { id: tenantId },
+      select: { multiPlaceEnabled: true },
+    });
+    const multiPlace = tenant?.multiPlaceEnabled === true;
+    const ids = rooms.map((r) => r.id);
+    const res = await tx.$queryRaw<
+      Array<{ room_id: string; place_number: number; adults: number; children: number | null }>
+    >`
+      SELECT res.room_id, res.place_number, res.adults, res.children
+      FROM reservation res
+      WHERE res.room_id = ANY(${ids}::uuid[])
+        AND res.check_in  < ${checkOut}::date
+        AND res.check_out > ${checkIn}::date
+        AND res.status NOT IN ('CANCELLED', 'NO_SHOW')
+    `;
+    const byRoom = new Map<string, PlaceHolder[]>();
+    for (const r of res) {
+      const list = byRoom.get(r.room_id) ?? [];
+      list.push({ placeNumber: r.place_number, adults: r.adults, children: r.children ?? 0 });
+      byRoom.set(r.room_id, list);
+    }
+    for (const room of rooms) {
+      out.set(
+        room.id,
+        roomFits({
+          capacity: room.capacity,
+          multiPlace,
+          guests: { adults: Math.max(1, guests), children: 0 },
+          others: byRoom.get(room.id) ?? [],
+        }),
+      );
+    }
+    return out;
   }
 
   private mapHotel(t: {
