@@ -218,7 +218,7 @@ function Bookings() {
                 <div className={classes.guestPhone}>{b.phone || '—'} · {b.adults} взр{b.children ? `, ${b.children} дет` : ''}</div>
               </div>
               <div className={classes.td}>
-                <div className={classes.roomBadge}>№{getRoomNumber(b.roomId)}</div>
+                <div className={classes.roomBadge} title={`№${getRoomNumber(b.roomId)}`}>№{getRoomNumber(b.roomId)}</div>
                 <div style={{ fontSize: 10, color: '#8896AB', marginTop: 2 }}>{getCategoryName(b.roomId)}</div>
               </div>
               <div className={classes.td}>{format(parseISO(b.checkIn), 'd MMM', { locale: ru })}</div>
@@ -344,7 +344,7 @@ function Bookings() {
 
       {activeTab === 'arrivals' && (
         <div className={classes.table}>
-          <div className={classes.tableHead} style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 100px' }}>
+          <div className={classes.tableHead} style={{ gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 2fr) 1fr 1fr 1fr 100px' }}>
             <div className={classes.th}>Гость</div>
             <div className={classes.th}>Номер</div>
             <div className={classes.th}>Заезд</div>
@@ -359,13 +359,13 @@ function Bookings() {
             {arrivals.map(b => {
               const cfg = BOOKING_STATUS[b.status] || BOOKING_STATUS.new;
               return (
-                <div key={b.id} className={classes.tableRow} style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 100px' }}>
+                <div key={b.id} className={classes.tableRow} style={{ gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 2fr) 1fr 1fr 1fr 100px' }}>
                   <div className={classes.td}>
                     <div className={classes.guestName}>{b.guestName}</div>
                     <div className={classes.guestPhone}>{b.phone || '—'} · {b.adults} взр{b.children ? `, ${b.children} дет` : ''}</div>
                   </div>
                   <div className={classes.td}>
-                    <div className={classes.roomBadge}>№{getRoomNumber(b.roomId)}</div>
+                    <div className={classes.roomBadge} title={`№${getRoomNumber(b.roomId)}`}>№{getRoomNumber(b.roomId)}</div>
                     <div style={{ fontSize: 10, color: '#8896AB', marginTop: 2 }}>{getCategoryName(b.roomId)}</div>
                   </div>
                   <div className={classes.td}>{format(parseISO(b.checkIn), 'd MMM', { locale: ru })}</div>
@@ -393,7 +393,7 @@ function Bookings() {
 
       {activeTab === 'departures' && (
         <div className={classes.table}>
-          <div className={classes.tableHead} style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 100px' }}>
+          <div className={classes.tableHead} style={{ gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 2fr) 1fr 1fr 1fr 100px' }}>
             <div className={classes.th}>Гость</div>
             <div className={classes.th}>Номер</div>
             <div className={classes.th}>Заезд</div>
@@ -408,13 +408,13 @@ function Bookings() {
             {departures.map(b => {
               const cfg = BOOKING_STATUS[b.status] || BOOKING_STATUS.new;
               return (
-                <div key={b.id} className={classes.tableRow} style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 100px' }}>
+                <div key={b.id} className={classes.tableRow} style={{ gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 2fr) 1fr 1fr 1fr 100px' }}>
                   <div className={classes.td}>
                     <div className={classes.guestName}>{b.guestName}</div>
                     <div className={classes.guestPhone}>{b.phone || '—'} · {b.adults} взр{b.children ? `, ${b.children} дет` : ''}</div>
                   </div>
                   <div className={classes.td}>
-                    <div className={classes.roomBadge}>№{getRoomNumber(b.roomId)}</div>
+                    <div className={classes.roomBadge} title={`№${getRoomNumber(b.roomId)}`}>№{getRoomNumber(b.roomId)}</div>
                     <div style={{ fontSize: 10, color: '#8896AB', marginTop: 2 }}>{getCategoryName(b.roomId)}</div>
                   </div>
                   <div className={classes.td}>{format(parseISO(b.checkIn), 'd MMM', { locale: ru })}</div>

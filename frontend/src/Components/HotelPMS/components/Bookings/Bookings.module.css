@@ -95,7 +95,7 @@
 
 .tableHead {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr 80px;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) 1fr 1fr 1fr 1fr 80px;
   background: #F7FAFC;
   border-bottom: 2px solid #E8EDF3;
   padding: 10px 20px;
@@ -114,7 +114,7 @@
 
 .tableRow {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr 80px;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) 1fr 1fr 1fr 1fr 80px;
   padding: 12px 20px;
   border-bottom: 1px solid #F0F4F9;
   align-items: center;
@@ -137,16 +137,23 @@
 
 .guestPhone { font-size: 11px; color: #8896AB; margin-top: 1px; }
 
+/* Номер апартаментов — адрес (до 100 символов): плашка по ширине текста,
+   не больше двух строк, полный текст — в подсказке (23.10.2026; раньше
+   плашка 36×22 px под «101», и адрес вылезал на категорию). */
 .roomBadge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 22px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  width: fit-content;
+  padding: 2px 8px;
   background: #EBF5FF;
   color: #1E88E5;
   border-radius: 5px;
   font-size: 12px;
+  line-height: 1.35;
   font-weight: 700;
 }
 
