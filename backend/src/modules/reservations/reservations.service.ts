@@ -180,7 +180,8 @@ export class ReservationsService {
 
   // ─── Update ───────────────────────────────────────────────────────────────
 
-  async update(id: string, dto: UpdateReservationDto) {
+  /* `fromChannel` — правку прислал партнёр (Kars Avia) через свой API. */
+  async update(id: string, dto: UpdateReservationDto, opts: { fromChannel?: boolean } = {}) {
     const tenantId = TenantContext.getTenantIdOrThrow();
 
     type TxResult =
@@ -193,7 +194,8 @@ export class ReservationsService {
             | 'DATE_CONFLICT'
             | 'NO_PLACE_AVAILABLE'
             | 'ROOM_NOT_FOUND'
-            | 'BOOKING_CONFLICT';
+            | 'BOOKING_CONFLICT'
+            | 'CHANNEL_GUESTS';
         };
 
     const result = await this.prisma.forTenant(async (tx): Promise<TxResult> => {
@@ -217,12 +219,13 @@ export class ReservationsService {
           total_price: string | null;
           rate_plan_id: string | null;
           place_number: number;
+          channel_managed: boolean;
         }[]
       >`
         SELECT
           id, room_id, room_type_id, check_in, check_out, version,
           guest_name, phone, email, adults, children, status, source,
-          notes, total_price::text, rate_plan_id, place_number
+          notes, total_price::text, rate_plan_id, place_number, channel_managed
         FROM reservation
         WHERE id = ${id}::uuid
         LIMIT 1
@@ -234,6 +237,20 @@ export class ReservationsService {
       // 2. Optimistic-lock check
       if (cur.version !== dto.version) {
         return { ok: false, reason: 'VERSION_MISMATCH' };
+      }
+
+      /* 2a. ЧИСЛО ГОСТЕЙ брони партнёра ведёт партнёр (23.10.2026). Бронь
+         из Kars Avia на одного гостя пересохранили в кабинете с «Взрослых: 2»
+         — она заняла оба места номера, и второе место не давалось следующей
+         заявке, а в Авии гость по-прежнему один. Меняется только из
+         партнёрского API; та же цифра в форме — не изменение. */
+      if (
+        cur.channel_managed &&
+        !opts.fromChannel &&
+        ((dto.adults !== undefined && dto.adults !== cur.adults) ||
+          (dto.children !== undefined && dto.children !== cur.children))
+      ) {
+        return { ok: false, reason: 'CHANNEL_GUESTS' };
       }
 
       // 3. Resolve final values
@@ -380,6 +397,10 @@ export class ReservationsService {
         case 'BOOKING_CONFLICT':
           throw new ConflictException(
             'The requested place is already booked for the selected period',
+          );
+        case 'CHANNEL_GUESTS':
+          throw new ForbiddenException(
+            'Число гостей брони из Kars Avia меняется в заявке Kars Avia, а не в кабинете гостиницы',
           );
       }
     }

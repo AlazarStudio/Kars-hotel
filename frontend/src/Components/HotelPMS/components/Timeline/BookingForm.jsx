@@ -443,14 +443,23 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
                   ))}
                 </select>
               </div>
+              {/* Число гостей брони из Kars Avia ведёт заявка Авии — здесь
+                  только видно (сервер правку тоже не примет, 23.10.2026). */}
               <div className={classes.formGroup}>
                 <div className={classes.formLabel}>Взрослых</div>
-                <input className={classes.formInput} value={form.adults} onChange={set('adults')} type="number" min="1" max="10" />
+                <input className={classes.formInput} value={form.adults} onChange={set('adults')} type="number" min="1" max="10"
+                  readOnly={isChannelManaged} title={isChannelManaged ? 'Меняется в заявке Kars Avia' : undefined} />
               </div>
               <div className={classes.formGroup}>
                 <div className={classes.formLabel}>Детей</div>
-                <input className={classes.formInput} value={form.children} onChange={set('children')} type="number" min="0" max="5" />
+                <input className={classes.formInput} value={form.children} onChange={set('children')} type="number" min="0" max="5"
+                  readOnly={isChannelManaged} title={isChannelManaged ? 'Меняется в заявке Kars Avia' : undefined} />
               </div>
+              {isChannelManaged && (
+                <div className={classes.formLabel} style={{ gridColumn: '1 / -1', textTransform: 'none', fontWeight: 400 }}>
+                  Бронь из Kars Avia: число гостей меняется в заявке Kars Avia.
+                </div>
+              )}
             </div>
 
             <div className={`${classes.formGroup} ${classes.formFull}`}>

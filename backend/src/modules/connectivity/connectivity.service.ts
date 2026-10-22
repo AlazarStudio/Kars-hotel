@@ -740,7 +740,7 @@ export class ConnectivityService {
         adults: dto.adults,
         children: dto.children,
         notes: dto.comment,
-      } as never),
+      } as never, { fromChannel: true }),
     );
 
     const after = await this.getReservation(slug, id, partnerId);
