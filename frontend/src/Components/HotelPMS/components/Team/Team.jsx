@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { useTenantUsers, useDeleteUser, useResetUserPassword } from '../../../../hooks/api/useTenantUsers';
 import InviteUserModal from './InviteUserModal';
+import Modal from '../../shared/Modal';
+import formClasses from '../../shared/Form.module.css';
+import classes from './Team.module.css';
 
 const ROLE_LABELS = {
   OWNER: 'Владелец',
@@ -33,63 +36,52 @@ export default function Team() {
     await deleteMutation.mutateAsync(userId);
   };
 
-  if (isLoading) return <div className="p-6">Загрузка...</div>;
+  if (isLoading) return <div className={classes.loading}>Загрузка...</div>;
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Команда</h1>
-        <button
-          onClick={() => setShowInvite(true)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
+    <div className={classes.root}>
+      <div className={classes.pageHeader}>
+        <h1 className={classes.pageTitle}>Команда</h1>
+        <button type="button" onClick={() => setShowInvite(true)} className={formClasses.btnPrimary}>
           + Пригласить сотрудника
         </button>
       </div>
 
-      <div className="bg-white rounded-xl shadow overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b">
+      <div className={classes.card}>
+        <table className={classes.table}>
+          <thead>
             <tr>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Сотрудник</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Email</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Роль</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Статус</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Последний вход</th>
-              <th className="px-4 py-3"></th>
+              <th>Сотрудник</th>
+              <th>Email</th>
+              <th>Роль</th>
+              <th>Статус</th>
+              <th>Последний вход</th>
+              <th />
             </tr>
           </thead>
-          <tbody className="divide-y">
+          <tbody>
             {users.map((user) => (
-              <tr key={user.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3 font-medium">{user.fullName}</td>
-                <td className="px-4 py-3 text-gray-600 text-sm">{user.email}</td>
-                <td className="px-4 py-3">
-                  <span className="px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-700">
-                    {ROLE_LABELS[user.role.code] ?? user.role.name}
-                  </span>
+              <tr key={user.id}>
+                <td className={classes.name}>{user.fullName}</td>
+                <td className={classes.muted}>{user.email}</td>
+                <td>
+                  <span className={classes.roleBadge}>{ROLE_LABELS[user.role.code] ?? user.role.name}</span>
                 </td>
-                <td className="px-4 py-3">
-                  <span className={`px-2 py-1 rounded-full text-xs ${user.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                <td>
+                  <span className={user.isActive ? classes.statusOn : classes.statusOff}>
                     {user.isActive ? 'Активен' : 'Деактивирован'}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-sm text-gray-500">
+                <td className={classes.muted}>
                   {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleDateString('ru-RU') : '—'}
                 </td>
-                <td className="px-4 py-3 text-right">
+                <td className={classes.actions}>
                   {user.role.code !== 'OWNER' && user.isActive && (
                     <>
-                      <button
-                        onClick={() => handleReset(user)}
-                        className="text-sm text-blue-600 hover:underline mr-4"
-                      >
+                      <button type="button" onClick={() => handleReset(user)} className={classes.linkBtn}>
                         Сбросить пароль
                       </button>
-                      <button
-                        onClick={() => handleDeactivate(user.id)}
-                        className="text-sm text-red-600 hover:underline"
-                      >
+                      <button type="button" onClick={() => handleDeactivate(user.id)} className={`${classes.linkBtn} ${classes.linkDanger}`}>
                         Деактивировать
                       </button>
                     </>
@@ -97,26 +89,35 @@ export default function Team() {
                 </td>
               </tr>
             ))}
+            {users.length === 0 && (
+              <tr>
+                <td colSpan={6} className={classes.empty}>Сотрудников пока нет — пригласите первого.</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
 
       {showInvite && <InviteUserModal onClose={() => setShowInvite(false)} />}
       {reset && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl space-y-3">
-            <h2 className="text-lg font-semibold">Пароль сброшен</h2>
-            <p><strong>Email:</strong> {reset.email}</p>
-            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded">
-              <p className="text-sm font-medium text-yellow-800">Временный пароль (показывается один раз):</p>
-              <code className="text-lg font-mono text-yellow-900">{reset.temporaryPassword}</code>
-            </div>
-            <p className="text-sm text-gray-500">Передайте его сотруднику лично. Прежние входы сотрудника завершены.</p>
-            <button onClick={() => setReset(null)} className="w-full mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg">
+        <Modal
+          open
+          title="Пароль сброшен"
+          onClose={() => setReset(null)}
+          width="sm"
+          footer={
+            <button type="button" className={formClasses.btnPrimary} onClick={() => setReset(null)}>
               Закрыть
             </button>
+          }
+        >
+          <p><strong>Email:</strong> {reset.email}</p>
+          <div className={classes.secret}>
+            <div className={classes.secretLabel}>Временный пароль (показывается один раз):</div>
+            <code className={classes.secretValue}>{reset.temporaryPassword}</code>
           </div>
-        </div>
+          <p className={formClasses.hint}>Передайте его сотруднику лично. Прежние входы сотрудника завершены.</p>
+        </Modal>
       )}
     </div>
   );

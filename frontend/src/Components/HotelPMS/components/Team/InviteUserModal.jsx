@@ -1,6 +1,12 @@
 import { useState } from 'react';
+import Modal from '../../shared/Modal';
+import formClasses from '../../shared/Form.module.css';
+import classes from './Team.module.css';
 import { useCreateUser, useTenantRoles } from '../../../../hooks/api/useTenantUsers';
 
+/* Окно и поля — общие компоненты кабинета (Modal, Form.module.css). Раньше
+   здесь стояли классы Tailwind, которого в кабинете нет: окно не всплывало
+   поверх экрана, а разваливалось прямо в странице (23.10.2026). */
 export default function InviteUserModal({ onClose }) {
   const { data: roles = [] } = useTenantRoles();
   const createMutation = useCreateUser();
@@ -21,78 +27,85 @@ export default function InviteUserModal({ onClose }) {
 
   if (result) {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl space-y-3">
-          <h2 className="text-lg font-semibold">Сотрудник добавлен</h2>
-          <p><strong>Email:</strong> {result.email}</p>
-          {result.temporaryPassword && (
-            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded">
-              <p className="text-sm font-medium text-yellow-800">Временный пароль (показывается один раз):</p>
-              <code className="text-lg font-mono text-yellow-900">{result.temporaryPassword}</code>
-            </div>
-          )}
-          <p className="text-sm text-gray-500">Передайте эти данные сотруднику.</p>
-          <button onClick={onClose} className="w-full mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg">
+      <Modal
+        open
+        title="Сотрудник добавлен"
+        onClose={onClose}
+        width="sm"
+        footer={
+          <button type="button" className={formClasses.btnPrimary} onClick={onClose}>
             Закрыть
           </button>
-        </div>
-      </div>
+        }
+      >
+        <p><strong>Email:</strong> {result.email}</p>
+        {result.temporaryPassword && (
+          <div className={classes.secret}>
+            <div className={classes.secretLabel}>Временный пароль (показывается один раз):</div>
+            <code className={classes.secretValue}>{result.temporaryPassword}</code>
+          </div>
+        )}
+        <p className={formClasses.hint}>Передайте эти данные сотруднику.</p>
+      </Modal>
     );
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Пригласить сотрудника</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+    <Modal
+      open
+      title="Пригласить сотрудника"
+      onClose={onClose}
+      width="sm"
+      footer={
+        <>
+          <button type="button" className={formClasses.btnSecondary} onClick={onClose}>
+            Отмена
+          </button>
+          <button type="submit" form="invite-user-form" className={formClasses.btnPrimary} disabled={createMutation.isPending}>
+            {createMutation.isPending ? 'Создание...' : 'Создать'}
+          </button>
+        </>
+      }
+    >
+      <form id="invite-user-form" onSubmit={handleSubmit}>
+        {error && <div className={formClasses.alert}>{error}</div>}
+        <div className={formClasses.field}>
+          <label className={formClasses.label}>Email *</label>
+          <input
+            type="email"
+            required
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            className={formClasses.input}
+            placeholder="portye@hotel.ru"
+          />
         </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Email *</label>
-            <input
-              type="email" required
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-              placeholder="portye@hotel.ru"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Имя и фамилия *</label>
-            <input
-              type="text" required
-              value={form.fullName}
-              onChange={(e) => setForm({ ...form, fullName: e.target.value })}
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-              placeholder="Иван Петров"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Роль *</label>
-            <select
-              required
-              value={form.roleId}
-              onChange={(e) => setForm({ ...form, roleId: e.target.value })}
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-            >
-              <option value="">Выберите роль...</option>
-              {roles.filter(r => r.code !== 'OWNER').map((r) => (
-                <option key={r.id} value={r.id}>{r.name}</option>
-              ))}
-            </select>
-          </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border rounded-lg text-sm">
-              Отмена
-            </button>
-            <button type="submit" disabled={createMutation.isPending} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm">
-              {createMutation.isPending ? 'Создание...' : 'Создать'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <div className={formClasses.field}>
+          <label className={formClasses.label}>Имя и фамилия *</label>
+          <input
+            type="text"
+            required
+            value={form.fullName}
+            onChange={(e) => setForm({ ...form, fullName: e.target.value })}
+            className={formClasses.input}
+            placeholder="Иван Петров"
+          />
+        </div>
+        <div className={formClasses.field}>
+          <label className={formClasses.label}>Роль *</label>
+          <select
+            required
+            value={form.roleId}
+            onChange={(e) => setForm({ ...form, roleId: e.target.value })}
+            className={formClasses.select}
+          >
+            <option value="">Выберите роль...</option>
+            {roles.filter((r) => r.code !== 'OWNER').map((r) => (
+              <option key={r.id} value={r.id}>{r.name}</option>
+            ))}
+          </select>
+        </div>
+      </form>
+    </Modal>
   );
 }

@@ -16,7 +16,7 @@ import Team from './components/Team/Team';
 import { useTenantSettings } from '../../hooks/api/useTenantSettings';
 import ImpersonationBanner from '../AdminPanel/ImpersonationBanner';
 
-const SECTIONS = ['dashboard', 'timeline', 'bookings', 'rooms', 'housekeeping', 'tariffs', 'revenue', 'reports', 'team', 'settings'];
+import { PMS_SECTIONS as SECTIONS } from './sections';
 
 function HotelPMS() {
   const location = useLocation();

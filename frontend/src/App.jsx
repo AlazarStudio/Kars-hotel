@@ -5,8 +5,8 @@ import SsoEntry from './Components/Auth/SsoEntry';
 import InviteAccept from './Components/Auth/InviteAccept';
 import AdminPanel from './Components/AdminPanel/AdminPanel';
 import ProtectedRoute from './auth/ProtectedRoute';
+import { PMS_SECTIONS } from './Components/HotelPMS/sections';
 
-const SECTIONS = ['dashboard', 'timeline', 'bookings', 'rooms', 'housekeeping', 'tariffs', 'revenue', 'reports', 'settings'];
 const ADMIN_SECTIONS = ['hotels', 'features', 'users', 'create', 'settings'];
 
 const ProtectedPMS = () => (
@@ -38,7 +38,7 @@ export default function App() {
       ))}
 
       {/* PMS sections */}
-      {SECTIONS.map((s) => (
+      {PMS_SECTIONS.map((s) => (
         <Route key={s} path={`/${s}`} element={<ProtectedPMS />} />
       ))}
 

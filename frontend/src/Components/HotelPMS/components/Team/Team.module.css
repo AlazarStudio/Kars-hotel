@@ -1,0 +1,139 @@
+/* «Команда» — в тех же цветах и отступах, что «Номерной фонд» (23.10.2026:
+   экран был свёрстан классами Tailwind, которого в кабинете нет). */
+
+.root {
+  height: 100%;
+  overflow-y: auto;
+  padding: 24px 32px 40px;
+}
+
+.pageHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.pageTitle {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0F1F3F;
+  margin: 0;
+}
+
+.loading {
+  padding: 48px;
+  text-align: center;
+  color: #6B7280;
+  font-size: 14px;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th {
+  text-align: left;
+  padding: 12px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6B7280;
+  background: #F9FAFB;
+  border-bottom: 1px solid #E5E7EB;
+}
+
+.table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #F1F5F9;
+  color: #1F2937;
+  vertical-align: middle;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table tbody tr:hover td {
+  background: #F9FAFB;
+}
+
+.name {
+  font-weight: 600;
+}
+
+.muted {
+  color: #6B7280;
+}
+
+.roleBadge,
+.statusOn,
+.statusOff {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.roleBadge { background: #E8F1FD; color: #1E5FAF; }
+.statusOn { background: #E7F6EC; color: #1E7B3F; }
+.statusOff { background: #FDECEC; color: #B42318; }
+
+.actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.linkBtn {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin-left: 16px;
+  font-size: 13px;
+  color: #1E88E5;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.linkBtn:hover { text-decoration: underline; }
+.linkDanger { color: #DC2626; }
+
+.empty {
+  padding: 40px 16px;
+  text-align: center;
+  color: #6B7280;
+}
+
+/* Временный пароль — показывается один раз. */
+.secret {
+  margin: 12px 0;
+  padding: 12px;
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  border-radius: 8px;
+}
+
+.secretLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: #92400E;
+  margin-bottom: 4px;
+}
+
+.secretValue {
+  font-size: 16px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  color: #78350F;
+  word-break: break-all;
+}
