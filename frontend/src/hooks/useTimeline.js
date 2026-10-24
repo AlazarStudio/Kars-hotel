@@ -69,6 +69,10 @@ function transformTimeline(data) {
           guestKind: res.guestKind ?? null,
           version: res.version,
           placeNumber: res.placeNumber ?? 1,
+          // Прилёт и отъезд по заявке Kars Avia и рейс — местное время текстом (stayTimes.js).
+          arrivalAt: res.arrivalAt ?? null,
+          departureAt: res.departureAt ?? null,
+          flight: res.flight ?? null,
         });
       }
     }

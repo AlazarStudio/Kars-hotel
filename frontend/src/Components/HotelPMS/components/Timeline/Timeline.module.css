@@ -890,6 +890,17 @@
   min-height: 48px;
 }
 
+/* Прилёт, отъезд и рейс по заявке Kars Avia — только для чтения, поэтому без рамки поля. */
+.stayInfo {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #1B2A47;
+  background: #F1F5FB;
+  border-radius: 7px;
+  padding: 7px 10px;
+}
+
 .formRow {
   display: flex;
   gap: 10px;

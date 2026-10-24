@@ -42,6 +42,10 @@ export interface TimelineReservation {
   ratePlanId: string | null;
   version: number;
   placeNumber: number;
+  /** Прилёт и отъезд по заявке партнёра и рейс — местное время «ГГГГ-ММ-ДДTЧЧ:ММ»; null — неизвестно. */
+  arrivalAt: string | null;
+  departureAt: string | null;
+  flight: string | null;
 }
 
 /** One room row in the timeline grid. */

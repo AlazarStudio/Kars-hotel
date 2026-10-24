@@ -50,6 +50,9 @@ interface RawReservationRow {
   rate_plan_id: string | null;
   version: number;
   place_number: number;
+  arrival_at: string | null;
+  departure_at: string | null;
+  flight: string | null;
 }
 
 @Injectable()
@@ -156,7 +159,10 @@ export class TimelineService {
           guest_kind,
           rate_plan_id,
           version,
-          place_number
+          place_number,
+          arrival_at,
+          departure_at,
+          flight
         FROM reservation
         WHERE check_in  < ${toDate}::date + INTERVAL '1 day'
           AND check_out > ${fromDate}::date
@@ -188,6 +194,9 @@ export class TimelineService {
           ratePlanId: r.rate_plan_id,
           version: r.version,
           placeNumber: r.place_number,
+          arrivalAt: r.arrival_at,
+          departureAt: r.departure_at,
+          flight: r.flight,
         });
       }
 

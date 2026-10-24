@@ -7,6 +7,7 @@ import { ru } from 'date-fns/locale';
 import classes from './Timeline.module.css';
 import { DAY_WIDTH, LEFT_PANEL_WIDTH, BOOKING_STATUS, HK_STATUS } from '../../constants';
 import BookingForm from './BookingForm';
+import { stayRows } from './stayTimes';
 import { PARTNER_HOLD_CONFIG } from '../../shared/status-config';
 import { useTimeline } from '../../../../hooks/useTimeline';
 import { createReservation, updateReservation, swapReservations } from '../../../../api/reservations';
@@ -984,12 +985,15 @@ function Tooltip({ booking, x, y, rooms, multiPlaceEnabled = true }) {
   const nights = differenceInDays(parseISO(booking.checkOut), parseISO(booking.checkIn));
   const cfg = BOOKING_STATUS[booking.status] || BOOKING_STATUS.new;
 
+  // Прилёт, отъезд и рейс брони из Kars Avia — по строке на каждое известное.
+  const stay = stayRows(booking);
+  const height = 180 + 22 * stay.length;
   const style = {
     left: Math.min(x + 14, window.innerWidth - 300),
     top: y + 14,
   };
-  if (y + 14 + 180 > window.innerHeight) {
-    style.top = y - 180;
+  if (y + 14 + height > window.innerHeight) {
+    style.top = y - height;
   }
 
   return (
@@ -1013,6 +1017,12 @@ function Tooltip({ booking, x, y, rooms, multiPlaceEnabled = true }) {
         <span className={classes.tooltipLabel}>Выезд:</span>
         <span className={classes.tooltipValue}>{format(parseISO(booking.checkOut), 'd MMM yyyy', { locale: ru })}</span>
       </div>
+      {stay.map(([label, value]) => (
+        <div key={label} className={classes.tooltipRow}>
+          <span className={classes.tooltipLabel}>{label}</span>
+          <span className={classes.tooltipValue}>{value}</span>
+        </div>
+      ))}
       <div className={classes.tooltipRow}>
         <span className={classes.tooltipLabel}>Ночей:</span>
         <span className={classes.tooltipValue}>{nights}</span>

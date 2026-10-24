@@ -863,6 +863,12 @@ model Reservation {
   checkedOutAt DateTime?        @map("checked_out_at")
   /// Вид брони партнёра; пусто — не указан (собственные брони отеля).
   guestKind   GuestKind?        @map("guest_kind")
+  /// Прилёт и отъезд по заявке партнёра и рейс (24.10.2026): местное время
+  /// текстом «ГГГГ-ММ-ДДTЧЧ:ММ», без пояса; пусто — неизвестно. Ведёт партнёр
+  /// (`reservations/stay-times.ts`).
+  arrivalAt   String?           @map("arrival_at") @db.VarChar(16)
+  departureAt String?           @map("departure_at") @db.VarChar(16)
+  flight      String?           @db.VarChar(64)
   notes       String?
   placeNumber Int               @default(1) @map("place_number")
   version     Int               @default(0)

@@ -7,10 +7,13 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
+  MaxLength,
   Min,
   Length,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { FLIGHT_MAX, LOCAL_DATE_TIME, LOCAL_DATE_TIME_MESSAGE } from '../../reservations/stay-times';
 
 /**
  * Book a room in a CATEGORY. The partner may pin a specific physical room via
@@ -101,4 +104,22 @@ export class ConnectCreateReservationDto {
   @IsString()
   @Length(1, 64)
   customer?: string;
+
+  /* Прилёт и отъезд по заявке и рейс (24.10.2026) — reservations/stay-times.ts.
+     Нет поля — время неизвестно. */
+  @ApiPropertyOptional({ example: '2026-10-22T02:00', description: 'Прилёт по заявке, местное время без пояса' })
+  @IsOptional()
+  @Matches(LOCAL_DATE_TIME, { message: LOCAL_DATE_TIME_MESSAGE })
+  arrivalAt?: string;
+
+  @ApiPropertyOptional({ example: '2026-10-24T10:40', description: 'Отъезд по заявке, местное время без пояса' })
+  @IsOptional()
+  @Matches(LOCAL_DATE_TIME, { message: LOCAL_DATE_TIME_MESSAGE })
+  departureAt?: string;
+
+  @ApiPropertyOptional({ example: 'S7 178', description: 'Рейс по заявке' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(FLIGHT_MAX)
+  flight?: string;
 }

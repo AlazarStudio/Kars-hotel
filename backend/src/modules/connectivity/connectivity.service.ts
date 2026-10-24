@@ -639,25 +639,29 @@ export class ConnectivityService {
         .filter(Boolean)
         .join(' ');
 
-      const created = await this.reservations.create({
-        roomId,
-        guestName: dto.guestName,
-        phone: dto.phone,
-        email: dto.email,
-        checkIn: dto.checkIn,
-        checkOut: dto.checkOut,
-        adults: dto.adults,
-        children: dto.children ?? 0,
-        status: 'CONFIRMED',
-        source: 'CORPORATE',
-        // Owned by the partner channel — hotel staff can view but not cancel it
-        // locally; only this connectivity API can release it (see cancel below).
-        channelManaged: true,
-        guestKind: dto.guestKind,
-        notes: notes || undefined,
-        ratePlanId,
-        totalPrice,
-      });
+      const created = await this.reservations.create(
+        {
+          roomId,
+          guestName: dto.guestName,
+          phone: dto.phone,
+          email: dto.email,
+          checkIn: dto.checkIn,
+          checkOut: dto.checkOut,
+          adults: dto.adults,
+          children: dto.children ?? 0,
+          status: 'CONFIRMED',
+          source: 'CORPORATE',
+          // Owned by the partner channel — hotel staff can view but not cancel it
+          // locally; only this connectivity API can release it (see cancel below).
+          channelManaged: true,
+          guestKind: dto.guestKind,
+          notes: notes || undefined,
+          ratePlanId,
+          totalPrice,
+        },
+        // Прилёт и отъезд по заявке и рейс — их ведёт партнёр (stay-times.ts).
+        { arrivalAt: dto.arrivalAt, departureAt: dto.departureAt, flight: dto.flight },
+      );
 
       // Бронь помнит партнёра: его API видит только свои брони (план 13.10).
       await this.prisma.forTenantExplicit(tenant.id, (tx) =>
@@ -692,7 +696,8 @@ export class ConnectivityService {
   }
 
   /**
-   * Правка брони партнёра: даты, номер, гость, число гостей, комментарий.
+   * Правка брони партнёра: даты, номер, гость, число гостей, комментарий,
+   * время прилёта и отъезда и рейс.
    *
    * ЗАЧЕМ. До этого у партнёра был один способ изменить бронь — отменить и
    * создать заново. Для смены фамилии члена экипажа или сдвига дат на сутки
@@ -740,7 +745,10 @@ export class ConnectivityService {
         adults: dto.adults,
         children: dto.children,
         notes: dto.comment,
-      } as never, { fromChannel: true }),
+      } as never, {
+        fromChannel: true,
+        stay: { arrivalAt: dto.arrivalAt, departureAt: dto.departureAt, flight: dto.flight },
+      }),
     );
 
     const after = await this.getReservation(slug, id, partnerId);
@@ -1488,6 +1496,9 @@ export class ConnectivityService {
       updatedAt: Date;
       checkedInAt?: Date | null;
       checkedOutAt?: Date | null;
+      arrivalAt?: string | null;
+      departureAt?: string | null;
+      flight?: string | null;
       room?: { number: string } | null;
     },
   ) {
@@ -1515,6 +1526,10 @@ export class ConnectivityService {
       updatedAt: r.updatedAt,
       checkedInAt: r.checkedInAt ?? null,
       checkedOutAt: r.checkedOutAt ?? null,
+      // Прилёт и отъезд по заявке и рейс — партнёр видит то, что прислал.
+      arrivalAt: r.arrivalAt ?? null,
+      departureAt: r.departureAt ?? null,
+      flight: r.flight ?? null,
     };
   }
 }

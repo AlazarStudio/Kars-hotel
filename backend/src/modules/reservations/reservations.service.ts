@@ -15,6 +15,7 @@ import { PartnerWebhookService } from '../connectivity/partner-webhook.service';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
 import { allocatePlace, placesOf, type PlaceHolder } from './room-places';
+import type { PartnerStayInfo } from './stay-times';
 import { SwapReservationsDto } from './dto/swap-reservations.dto';
 import { parseISO, format } from 'date-fns';
 
@@ -49,7 +50,9 @@ export class ReservationsService {
     return { guestsBooked: booked, guestsArrived: booked };
   }
 
-  async create(dto: CreateReservationDto) {
+  /* `stay` — прилёт и отъезд по заявке и рейс; присылает только партнёрский API
+     (stay-times.ts), у кабинета гостиницы этих полей нет. */
+  async create(dto: CreateReservationDto, stay: PartnerStayInfo = {}) {
     const tenantId = TenantContext.getTenantIdOrThrow();
 
     const source = VALID_SOURCES.includes((dto.source ?? '').toUpperCase())
@@ -112,7 +115,8 @@ export class ReservationsService {
           tenant_id, room_id, room_type_id, guest_name, phone, email,
           check_in, check_out,
           status, source, adults, children,
-          notes, total_price, rate_plan_id, place_number, channel_managed, guest_kind, version
+          notes, total_price, rate_plan_id, place_number, channel_managed, guest_kind, version,
+          arrival_at, departure_at, flight
         ) VALUES (
           ${tenantId}::uuid,
           ${dto.roomId}::uuid,
@@ -132,7 +136,10 @@ export class ReservationsService {
           ${placeNumber},
           ${dto.channelManaged ?? false},
           ${dto.guestKind ?? null}::"GuestKind",
-          1
+          1,
+          ${stay.arrivalAt ?? null},
+          ${stay.departureAt ?? null},
+          ${stay.flight ?? null}
         )
         RETURNING id, status, version, place_number
       `;
@@ -180,8 +187,14 @@ export class ReservationsService {
 
   // ─── Update ───────────────────────────────────────────────────────────────
 
-  /* `fromChannel` — правку прислал партнёр (Kars Avia) через свой API. */
-  async update(id: string, dto: UpdateReservationDto, opts: { fromChannel?: boolean } = {}) {
+  /* `fromChannel` — правку прислал партнёр (Kars Avia) через свой API.
+     `stay` — его же прилёт, отъезд и рейс (stay-times.ts): кабинет гостиницы
+     их не присылает и не меняет. */
+  async update(
+    id: string,
+    dto: UpdateReservationDto,
+    opts: { fromChannel?: boolean; stay?: PartnerStayInfo } = {},
+  ) {
     const tenantId = TenantContext.getTenantIdOrThrow();
 
     type TxResult =
@@ -226,12 +239,16 @@ export class ReservationsService {
           rate_plan_id: string | null;
           place_number: number;
           channel_managed: boolean;
+          arrival_at: string | null;
+          departure_at: string | null;
+          flight: string | null;
         }[]
       >`
         SELECT
           id, room_id, room_type_id, check_in, check_out, version,
           guest_name, phone, email, adults, children, status, source,
-          notes, total_price::text, rate_plan_id, place_number, channel_managed
+          notes, total_price::text, rate_plan_id, place_number, channel_managed,
+          arrival_at, departure_at, flight
         FROM reservation
         WHERE id = ${id}::uuid
         LIMIT 1
@@ -354,6 +371,12 @@ export class ReservationsService {
       const adults = dto.adults ?? cur.adults;
       const children = dto.children ?? cur.children;
       const notes = dto.notes !== undefined ? dto.notes || null : cur.notes;
+      /* Прилёт, отъезд и рейс — только из партнёрского API (`opts.stay`): не
+         прислано — прежнее, `null` — стираем. Тело правки кабинета их не несёт. */
+      const stay = opts.stay ?? {};
+      const arrivalAt = stay.arrivalAt !== undefined ? stay.arrivalAt : cur.arrival_at;
+      const departureAt = stay.departureAt !== undefined ? stay.departureAt : cur.departure_at;
+      const flight = stay.flight !== undefined ? stay.flight : cur.flight;
       const totalPrice =
         dto.totalPrice !== undefined
           ? dto.totalPrice
@@ -377,6 +400,9 @@ export class ReservationsService {
           notes        = ${notes},
           total_price  = ${totalPrice},
           place_number = ${placeNumber},
+          arrival_at   = ${arrivalAt},
+          departure_at = ${departureAt},
+          flight       = ${flight},
           version      = version + 1
         WHERE id = ${id}::uuid
         RETURNING id, version, status
@@ -391,10 +417,11 @@ export class ReservationsService {
         guestName: cur.guest_name, phone: cur.phone, email: cur.email, adults: cur.adults, children: cur.children,
         status: cur.status, source: cur.source, notes: cur.notes,
         totalPrice: cur.total_price ? Number(cur.total_price) : null, placeNumber: cur.place_number,
+        arrivalAt: cur.arrival_at, departureAt: cur.departure_at, flight: cur.flight,
       };
       const now: Record<string, unknown> = {
         roomId, checkIn: checkInStr, checkOut: checkOutStr, guestName, phone, email, adults, children,
-        status, source, notes, totalPrice, placeNumber,
+        status, source, notes, totalPrice, placeNumber, arrivalAt, departureAt, flight,
       };
       const before: Record<string, unknown> = {};
       const after: Record<string, unknown> = {};

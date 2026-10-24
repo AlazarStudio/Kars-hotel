@@ -8,6 +8,7 @@ import { useFolio, useAddPayment } from '../../../../hooks/api/useFolio';
 import { useReservationMeals } from '../../../../hooks/api/useMeals';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { stayLine } from './stayTimes';
 
 /* Месяц словом без точки — так дата пишется у партнёра («21 сен»), и так её
    читает диспетчер, который звонит на кухню. date-fns даёт «сент.». */
@@ -395,6 +396,15 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
               <div className={classes.formLabel}>Дата выезда *</div>
               <input className={classes.formInput} value={form.checkOut} onChange={set('checkOut')} type="date" />
             </div>
+
+            {/* Прилёт, отъезд и рейс по заявке Kars Avia — здесь только видно:
+                ведёт их заявка Авии, и с её правкой они приходят сами (24.10.2026). */}
+            {isChannelManaged && stayLine(booking) && (
+              <div className={`${classes.formGroup} ${classes.formFull}`}>
+                <div className={classes.formLabel}>По заявке Kars Avia</div>
+                <div className={classes.stayInfo}>{stayLine(booking)}</div>
+              </div>
+            )}
 
             <div className={`${classes.formGroup} ${classes.formFull}`}>
               <div className={classes.formLabel}>Номер *</div>

@@ -5,6 +5,7 @@ import classes from './Dashboard.module.css';
 import { BOOKING_STATUS, HK_STATUS } from '../../constants';
 import { useDashboard } from '../../../../hooks/useDashboard';
 import { useMealsForDay } from '../../../../hooks/api/useMeals';
+import { byArrival, stayClock } from '../Timeline/stayTimes';
 
 const TODAY_STR = format(new Date(), 'yyyy-MM-dd');
 
@@ -16,9 +17,10 @@ function Dashboard() {
   const categories = data?.categories ?? [];
 
   const stats = useMemo(() => {
+    // Кого встречать раньше — выше: по времени прибытия из заявки Kars Avia.
     const arrivalsToday = bookings.filter(b =>
       b.checkIn === TODAY_STR && b.status !== 'cancelled' && b.status !== 'no_show'
-    );
+    ).sort(byArrival);
     const departuresToday = bookings.filter(b =>
       b.checkOut === TODAY_STR && b.status !== 'cancelled' && b.status !== 'no_show'
     );
@@ -203,7 +205,11 @@ function Dashboard() {
                 <div className={classes.guestAvatar}>{getInitials(b.guestName)}</div>
                 <div className={classes.guestInfo}>
                   <div className={classes.guestName}>{b.guestName}</div>
-                  <div className={classes.guestMeta}>{b.adults} чел · {formatDate(b.checkIn)} – {formatDate(b.checkOut)}</div>
+                  <div className={classes.guestMeta}>
+                    {b.adults} чел · {formatDate(b.checkIn)} – {formatDate(b.checkOut)}
+                    {b.arrivalAt && ` · прибытие ${stayClock(b.arrivalAt, b.checkIn)}`}
+                    {b.flight && ` · ${b.flight}`}
+                  </div>
                 </div>
                 <div className={classes.guestRoom}>№{getRoomNumber(b.roomId)}</div>
               </div>
@@ -227,7 +233,9 @@ function Dashboard() {
                 </div>
                 <div className={classes.guestInfo}>
                   <div className={classes.guestName}>{b.guestName}</div>
-                  <div className={classes.guestMeta}>{b.adults} чел · выезд до 12:00</div>
+                  <div className={classes.guestMeta}>
+                    {b.adults} чел · {b.departureAt ? `отъезд ${stayClock(b.departureAt, b.checkOut)}` : 'выезд до 12:00'}
+                  </div>
                 </div>
                 <div className={classes.guestRoom} style={{ background: '#FB8C00' }}>№{getRoomNumber(b.roomId)}</div>
               </div>
