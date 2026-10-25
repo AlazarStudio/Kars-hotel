@@ -3,6 +3,7 @@ import { format, addDays } from 'date-fns';
 import { getTimeline } from '../api/timeline';
 import { io } from 'socket.io-client';
 import { useAuth } from '../auth/AuthContext';
+import { getAccessToken, onAccessTokenChange } from '../api/client';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
 const WS_BASE_URL = API_BASE_URL.replace('/api', '');
@@ -120,38 +121,56 @@ export function useTimeline(viewStart, daysCount) {
     load();
   }, [load]);
 
-  // WebSocket: subscribe once per tenantId — use loadRef to avoid recreating
-  // the socket every time `load` gets a new reference due to re-renders.
+  // WebSocket: комнату гостиницы сервер выбирает по access-токену из
+  // handshake (timeline.gateway.ts), а не по нашим словам. Токен сменился —
+  // переподключаемся с новым; токена нет — без сокета. loadRef — чтобы не
+  // пересоздавать сокет на каждый новый `load`.
   useEffect(() => {
     if (!user?.tenantId) return;
 
-    // Connect to /timeline namespace.
-    // Start with polling (always works), then upgrade to WS.
-    // This prevents the "WebSocket closed before connection established" spam
-    // caused by trying WebSocket first before the HTTP handshake is complete.
-    const socket = io(`${WS_BASE_URL}/timeline`, {
-      transports: ['polling', 'websocket'],
-      auth: { tenantId: user.tenantId },
-      reconnectionAttempts: 10,
-      reconnectionDelay: 2000,
-    });
+    let socket = null;
+    let socketToken = null;
 
-    socket.on('timeline:update', () => {
-      // Use ref so this callback always calls the latest load(), even if
-      // viewStart/daysCount changed while the socket was connected.
-      loadRef.current();
-    });
+    const connect = (token) => {
+      if (token === socketToken) return;
+      socket?.disconnect();
+      socket = null;
+      socketToken = token;
+      socketRef.current = null;
+      if (!token) return;
 
-    socket.on('connect_error', (err) => {
-      // Suppress expected transport errors (polling fallback handles them)
-      if (import.meta.env.DEV) {
-        console.debug('[WS] connect_error (will retry):', err.message);
-      }
-    });
+      // Connect to /timeline namespace.
+      // Start with polling (always works), then upgrade to WS.
+      // This prevents the "WebSocket closed before connection established" spam
+      // caused by trying WebSocket first before the HTTP handshake is complete.
+      socket = io(`${WS_BASE_URL}/timeline`, {
+        transports: ['polling', 'websocket'],
+        auth: { token },
+        reconnectionAttempts: 10,
+        reconnectionDelay: 2000,
+      });
 
-    socketRef.current = socket;
+      socket.on('timeline:update', () => {
+        // Use ref so this callback always calls the latest load(), even if
+        // viewStart/daysCount changed while the socket was connected.
+        loadRef.current();
+      });
+
+      socket.on('connect_error', (err) => {
+        // Suppress expected transport errors (polling fallback handles them)
+        if (import.meta.env.DEV) {
+          console.debug('[WS] connect_error (will retry):', err.message);
+        }
+      });
+
+      socketRef.current = socket;
+    };
+
+    connect(getAccessToken());
+    const unsubscribe = onAccessTokenChange(connect);
     return () => {
-      socket.disconnect();
+      unsubscribe();
+      socket?.disconnect();
       socketRef.current = null;
     };
   }, [user?.tenantId]); // ← no `load` in deps — use loadRef instead
