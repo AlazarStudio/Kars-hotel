@@ -5,6 +5,7 @@ import {
   NotFoundException,
   Logger,
 } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/context/tenant-context';
 import { TimelineService } from '../timeline/timeline.service';
@@ -21,6 +22,29 @@ import { parseISO, format } from 'date-fns';
 
 const VALID_SOURCES = ['DIRECT', 'PHONE', 'ONLINE', 'OTA', 'CORPORATE'];
 const VALID_STATUSES = ['NEW', 'CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT', 'CANCELLED', 'NO_SHOW'];
+
+/* Заезд, выезд и неявка — ФАКТЫ, а не поле формы: одно правило и для кнопки,
+ * и для статуса в форме брони (25.10.2026). Из какого статуса можно, как
+ * отказать и чем записать в журнал. */
+type Fact = 'CHECKED_IN' | 'CHECKED_OUT' | 'NO_SHOW';
+const FACTS: Record<Fact, { from: string[]; action: string; refusal: string }> = {
+  CHECKED_IN: {
+    from: ['NEW', 'CONFIRMED'],
+    action: 'check_in',
+    refusal: 'Cannot check in: current status must be NEW or CONFIRMED',
+  },
+  CHECKED_OUT: {
+    from: ['CHECKED_IN'],
+    action: 'check_out',
+    refusal: 'Cannot check out: reservation must be in CHECKED_IN status',
+  },
+  NO_SHOW: {
+    from: ['NEW', 'CONFIRMED'],
+    action: 'no_show',
+    refusal: 'Cannot mark as no-show: current status must be NEW or CONFIRMED',
+  },
+};
+const isFact = (status: string): status is Fact => Object.keys(FACTS).includes(status);
 
 @Injectable()
 export class ReservationsService {
@@ -204,6 +228,7 @@ export class ReservationsService {
           version: number;
           status: string;
           changes: { before: Record<string, unknown>; after: Record<string, unknown> };
+          fact: { type: Fact; before: string; roomId: string } | null;
         }
       | {
           ok: false;
@@ -215,7 +240,8 @@ export class ReservationsService {
             | 'ROOM_NOT_FOUND'
             | 'BOOKING_CONFLICT'
             | 'CHANNEL_GUESTS';
-        };
+        }
+      | { ok: false; reason: 'WRONG_STATUS'; fact: Fact };
 
     const result = await this.prisma.forTenant(async (tx): Promise<TxResult> => {
       // 1. Fetch the current row
@@ -290,6 +316,17 @@ export class ReservationsService {
           ? dto.status.toUpperCase()
           : cur.status
         : cur.status;
+
+      /* 3a. Заезд, выезд, неявка формой — тем же правилом, что кнопкой
+         (25.10.2026, правка заказчика Kars Avia: «в PMS выселили, а в Авии
+         заявка рабочая»). Статус «Выехал» из формы вставал напрямую: без
+         сверки счёта, без времени выезда, номер не уходил в уборку, и
+         партнёр не получал guest.checked_out. Тот же статус повторно —
+         не новый факт: форма шлёт его при каждом сохранении. */
+      const fact = status !== cur.status && isFact(status) ? status : null;
+      if (fact && !(await this.admitFact(tx, id, fact, cur.status))) {
+        return { ok: false, reason: 'WRONG_STATUS', fact };
+      }
 
       const source = dto.source
         ? VALID_SOURCES.includes(dto.source.toUpperCase())
@@ -407,6 +444,7 @@ export class ReservationsService {
         WHERE id = ${id}::uuid
         RETURNING id, version, status
       `;
+      if (fact) await this.stampFact(tx, id, fact, roomId);
 
       this.logger.log(`Reservation updated: ${res.id} place ${placeNumber}`);
       /* Что именно поменялось — в журнал (23.10.2026): «взрослых 1 → 2» на
@@ -431,7 +469,12 @@ export class ReservationsService {
           after[k] = now[k];
         }
       }
-      return { ok: true, ...res, changes: { before, after } };
+      return {
+        ok: true,
+        ...res,
+        changes: { before, after },
+        fact: fact && { type: fact, before: cur.status, roomId },
+      };
     });
 
     if (!result.ok) {
@@ -456,6 +499,8 @@ export class ReservationsService {
           throw new ForbiddenException(
             'Число гостей брони из Kars Avia меняется в заявке Kars Avia, а не в кабинете гостиницы',
           );
+        case 'WRONG_STATUS':
+          throw new ConflictException(FACTS[result.fact].refusal);
       }
     }
 
@@ -473,6 +518,11 @@ export class ReservationsService {
         after: { ...result.changes.after, version: result.version, ...(opts.fromChannel ? { via: 'partner-api' } : {}) },
       },
     });
+
+    if (result.fact) {
+      const { type, before, roomId } = result.fact;
+      await this.announceFact(tenantId, result.id, type, before, roomId);
+    }
 
     /* Правка брони партнёра — ему сообщается ЗДЕСЬ, откуда бы она ни пришла:
        переселила гостиница на шахматке или перенёс даты сам партнёр. */
@@ -621,69 +671,153 @@ export class ReservationsService {
     });
   }
 
-  // ─── Check-in ─────────────────────────────────────────────────────────────────
+  // ─── Check-in / check-out / no-show ───────────────────────────────────────────
 
-  async checkIn(id: string, userId: string, actualCheckInTime?: string) {
+  /* Время с ресепшена (`actualCheckInTime`) не пишется и раньше не писалось:
+     checked_in_at ставит сервер в момент заезда. */
+  async checkIn(id: string, userId: string, _actualCheckInTime?: string) {
+    return this.recordFact(id, 'CHECKED_IN', userId);
+  }
+
+  async checkOut(id: string, userId: string) {
+    return this.recordFact(id, 'CHECKED_OUT', userId);
+  }
+
+  async noShow(id: string, userId: string) {
+    return this.recordFact(id, 'NO_SHOW', userId);
+  }
+
+  /** Отдельная операция факта (кнопка «Заселить», «Выселить», «Не явился»). */
+  private async recordFact(id: string, fact: Fact, userId: string) {
     const tenantId = TenantContext.getTenantIdOrThrow();
 
     type TxResult =
-      | { ok: true; id: string; version: number; before: string }
+      | { ok: true; id: string; version: number; before: string; roomId: string }
       | { ok: false; reason: 'NOT_FOUND' | 'WRONG_STATUS' };
 
     const result = await this.prisma.forTenant(async (tx): Promise<TxResult> => {
-      const rows = await tx.$queryRaw<{ id: string; status: string; version: number }[]>`
-        SELECT id, status, version FROM reservation WHERE id = ${id}::uuid LIMIT 1
+      const rows = await tx.$queryRaw<{ id: string; status: string; room_id: string }[]>`
+        SELECT id, status, room_id FROM reservation WHERE id = ${id}::uuid LIMIT 1
       `;
       if (!rows.length) return { ok: false, reason: 'NOT_FOUND' };
       const cur = rows[0];
-      if (!['NEW', 'CONFIRMED'].includes(cur.status)) {
+      if (!(await this.admitFact(tx, id, fact, cur.status))) {
         return { ok: false, reason: 'WRONG_STATUS' };
       }
 
-      const checkInTime = actualCheckInTime ? new Date(actualCheckInTime) : new Date();
-
       const [res] = await tx.$queryRaw<{ id: string; version: number }[]>`
         UPDATE reservation
-        SET status = 'CHECKED_IN'::"ReservationStatus",
-            checked_in_at = now(),
+        SET status = ${fact}::"ReservationStatus",
             version = version + 1,
             "updatedAt" = now()
         WHERE id = ${id}::uuid
         RETURNING id, version
       `;
+      await this.stampFact(tx, id, fact, cur.room_id);
 
-      return { ok: true, id: res.id, version: res.version, before: cur.status };
+      return { ok: true, ...res, before: cur.status, roomId: cur.room_id };
     });
 
     if (!result.ok) {
       if (result.reason === 'NOT_FOUND') throw new NotFoundException('Reservation not found');
-      throw new ConflictException(`Cannot check in: current status must be NEW or CONFIRMED`);
+      throw new ConflictException(FACTS[fact].refusal);
     }
 
+    await this.timelineService.invalidate(tenantId);
+    this.timelineGateway.notifyUpdate(tenantId, { action: 'updated' });
+
+    await this.announceFact(tenantId, id, fact, result.before, result.roomId, userId);
+
+    return { id: result.id, status: fact, version: result.version };
+  }
+
+  /** Можно ли зафиксировать факт из текущего статуса. Выезд — только с
+   *  закрытым счётом: долг — 409 из сверки счёта. */
+  private async admitFact(
+    tx: Prisma.TransactionClient,
+    id: string,
+    fact: Fact,
+    status: string,
+  ): Promise<boolean> {
+    if (!FACTS[fact].from.includes(status)) return false;
+    if (fact === 'CHECKED_OUT') await this.folioService.assertZeroBalance(id, tx);
+    return true;
+  }
+
+  /** Следы факта в той же транзакции: время заезда или выезда; освободившийся
+   *  номер — грязный. */
+  private async stampFact(tx: Prisma.TransactionClient, id: string, fact: Fact, roomId: string) {
+    if (fact === 'CHECKED_IN') {
+      await tx.$executeRaw`UPDATE reservation SET checked_in_at = now() WHERE id = ${id}::uuid`;
+    }
+    if (fact === 'CHECKED_OUT') {
+      await tx.$executeRaw`UPDATE reservation SET checked_out_at = now() WHERE id = ${id}::uuid`;
+      await tx.$executeRaw`
+        UPDATE room
+        SET status = 'DIRTY'::"RoomStatus", "updatedAt" = now()
+        WHERE id = ${roomId}::uuid
+      `;
+    }
+  }
+
+  /** После записи факта: журнал, уборка, партнёр. `userId` не передан —
+   *  журнал берёт пользователя из запроса. */
+  private async announceFact(
+    tenantId: string,
+    id: string,
+    fact: Fact,
+    before: string,
+    roomId: string,
+    userId?: string,
+  ) {
     await this.prisma.writeAuditLog({
       tenantId,
       userId,
       entity: 'reservation',
       entityId: id,
-      action: 'check_in',
-      diff: { before: { status: result.before }, after: { status: 'CHECKED_IN' } },
+      action: FACTS[fact].action,
+      diff: { before: { status: before }, after: { status: fact } },
     });
 
-    await this.timelineService.invalidate(tenantId);
-    this.timelineGateway.notifyUpdate(tenantId, { action: 'updated' });
+    if (fact === 'CHECKED_OUT') {
+      // Auto-create housekeeping cleaning task for the vacated room
+      this.hkService.autoCreateOnCheckout(tenantId, roomId, id).catch((e) => {
+        // Non-critical — log but don't fail checkout
+        console.warn(`Failed to auto-create HK task: ${(e as Error).message}`);
+      });
+    }
 
-    /* Г5 · партнёру факт заезда нужен сразу: от него зависит расчёт с
+    /* Г5 · партнёру факт нужен сразу: от него зависит расчёт с
      * авиакомпанией. Не ждём — отправка не блокирует ответ, а сорвавшийся
      * вебхук партнёр доберёт опросом фактов. */
-    await this.partnerWebhooks.emitForReservation('guest.checked_in', id, {
-      reservationId: id,
-      status: 'checked_in',
-      checkedInAt: new Date().toISOString(),
-      noShow: false,
-      ...(await this.guestCounts(id)),
-    });
-
-    return { id: result.id, status: 'CHECKED_IN', version: result.version };
+    const counts = await this.guestCounts(id);
+    const now = new Date().toISOString();
+    if (fact === 'CHECKED_IN') {
+      await this.partnerWebhooks.emitForReservation('guest.checked_in', id, {
+        reservationId: id,
+        status: 'checked_in',
+        checkedInAt: now,
+        noShow: false,
+        ...counts,
+      });
+    } else if (fact === 'CHECKED_OUT') {
+      await this.partnerWebhooks.emitForReservation('guest.checked_out', id, {
+        reservationId: id,
+        status: 'checked_out',
+        checkedOutAt: now,
+        noShow: false,
+        ...counts,
+      });
+    } else {
+      await this.partnerWebhooks.emitForReservation('guest.no_show', id, {
+        reservationId: id,
+        status: 'no_show',
+        noShow: true,
+        ...counts,
+        // Никто не заехал — счётчик прибывших перекрываем нулём.
+        guestsArrived: 0,
+      });
+    }
   }
 
   /** Открытие карточки брони — в журнал (план 13.5). Чужая бронь — 404. */
@@ -694,148 +828,6 @@ export class ReservationsService {
     );
     if (!found) throw new NotFoundException('Reservation not found');
     await this.prisma.writeAuditLog({ tenantId, userId, entity: 'reservation', entityId: id, action: 'view' });
-  }
-
-  // ─── Check-out ────────────────────────────────────────────────────────────────
-
-  async checkOut(id: string, userId: string) {
-    await this.folioService.assertZeroBalance(id);
-
-    const tenantId = TenantContext.getTenantIdOrThrow();
-
-    type TxResult =
-      | { ok: true; id: string; version: number; before: string; roomId: string }
-      | { ok: false; reason: 'NOT_FOUND' | 'WRONG_STATUS' };
-
-    const result = await this.prisma.forTenant(async (tx): Promise<TxResult> => {
-      const rows = await tx.$queryRaw<
-        { id: string; status: string; version: number; room_id: string }[]
-      >`
-        SELECT id, status, version, room_id FROM reservation WHERE id = ${id}::uuid LIMIT 1
-      `;
-      if (!rows.length) return { ok: false, reason: 'NOT_FOUND' };
-      const cur = rows[0];
-      if (cur.status !== 'CHECKED_IN') return { ok: false, reason: 'WRONG_STATUS' };
-
-      const [res] = await tx.$queryRaw<{ id: string; version: number }[]>`
-        UPDATE reservation
-        SET status = 'CHECKED_OUT'::"ReservationStatus",
-            checked_out_at = now(),
-            version = version + 1,
-            "updatedAt" = now()
-        WHERE id = ${id}::uuid
-        RETURNING id, version
-      `;
-
-      await tx.$executeRaw`
-        UPDATE room
-        SET status = 'DIRTY'::"RoomStatus", "updatedAt" = now()
-        WHERE id = ${cur.room_id}::uuid
-      `;
-
-      return {
-        ok: true,
-        id: res.id,
-        version: res.version,
-        before: cur.status,
-        roomId: cur.room_id,
-      };
-    });
-
-    if (!result.ok) {
-      if (result.reason === 'NOT_FOUND') throw new NotFoundException('Reservation not found');
-      throw new ConflictException(`Cannot check out: reservation must be in CHECKED_IN status`);
-    }
-
-    await this.prisma.writeAuditLog({
-      tenantId,
-      userId,
-      entity: 'reservation',
-      entityId: id,
-      action: 'check_out',
-      diff: { before: { status: result.before }, after: { status: 'CHECKED_OUT' } },
-    });
-
-    // Auto-create housekeeping cleaning task for the vacated room
-    this.hkService.autoCreateOnCheckout(tenantId, result.roomId, id).catch((e) => {
-      // Non-critical — log but don't fail checkout
-      console.warn(`Failed to auto-create HK task: ${(e as Error).message}`);
-    });
-
-    await this.timelineService.invalidate(tenantId);
-    this.timelineGateway.notifyUpdate(tenantId, { action: 'updated' });
-
-    await this.partnerWebhooks.emitForReservation('guest.checked_out', id, {
-      reservationId: id,
-      status: 'checked_out',
-      checkedOutAt: new Date().toISOString(),
-      noShow: false,
-      ...(await this.guestCounts(id)),
-    });
-
-    return { id: result.id, status: 'CHECKED_OUT', version: result.version };
-  }
-
-  // ─── No-show ──────────────────────────────────────────────────────────────────
-
-  async noShow(id: string, userId: string) {
-    const tenantId = TenantContext.getTenantIdOrThrow();
-
-    type TxResult =
-      | { ok: true; id: string; version: number; before: string }
-      | { ok: false; reason: 'NOT_FOUND' | 'WRONG_STATUS' };
-
-    const result = await this.prisma.forTenant(async (tx): Promise<TxResult> => {
-      const rows = await tx.$queryRaw<{ id: string; status: string; version: number }[]>`
-        SELECT id, status, version FROM reservation WHERE id = ${id}::uuid LIMIT 1
-      `;
-      if (!rows.length) return { ok: false, reason: 'NOT_FOUND' };
-      const cur = rows[0];
-      if (!['NEW', 'CONFIRMED'].includes(cur.status)) {
-        return { ok: false, reason: 'WRONG_STATUS' };
-      }
-
-      const [res] = await tx.$queryRaw<{ id: string; version: number }[]>`
-        UPDATE reservation
-        SET status = 'NO_SHOW'::"ReservationStatus",
-            version = version + 1,
-            "updatedAt" = now()
-        WHERE id = ${id}::uuid
-        RETURNING id, version
-      `;
-
-      return { ok: true, id: res.id, version: res.version, before: cur.status };
-    });
-
-    if (!result.ok) {
-      if (result.reason === 'NOT_FOUND') throw new NotFoundException('Reservation not found');
-      throw new ConflictException(
-        `Cannot mark as no-show: current status must be NEW or CONFIRMED`,
-      );
-    }
-
-    await this.prisma.writeAuditLog({
-      tenantId,
-      userId,
-      entity: 'reservation',
-      entityId: id,
-      action: 'no_show',
-      diff: { before: { status: result.before }, after: { status: 'NO_SHOW' } },
-    });
-
-    await this.timelineService.invalidate(tenantId);
-    this.timelineGateway.notifyUpdate(tenantId, { action: 'updated' });
-
-    await this.partnerWebhooks.emitForReservation('guest.no_show', id, {
-      reservationId: id,
-      status: 'no_show',
-      noShow: true,
-      ...(await this.guestCounts(id)),
-      // Никто не заехал — счётчик прибывших перекрываем нулём.
-      guestsArrived: 0,
-    });
-
-    return { id: result.id, status: 'NO_SHOW', version: result.version };
   }
 
   // ─── Cancel ───────────────────────────────────────────────────────────────────

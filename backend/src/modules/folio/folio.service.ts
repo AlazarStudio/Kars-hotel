@@ -107,17 +107,18 @@ export class FolioService {
     return { deleted: true };
   }
 
-  /** Called by checkOut. Throws 409 if balance > 0. Чужой счёт сюда не виден. */
-  async assertZeroBalance(reservationId: string): Promise<void> {
-    const folio = await this.prisma.forTenant((tx) =>
-      tx.folio.findUnique({
+  /** Called on check-out. Throws 409 if balance > 0. Чужой счёт сюда не виден.
+   *  `tx` — транзакция выселения, чтобы счёт сверялся в ней же. */
+  async assertZeroBalance(reservationId: string, tx?: Prisma.TransactionClient): Promise<void> {
+    const read = (t: Prisma.TransactionClient) =>
+      t.folio.findUnique({
         where: { reservationId },
         include: {
           charges: { select: { total: true } },
           payments: { select: { amount: true, type: true } },
         },
-      }),
-    );
+      });
+    const folio = await (tx ? read(tx) : this.prisma.forTenant(read));
     if (!folio) return; // No folio = nothing charged = balance is 0
 
     const totalCharged = folio.charges.reduce((s, c) => s + Number(c.total), 0);
