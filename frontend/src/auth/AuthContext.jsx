@@ -10,10 +10,12 @@ import * as authApi from "../api/auth";
 import * as superAdminApi from "../api/superadmin";
 import { getTenantSettings } from "../api/tenant";
 import { flushJournal, startJournal } from "../lib/journal";
+import { isSessionDisplaced } from "../api/session-refresh";
 import {
   API_BASE_URL,
   clearStoredSession,
   getAccessToken,
+  onSessionDisplaced,
   readStoredSession,
   setAccessToken,
   setImpersonatedTenant as persistImpersonatedTenant,
@@ -26,6 +28,8 @@ const STATUS = Object.freeze({
   LOADING: "loading",
   AUTHENTICATED: "authenticated",
   UNAUTHENTICATED: "unauthenticated",
+  // Вход браузера сменился под вкладкой — работа в ней остановлена (api/session-refresh.js).
+  DISPLACED: "displaced",
 });
 
 export function AuthProvider({ children }) {
@@ -33,17 +37,25 @@ export function AuthProvider({ children }) {
   const [status, setStatus] = useState(STATUS.LOADING);
   const [impersonatedTenant, setImpersonatedTenant] = useState(null);
 
+  useEffect(() => onSessionDisplaced(() => setStatus(STATUS.DISPLACED)), []);
+
   /* На старте — ДВА пути, и порядок важен.
    *
-   * 1. Сессия этой вкладки (вход по ссылке из Kars Avia). Refresh-куки у неё
-   *    нет, поэтому запрос обновления вернёт 401 и уведёт на форму входа —
-   *    именно так перезагрузка и выбрасывала диспетчера из работающей
-   *    сессии. Сначала пробуем восстановленный токен: отвечает `/auth/me` —
-   *    сессия жива, и куки не нужны вовсе.
-   * 2. Обычный вход паролем: там кука есть, идём прежним путём.
+   * 1. Сессия этой вкладки. Сначала пробуем восстановленный токен: отвечает
+   *    `/auth/me` — сессия жива, кука не нужна вовсе.
+   * 2. Иначе продлеваем кукой. Кука одна на браузер, и в ней может лежать
+   *    вход ДРУГОЙ гостиницы, открытой в соседней вкладке, — поэтому токен
+   *    вкладки держим до ответа: по нему продление сверит, что вход тот же.
    */
   useEffect(() => {
     let cancelled = false;
+    /* Страница входа по ссылке заводит вход сама. Продление кукой рядом с ней
+       гонялось: ответ, пришедший вторым, поворачивал куку и токен обратно на
+       гостиницу из соседней вкладки (поймано живой проверкой 25.10.2026). */
+    if (window.location.pathname === "/sso") {
+      setStatus((s) => (s === STATUS.AUTHENTICATED ? s : STATUS.UNAUTHENTICATED));
+      return undefined;
+    }
     (async () => {
       const stored = readStoredSession();
       if (stored?.accessToken) {
@@ -59,24 +71,23 @@ export function AuthProvider({ children }) {
           }
           return;
         } catch {
-          /* Токен просрочен или отозван — чистим и идём обычным путём с
-             кукой: у сессии по ссылке она теперь тоже есть, поэтому работа
-             продолжится, а не оборвётся формой входа. */
-          setAccessToken(null);
-          setImpersonatingFlag(false);
-          clearStoredSession();
+          /* Вход «от имени» из панели платформы не продлевается вовсе: там,
+             как и раньше, возвращаемся кукой в свою сессию. */
+          if (stored.impersonating) {
+            setAccessToken(null);
+            setImpersonatingFlag(false);
+            clearStoredSession();
+          }
         }
       }
       try {
         await authApi.refresh();
         const profile = await authApi.me();
         /* Кука сессии по ссылке возвращает работу в гостинице — значит, и
-           баннер «Вы работаете от имени …» должен вернуться. Но кука общая на
-           браузер: вход по ссылке в ДРУГУЮ гостиницу в соседней вкладке
-           переписывает её, и эта вкладка после обновления оказывается уже там.
-           Название из записи вкладки тогда врёт (21.10.2026: баннер «3А
-           Казань» над данными Magrib Caspiy), поэтому берём его с сервера —
-           ту гостиницу, куда на самом деле пойдёт «Сохранить». */
+           баннер «Вы работаете от имени …» должен вернуться. Название берём с
+           сервера — ту гостиницу, куда на самом деле пойдёт «Сохранить»
+           (21.10.2026: баннер «3А Казань» над данными Magrib Caspiy). Вход
+           ДРУГОЙ гостиницы сюда уже не доходит — его отвергло продление. */
         let tenant = null;
         if (stored?.tenant) {
           const actual = await getTenantSettings().catch(() => null);
@@ -92,15 +103,20 @@ export function AuthProvider({ children }) {
           }
           setStatus(STATUS.AUTHENTICATED);
         }
-      } catch {
-        // Never downgrade an already-authenticated session: the /sso entry
-        // page may have signed in (access-token-only, no refresh cookie)
-        // while this cookie-refresh attempt was still failing in parallel.
-        if (!cancelled) {
-          setStatus((s) =>
-            s === STATUS.AUTHENTICATED ? s : STATUS.UNAUTHENTICATED,
-          );
+      } catch (err) {
+        if (cancelled) return;
+        if (isSessionDisplaced(err)) {
+          // Экрану остановки — название гостиницы, в которой открыта вкладка.
+          setImpersonatedTenant(stored?.tenant ?? null);
+          setStatus(STATUS.DISPLACED);
+          return;
         }
+        // Never downgrade an already-authenticated session: a sign-in on this
+        // tab may have landed while this cookie-refresh attempt was still
+        // failing in parallel.
+        setStatus((s) =>
+          s === STATUS.AUTHENTICATED ? s : STATUS.UNAUTHENTICATED,
+        );
       }
     })();
     return () => {
@@ -142,6 +158,18 @@ export function AuthProvider({ children }) {
       clearStoredSession();
       setStatus(STATUS.UNAUTHENTICATED);
     }
+  }, []);
+
+  /* Остановленная вкладка: забыть её вход, НЕ выходя на сервере — кука теперь
+     принадлежит соседней вкладке, и выход оборвал бы работу там. */
+  const dropTabSession = useCallback(() => {
+    setImpersonatingFlag(false);
+    persistImpersonatedTenant(null);
+    setAccessToken(null);
+    clearStoredSession();
+    setUser(null);
+    setImpersonatedTenant(null);
+    setStatus(STATUS.UNAUTHENTICATED);
   }, []);
 
   const hasPermission = useCallback(
@@ -221,6 +249,7 @@ export function AuthProvider({ children }) {
       exitImpersonation,
       ssoEnter,
       acceptInvite,
+      dropTabSession,
       isSuperAdmin: user?.isSuperAdmin === true,
       isImpersonating: impersonatedTenant !== null,
     }),
@@ -235,6 +264,7 @@ export function AuthProvider({ children }) {
       exitImpersonation,
       ssoEnter,
       acceptInvite,
+      dropTabSession,
     ],
   );
 

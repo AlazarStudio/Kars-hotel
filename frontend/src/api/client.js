@@ -1,5 +1,6 @@
 import axios from "axios";
 import { journalHeaders } from "../lib/journal";
+import { createSessionRefresh } from "./session-refresh";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
@@ -14,16 +15,14 @@ let impersonating = false;
 
 /* ── Сессия, пережившая F5 ────────────────────────────────────────────────
  *
- * Вход по ссылке из Kars Avia НЕ ставит refresh-куку: код одноразовый, в
- * ответ приходит только access-токен. Токен жил в памяти модуля, и любая
- * перезагрузка страницы его теряла — диспетчера выбрасывало на форму входа,
- * хотя сессия действующая. Возврат в Avia и повторное нажатие кнопки лечили
- * симптом до следующего F5.
- *
- * Держим сессию в `sessionStorage`: это ВКЛАДКА, а не браузер. Ссылка из
+ * Токен держим в `sessionStorage`: это ВКЛАДКА, а не браузер. Ссылка из
  * Avia открывается новой вкладкой — она и переживает перезагрузки, а
  * закрытие вкладки сессию заканчивает. В `localStorage` такой токен жил бы
  * во всех вкладках и после ухода человека с рабочего места.
+ *
+ * Refresh-кука же одна на БРАУЗЕР, и вход по ссылке из Kars Avia её тоже
+ * ставит (с 25.08.2026). Поэтому продление принимает только вход этой же
+ * вкладки — см. `session-refresh.js`.
  */
 const SESSION_KEY = "kars-pms.session";
 
@@ -90,6 +89,14 @@ export function onAccessTokenChange(cb) {
   return () => accessListeners.delete(cb);
 }
 
+const displacedListeners = new Set();
+
+/** Вкладку остановили: вход браузера теперь от другой гостиницы. */
+export function onSessionDisplaced(cb) {
+  displacedListeners.add(cb);
+  return () => displacedListeners.delete(cb);
+}
+
 export function setImpersonatingFlag(val) {
   impersonating = val;
   persistSession();
@@ -112,47 +119,22 @@ api.interceptors.request.use((cfg) => {
 });
 
 // ─── Response: on 401 try ONE refresh+retry — but never while impersonating ─
-let refreshInFlight = null;
-
-async function performRefresh() {
-  if (refreshInFlight) return refreshInFlight;
-  refreshInFlight = axios
-    .post(`${API_BASE_URL}/auth/refresh`, null, { withCredentials: true })
-    .then((r) => {
-      setAccessToken(r.data.accessToken);
-      return r.data.accessToken;
-    })
-    .catch((err) => {
-      setAccessToken(null);
-      throw err;
-    })
-    .finally(() => {
-      refreshInFlight = null;
-    });
-  return refreshInFlight;
-}
-
-api.interceptors.response.use(
-  (resp) => resp,
-  async (err) => {
-    const original = err.config;
-    if (!original || original._retried) return Promise.reject(err);
-    const url = original.url || "";
-    const status = err.response?.status;
-
-    if (status === 401 && !url.includes("/auth/") && !impersonating) {
-      try {
-        const newToken = await performRefresh();
-        original._retried = true;
-        original.headers = original.headers || {};
-        original.headers.Authorization = `Bearer ${newToken}`;
-        return api.request(original);
-      } catch {
-        return Promise.reject(err);
-      }
-    }
-    return Promise.reject(err);
+const sessionRefresh = createSessionRefresh({
+  post: () =>
+    axios
+      .post(`${API_BASE_URL}/auth/refresh`, null, { withCredentials: true })
+      .then((r) => r.data.accessToken),
+  retry: (cfg) => api.request(cfg),
+  getToken: () => accessToken,
+  setToken: setAccessToken,
+  canRefresh: () => !impersonating,
+  onDisplaced: (err) => {
+    for (const cb of displacedListeners) cb(err);
   },
-);
+});
+
+const performRefresh = sessionRefresh.refresh;
+
+api.interceptors.response.use((resp) => resp, sessionRefresh.onAuthError);
 
 export { API_BASE_URL, performRefresh };
