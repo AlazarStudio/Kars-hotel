@@ -6,8 +6,8 @@ import * as superAdminApi from '../../api/superadmin';
 import classes from './AdminPanel.module.css';
 import JournalSection from './JournalSection';
 import ConfirmDialog from '../HotelPMS/shared/ConfirmDialog';
-import { TenantDeleteModal, TenantEditModal } from './TenantDialogs';
-import { CURRENCIES, PLANS, TENANT_EMPTY_DELETE_ENABLED, TIMEZONES, errorText } from './tenant-options';
+import { TenantArchiveModal, TenantDeleteModal, TenantEditModal } from './TenantDialogs';
+import { CURRENCIES, PLANS, TIMEZONES, errorText } from './tenant-options';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -129,7 +129,7 @@ function OverviewSection() {
   const { data: tenants = [] } = useQuery({ queryKey: ['admin', 'tenants'], queryFn: superAdminApi.listTenants });
   const navigate = useNavigate();
 
-  const recent = [...tenants].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5);
+  const recent = tenants.filter((t) => !t.archivedAt).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5);
 
   return (
     <div className={classes.page}>
@@ -178,27 +178,28 @@ function OverviewSection() {
 
 // ─── Hotels ───────────────────────────────────────────────────────────────────
 
-/* Гостиницы (решение владельца 25.10.2026): заведение, правка и выключение —
-   суперадмину и диспетчеру Kars Avia. Удаление пустой (без броней) сразу —
-   ВЫКЛЮЧЕНО (TENANT_EMPTY_DELETE_ENABLED): удаление не должно стирать данные;
-   пока остаётся уход по акту 152-ФЗ (выключить → выгрузить → ввести код) —
-   у суперадмина. Окно `TenantDeleteModal` само выбирает путь. */
+/* Гостиницы (решение владельца 25.10.2026): заведение, правка, выключение и
+   удаление — суперадмину и всем диспетчерам Kars Avia. Удаление — «в архив»
+   (данные не стираются): гостиница уходит в «Удалённые» внизу страницы и
+   оттуда восстанавливается. Физическое уничтожение по акту 152-ФЗ (выгрузка →
+   код) — только суперадмину и только для удалённой гостиницы. */
 function HotelsSection() {
   const { impersonate, user } = useAuth();
-  /* Выгрузка и удаление: пока удаление пустой гостиницы выключено, остаётся
-     только уход по акту (выгрузка → код) — он у суперадмина (сервер отвечает
-     диспетчеру 403). Включённое удаление «в архив» откроет кнопку всем. */
-  const canExit = TENANT_EMPTY_DELETE_ENABLED || !user?.isDispatcher;
+  // Выгрузка всех данных и уничтожение по акту — суперадмину (сервер отвечает диспетчеру 403).
+  const isSuperAdmin = !user?.isDispatcher;
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [search, setSearch] = React.useState('');
   const [impersonatingId, setImpersonatingId] = React.useState(null);
   // Храним id, а не объект: после выключения строка списка обновится, и окно увидит новое состояние.
   const [editId, setEditId] = React.useState(null);
-  const [deleteId, setDeleteId] = React.useState(null);
-  // Снимок на случай, когда гостиница уже удалена и из списка пропала, а окно ещё показывает «удалена».
-  const [deleteSnap, setDeleteSnap] = React.useState(null);
+  const [archiveId, setArchiveId] = React.useState(null);
+  const [destroyId, setDestroyId] = React.useState(null);
+  // Снимок на случай, когда гостиница уже уничтожена и из списка пропала, а окно ещё показывает «уничтожена».
+  const [destroySnap, setDestroySnap] = React.useState(null);
   const [toggleId, setToggleId] = React.useState(null);
+  const [showArchived, setShowArchived] = React.useState(false);
+  const [restoreError, setRestoreError] = React.useState(null);
 
   const { data: tenants = [], isLoading } = useQuery({ queryKey: ['admin', 'tenants'], queryFn: superAdminApi.listTenants });
   const byId = (id) => tenants.find((t) => t.id === id) ?? null;
@@ -209,12 +210,23 @@ function HotelsSection() {
     await refresh();
   }
 
-  const filtered = tenants.filter((t) =>
-    !search || t.name.toLowerCase().includes(search.toLowerCase()) || (t.city ?? '').toLowerCase().includes(search.toLowerCase())
-  );
+  async function restoreTenant(tenant) {
+    setRestoreError(null);
+    try {
+      await superAdminApi.restoreTenant(tenant.id);
+      await refresh();
+    } catch (err) {
+      setRestoreError(errorText(err, 'Не удалось восстановить'));
+    }
+  }
+
+  const matchesSearch = (t) =>
+    !search || t.name.toLowerCase().includes(search.toLowerCase()) || (t.city ?? '').toLowerCase().includes(search.toLowerCase());
+  const filtered = tenants.filter((t) => !t.archivedAt && matchesSearch(t));
+  const archived = tenants.filter((t) => t.archivedAt && matchesSearch(t));
 
   /* Уход гостиницы (152-ФЗ, план 13.8): выгрузка — отдельной кнопкой и
-     вторым шагом в окне удаления. */
+     вторым шагом в окне уничтожения. */
   async function handleExport(tenant) {
     try {
       await superAdminApi.exportTenant(tenant.id);
@@ -277,23 +289,18 @@ function HotelsSection() {
                       >
                         {t.isActive ? 'Откл.' : 'Вкл.'}
                       </button>
-                      {canExit && (
+                      {isSuperAdmin && (
                         <button className={classes.btnAction} onClick={() => handleExport(t)} title="Выгрузить все данные гостиницы">
                           Выгрузить
                         </button>
                       )}
-                      {canExit && (
-                        <button
-                          className={`${classes.btnAction} ${classes.btnActionOff}`}
-                          onClick={() => {
-                            setDeleteId(t.id);
-                            setDeleteSnap(t);
-                          }}
-                          title="Удалить гостиницу"
-                        >
-                          Удалить
-                        </button>
-                      )}
+                      <button
+                        className={`${classes.btnAction} ${classes.btnActionOff}`}
+                        onClick={() => setArchiveId(t.id)}
+                        title="Удалить гостиницу (в архив, данные сохранятся)"
+                      >
+                        Удалить
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -304,13 +311,61 @@ function HotelsSection() {
         )}
       </div>
 
+      {/* ── Удалённые (архив) ─────────────────────────────────────────────── */}
+      {archived.length > 0 && (
+        <div className={classes.archiveBlock}>
+          <button type="button" className={classes.btnLink} onClick={() => setShowArchived((v) => !v)} aria-expanded={showArchived}>
+            {showArchived ? 'Скрыть' : 'Показать'} удалённые ({archived.length})
+          </button>
+          {showArchived && (
+            <div className={classes.card} style={{ marginTop: 10 }}>
+              {restoreError && <div className={classes.formError} style={{ margin: 12 }}>{restoreError}</div>}
+              <table className={classes.table}>
+                <thead>
+                  <tr><th>Название</th><th>Город</th><th>Удалена</th><th>Действия</th></tr>
+                </thead>
+                <tbody>
+                  {archived.map((t) => (
+                    <tr key={t.id}>
+                      <td className={classes.bold}>{t.name}</td>
+                      <td className={classes.muted}>{t.city ?? '—'}</td>
+                      <td className={classes.muted}>{fmt(t.archivedAt)}</td>
+                      <td>
+                        <div className={classes.rowActions}>
+                          <button className={`${classes.btnAction} ${classes.btnActionOn}`} onClick={() => restoreTenant(t)} title="Вернуть гостиницу из архива">
+                            Восстановить
+                          </button>
+                          {isSuperAdmin && (
+                            <button
+                              className={`${classes.btnAction} ${classes.btnActionOff}`}
+                              onClick={() => {
+                                setDestroyId(t.id);
+                                setDestroySnap(t);
+                              }}
+                              title="Уничтожить данные гостиницы по акту (152-ФЗ)"
+                            >
+                              Уничтожить по акту
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       <TenantEditModal tenant={byId(editId)} open={!!editId} onClose={() => setEditId(null)} onSaved={refresh} />
+      <TenantArchiveModal tenant={byId(archiveId)} open={!!archiveId} onClose={() => setArchiveId(null)} onDone={refresh} />
       <TenantDeleteModal
-        tenant={byId(deleteId) ?? (deleteSnap?.id === deleteId ? deleteSnap : null)}
-        open={!!deleteId}
+        tenant={byId(destroyId) ?? (destroySnap?.id === destroyId ? destroySnap : null)}
+        open={!!destroyId}
         onClose={() => {
-          setDeleteId(null);
-          setDeleteSnap(null);
+          setDestroyId(null);
+          setDestroySnap(null);
         }}
         onDone={refresh}
         onToggleActive={toggleTenant}
@@ -672,7 +727,7 @@ function CreateSection() {
               <div>{duplicate.message}</div>
               <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
                 {(duplicate.duplicates ?? []).map((d) => (
-                  <li key={d.id}>«{d.name}»{d.city ? `, ${d.city}` : ''}{d.isActive ? '' : ' (выключена)'}</li>
+                  <li key={d.id}>«{d.name}»{d.city ? `, ${d.city}` : ''}{d.archivedAt ? ' (удалена — восстановите её в «Удалённых»)' : d.isActive ? '' : ' (выключена)'}</li>
                 ))}
               </ul>
             </div>

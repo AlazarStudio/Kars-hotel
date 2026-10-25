@@ -80,6 +80,9 @@ export class ConnectivityService {
        * «пока не берём заявки» не должно означать «сотрудники не могут войти». */
       where: {
         ...(opts.includeInactive ? {} : { isActive: true }),
+        /* Удалённая «в архив» (25.10.2026) — не в каталоге и с includeInactive:
+           выключенная — это «временно не работает», архивная — «удалена». */
+        archivedAt: null,
         slug: { not: ConnectivityService.PLATFORM_SLUG },
         /* Разовая гостиница видимости в каталоге не имеет по определению
            (partnerVisible у неё выключен), поэтому она идёт своей веткой, а не

@@ -6,6 +6,7 @@ export async function listRooms(filter = {}) {
   if (filter.floor != null) params.floor = filter.floor;
   if (filter.status) params.status = filter.status;
   if (filter.isActive != null) params.isActive = filter.isActive ? 'true' : 'false';
+  if (filter.archived) params.archived = 'true';
   const { data } = await api.get('/rooms', { params });
   return data;
 }
@@ -32,5 +33,16 @@ export async function updateRoomStatus(id, status) {
 
 export async function deleteRoom(id) {
   const { data } = await api.delete(`/rooms/${id}`);
+  return data;
+}
+
+/* Удаление «в архив» (25.10.2026): номер не стирается, его можно восстановить. */
+export async function archiveRoom(id) {
+  const { data } = await api.post(`/rooms/${id}/archive`);
+  return data;
+}
+
+export async function restoreRoom(id) {
+  const { data } = await api.post(`/rooms/${id}/restore`);
   return data;
 }

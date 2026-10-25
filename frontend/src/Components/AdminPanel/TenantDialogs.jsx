@@ -11,6 +11,7 @@ import {
   TIMEZONES,
   bookings,
   errorText,
+  liveBookings,
   withCurrent,
 } from './tenant-options';
 
@@ -389,6 +390,121 @@ export function TenantDeleteModal({ tenant, open, onClose, onDone, onToggleActiv
 
   return (
     <Modal open={open} title={result ? `«${tenant.name}»` : `Удалить «${tenant.name}»?`} onClose={close} footer={footer}>
+      {error && <div className={formClasses.alert}>{error}</div>}
+      {body}
+    </Modal>
+  );
+}
+
+// ─── Удаление «в архив» ───────────────────────────────────────────────────────
+
+/**
+ * Удаление гостиницы «в архив» (решение владельца 25.10.2026: удаление не
+ * стирает данные; право — суперадмину и всем диспетчерам). Гостиница
+ * выключается и уходит в «Удалённые»; номера, брони, счета и история
+ * остаются, «Восстановить» возвращает её. С действующими бронями — отказ:
+ * окно говорит об этом заранее, сервер держит то же правило.
+ */
+export function TenantArchiveModal({ tenant, open, onClose, onDone }) {
+  const summary = useSummary(tenant, open);
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState(null);
+  const [done, setDone] = React.useState(false);
+
+  React.useEffect(() => {
+    if (open) {
+      setError(null);
+      setDone(false);
+    }
+  }, [open, tenant?.id]);
+
+  if (!tenant) return null;
+  const s = summary.data;
+  const live = s?.liveReservations ?? 0;
+
+  async function handleArchive() {
+    setBusy(true);
+    setError(null);
+    try {
+      await superAdminApi.archiveTenant(tenant.id);
+      setDone(true);
+      onDone?.();
+    } catch (err) {
+      setError(errorText(err, 'Не удалось удалить'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  let body;
+  let footer;
+  if (done) {
+    body = (
+      <div className={classes.success}>
+        Гостиница «{tenant.name}» удалена в архив. Её данные сохранены — вернуть её можно в списке «Удалённые» кнопкой
+        «Восстановить».
+      </div>
+    );
+    footer = (
+      <button type="button" className={formClasses.btnPrimary} onClick={onClose}>
+        Готово
+      </button>
+    );
+  } else if (summary.isLoading || !s) {
+    body = summary.isError ? (
+      <div className={formClasses.alert}>{errorText(summary.error, 'Не удалось проверить гостиницу')}</div>
+    ) : (
+      <div className={classes.text}>Проверяем, что есть в гостинице…</div>
+    );
+    footer = (
+      <button type="button" className={formClasses.btnSecondary} onClick={onClose}>
+        Отмена
+      </button>
+    );
+  } else if (live > 0) {
+    body = (
+      <div className={classes.text}>
+        У гостиницы {liveBookings(live)} — по ним ждут заселения, поэтому удалить её сейчас нельзя. Дождитесь выезда
+        гостей или отмените брони, затем удалите.
+      </div>
+    );
+    footer = (
+      <button type="button" className={formClasses.btnSecondary} onClick={onClose}>
+        Закрыть
+      </button>
+    );
+  } else {
+    body = (
+      <>
+        <div className={classes.text}>
+          Гостиница уйдёт в «Удалённые»: сотрудники не смогут войти в PMS, а Kars Avia перестанет её видеть и
+          бронировать. Ничего не стирается — сохранятся:
+        </div>
+        <ul className={classes.counts}>
+          <li>номеров — {s.rooms}</li>
+          <li>броней (прошлых и отменённых) — {s.reservations}</li>
+          <li>учёток сотрудников — {s.users}</li>
+        </ul>
+        <div className={classes.warn}>
+          Вернуть гостиницу можно в любой момент кнопкой «Восстановить». Если она заведена в Kars Avia (код{' '}
+          <span className={classes.code}>{tenant.slug}</span>), заселить в неё будет нельзя, пока её не восстановят.
+        </div>
+      </>
+    );
+    footer = (
+      <>
+        <button type="button" className={formClasses.btnSecondary} onClick={onClose} disabled={busy}>
+          Отмена
+        </button>
+        <button type="button" className={formClasses.btnDanger} onClick={handleArchive} disabled={busy}>
+          {busy ? '…' : 'Удалить гостиницу'}
+        </button>
+      </>
+    );
+  }
+
+  return (
+    <Modal open={open} title={done ? `«${tenant.name}»` : `Удалить «${tenant.name}»?`} onClose={busy ? undefined : onClose} footer={footer}>
       {error && <div className={formClasses.alert}>{error}</div>}
       {body}
     </Modal>

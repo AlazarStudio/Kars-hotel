@@ -68,3 +68,27 @@ export function useDeleteRoom() {
     },
   });
 }
+
+/* Удаление «в архив» и восстановление: оба меняют и фонд, и список удалённых —
+   а это один ключ [rooms, …], так что инвалидация общая. */
+export function useArchiveRoom() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.archiveRoom,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: KEY });
+      qc.invalidateQueries({ queryKey: ['roomTypes'] });
+    },
+  });
+}
+
+export function useRestoreRoom() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.restoreRoom,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: KEY });
+      qc.invalidateQueries({ queryKey: ['roomTypes'] });
+    },
+  });
+}

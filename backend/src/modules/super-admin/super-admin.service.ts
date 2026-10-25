@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { TenantPlan } from '@prisma/client';
+import { ReservationStatus, TenantPlan } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
 import { seedDefaultRoles } from '../auth/tenant-roles';
@@ -27,7 +27,7 @@ export class SuperAdminService {
   /** Каталог функций и состояние каждой у каждой гостиницы. */
   async listFeatures() {
     const tenants = await this.prisma.admin.tenant.findMany({
-      where: { slug: { not: 'platform' } },
+      where: { slug: { not: 'platform' }, archivedAt: null },
       select: { id: true, name: true, city: true, isActive: true, multiPlaceEnabled: true },
       orderBy: { name: 'asc' },
     });
@@ -51,7 +51,7 @@ export class SuperAdminService {
     const key = dto.feature;
     const ids = [...new Set(dto.tenantIds)];
     const changed = await this.prisma.admin.tenant.findMany({
-      where: { id: { in: ids }, slug: { not: 'platform' }, [key]: { not: dto.enabled } },
+      where: { id: { in: ids }, slug: { not: 'platform' }, archivedAt: null, [key]: { not: dto.enabled } },
       select: { id: true },
     });
     if (changed.length > 0) {
@@ -102,6 +102,7 @@ export class SuperAdminService {
       plan: t.plan,
       isActive: t.isActive,
       provisional: t.provisional,
+      archivedAt: t.archivedAt,
       createdAt: t.createdAt,
       usersCount: t._count.users,
     }));
@@ -114,13 +115,16 @@ export class SuperAdminService {
   async tenantSummary(id: string) {
     const t = await this.prisma.admin.tenant.findUnique({ where: { id }, select: { id: true, slug: true } });
     if (!t || t.slug === 'platform') throw new NotFoundException('Гостиница не найдена');
-    const [reservations, rooms, roomTypes, users] = await Promise.all([
+    const [reservations, liveReservations, rooms, roomTypes, users] = await Promise.all([
       this.prisma.admin.reservation.count({ where: { tenantId: id } }),
-      this.prisma.admin.room.count({ where: { tenantId: id } }),
+      this.prisma.admin.reservation.count({
+        where: { tenantId: id, status: { in: LIVE_RESERVATION_STATUSES } },
+      }),
+      this.prisma.admin.room.count({ where: { tenantId: id, archivedAt: null } }),
       this.prisma.admin.roomType.count({ where: { tenantId: id } }),
       this.prisma.admin.user.count({ where: { tenantId: id } }),
     ]);
-    return { reservations, rooms, roomTypes, users };
+    return { reservations, liveReservations, rooms, roomTypes, users };
   }
 
   async getTenant(id: string) {
@@ -169,7 +173,7 @@ export class SuperAdminService {
          него разные (поймано на стенде 25.10.2026). Гостиниц — сотни строк. */
       const all = await this.prisma.admin.tenant.findMany({
         where: { slug: { not: 'platform' } },
-        select: { id: true, name: true, city: true, isActive: true },
+        select: { id: true, name: true, city: true, isActive: true, archivedAt: true },
       });
       const duplicates = all.filter((t) => norm(t.name) === norm(name) && norm(t.city) === norm(city));
       if (duplicates.length > 0) {
@@ -246,6 +250,7 @@ export class SuperAdminService {
   async updateTenant(id: string, dto: UpdateTenantDto, actor: AuthenticatedRequestUser) {
     const tenant = await this.prisma.admin.tenant.findUnique({ where: { id } });
     if (!tenant || tenant.slug === 'platform') throw new NotFoundException('Гостиница не найдена');
+    if (tenant.archivedAt) throw new ConflictException(ARCHIVED_HOTEL);
     assertTimezone(dto.timezone);
 
     const next: Record<string, unknown> = {};
@@ -295,12 +300,95 @@ export class SuperAdminService {
     return updated;
   }
 
+  /**
+   * Удаление гостиницы «в архив» (25.10.2026, решение владельца: удаление не
+   * стирает данные; право — суперадмину и всем диспетчерам Kars Avia).
+   *
+   * Гостиница со всеми данными остаётся; ставится пометка кто и когда, и она
+   * выключается (isActive=false): вход сотрудников, вход «от имени» и каталог
+   * партнёра закрыты, из списков панели она уходит в «Удалённые».
+   *
+   * Ограничение: с действующими бронями (новая, подтверждённая, гость живёт)
+   * в архив нельзя — по ним Kars Avia ждёт заселения. Прошлые и отменённые
+   * брони не мешают. Повторный вызов на архивной — тот же ответ.
+   *
+   * Физическое уничтожение — отдельная процедура 152-ФЗ по акту, только
+   * суперадмину (`TenantExitService.destroy`).
+   */
+  async archiveTenant(id: string, actor: AuthenticatedRequestUser) {
+    const tenant = await this.prisma.admin.tenant.findUnique({
+      where: { id },
+      select: { id: true, slug: true, name: true, isActive: true, archivedAt: true },
+    });
+    if (!tenant || tenant.slug === 'platform') throw new NotFoundException('Гостиница не найдена');
+    if (tenant.archivedAt) return { ok: true, archivedAt: tenant.archivedAt };
+    const archivedAt = new Date();
+    await this.prisma.admin.$transaction(async (tx) => {
+      const live = await tx.reservation.count({
+        where: { tenantId: id, status: { in: LIVE_RESERVATION_STATUSES } },
+      });
+      if (live > 0) {
+        throw new ConflictException(
+          `Гостиницу «${tenant.name}» нельзя удалить: у неё ${live} ${plural(live, 'действующая бронь', 'действующие брони', 'действующих броней')}. ` +
+            'Дождитесь выезда или отмените их, затем удалите.',
+        );
+      }
+      await tx.tenant.update({
+        where: { id },
+        data: { isActive: false, archivedAt, archivedBy: actor.userId },
+      });
+      await tx.auditLog.create({
+        data: {
+          tenantId: id,
+          userId: actor.userId,
+          entity: 'tenant',
+          entityId: id,
+          action: 'admin.archive',
+          diff: { before: { isActive: tenant.isActive, archivedAt: null }, after: { isActive: false, archivedAt } },
+        },
+      });
+    });
+    return { ok: true, archivedAt };
+  }
+
+  /** Восстановление гостиницы из архива: пометка снимается, гостиница включена. */
+  async restoreTenant(id: string, actor: AuthenticatedRequestUser) {
+    const tenant = await this.prisma.admin.tenant.findUnique({
+      where: { id },
+      select: { id: true, slug: true, archivedAt: true, archivedBy: true },
+    });
+    if (!tenant || tenant.slug === 'platform') throw new NotFoundException('Гостиница не найдена');
+    if (!tenant.archivedAt) return { ok: true };
+    await this.prisma.admin.$transaction([
+      this.prisma.admin.tenant.update({
+        where: { id },
+        data: { isActive: true, archivedAt: null, archivedBy: null },
+      }),
+      this.prisma.admin.auditLog.create({
+        data: {
+          tenantId: id,
+          userId: actor.userId,
+          entity: 'tenant',
+          entityId: id,
+          action: 'admin.restore',
+          diff: {
+            before: { archivedAt: tenant.archivedAt, archivedBy: tenant.archivedBy },
+            after: { isActive: true, archivedAt: null },
+          },
+        },
+      }),
+    ]);
+    return { ok: true };
+  }
+
   async toggleActive(id: string) {
     const tenant = await this.prisma.admin.tenant.findUnique({
       where: { id },
-      select: { id: true, slug: true, isActive: true },
+      select: { id: true, slug: true, isActive: true, archivedAt: true },
     });
     if (!tenant || tenant.slug === 'platform') throw new NotFoundException('Tenant not found');
+    // Включить архивную «Вкл.» нельзя — только «Восстановить»: иначе она вернётся мимо журнала архива.
+    if (tenant.archivedAt) throw new ConflictException(ARCHIVED_HOTEL);
 
     return this.prisma.admin.tenant.update({
       where: { id },
@@ -382,13 +470,26 @@ export class SuperAdminService {
 
   async getStats() {
     const [totalTenants, activeTenants, totalUsers] = await Promise.all([
-      this.prisma.admin.tenant.count({ where: { slug: { not: 'platform' } } }),
-      this.prisma.admin.tenant.count({ where: { isActive: true, slug: { not: 'platform' } } }),
+      this.prisma.admin.tenant.count({ where: { slug: { not: 'platform' }, archivedAt: null } }),
+      this.prisma.admin.tenant.count({ where: { isActive: true, slug: { not: 'platform' }, archivedAt: null } }),
       this.prisma.admin.user.count({ where: { tenant: { slug: { not: 'platform' } } } }),
     ]);
 
     return { totalTenants, activeTenants, totalUsers };
   }
+}
+
+/** Брони, которые ещё впереди или идут сейчас: с ними гостиницу в архив не убрать. */
+const LIVE_RESERVATION_STATUSES: ReservationStatus[] = ['NEW', 'CONFIRMED', 'CHECKED_IN'];
+
+const ARCHIVED_HOTEL = 'Гостиница в архиве удалённых — сначала восстановите её';
+
+function plural(n: number, one: string, few: string, many: string): string {
+  const m10 = n % 10;
+  const m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
 }
 
 /** Пустая строка и пробелы — «нет значения». */

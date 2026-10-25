@@ -32,12 +32,14 @@ describe('Панель платформы — гарды', () => {
     const forDispatcher = handlers.filter((h) => guardsOf(h).includes(PlatformOperatorGuard)).sort();
     expect(forDispatcher).toEqual([
       'applyFeature',
+      'archiveTenant',
       'createTenant',
       'deleteTenant',
       'getStats',
       'impersonate',
       'listFeatures',
       'listTenants',
+      'restoreTenant',
       'tenantSummary',
       'toggleActive',
       'updateTenant',

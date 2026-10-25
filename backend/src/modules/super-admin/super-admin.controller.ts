@@ -65,6 +65,20 @@ export class SuperAdminController {
     return this.svc.tenantSummary(id);
   }
 
+  /* Удаление «в архив» и восстановление (25.10.2026, решение владельца:
+     удаление не стирает данные; право — суперадмину и всем диспетчерам). */
+  @Post('tenants/:id/archive')
+  @UseGuards(PlatformOperatorGuard)
+  archiveTenant(@Param('id') id: string, @Req() req: Request) {
+    return this.svc.archiveTenant(id, req.user as AuthenticatedRequestUser);
+  }
+
+  @Post('tenants/:id/restore')
+  @UseGuards(PlatformOperatorGuard)
+  restoreTenant(@Param('id') id: string, @Req() req: Request) {
+    return this.svc.restoreTenant(id, req.user as AuthenticatedRequestUser);
+  }
+
   /** Пустая гостиница (без броней) — удаляется сразу; с бронями — 409, только по акту.
    *  Пока ВЫКЛЮЧЕНО (`tenant-delete.switch.ts`): 403, ждёт удаления «в архив». */
   @Delete('tenants/:id')

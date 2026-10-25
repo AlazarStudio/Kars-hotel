@@ -39,6 +39,12 @@ export class RoomsController {
     enum: RoomPartnerHold,
     description: 'Договорный блок: NONE | QUOTA | RESERVE',
   })
+  @ApiQuery({
+    name: 'archived',
+    required: false,
+    type: Boolean,
+    description: 'true — только удалённые в архив; по умолчанию архивные не отдаются',
+  })
   list(
     @Query('roomTypeId') roomTypeId?: string,
     @Query('floor') floorRaw?: string,
@@ -46,6 +52,7 @@ export class RoomsController {
     @Query('isActive') isActiveRaw?: string,
     @Query('q') q?: string,
     @Query('partnerHold') partnerHold?: RoomPartnerHold,
+    @Query('archived') archivedRaw?: string,
   ) {
     let floor: number | undefined;
     if (floorRaw !== undefined && floorRaw !== '') {
@@ -61,6 +68,7 @@ export class RoomsController {
       isActive,
       q: q?.trim() || undefined,
       partnerHold,
+      archived: archivedRaw === 'true',
     });
   }
 
@@ -101,9 +109,27 @@ export class RoomsController {
     return this.service.setStatus(id, dto.status);
   }
 
+  /* Удаление «в архив» (25.10.2026, решение владельца: удаление не стирает
+     данные). Право — то же, что на правку номера: владелец и менеджер
+     гостиницы и диспетчер Kars Avia, вошедший «от имени» (права владельца). */
+  @Post(':id/archive')
+  @RequirePermissions('room.update')
+  @ApiOperation({ summary: 'Удалить номер в архив (без стирания данных)' })
+  archive(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.service.archive(id);
+  }
+
+  @Post(':id/restore')
+  @RequirePermissions('room.update')
+  @ApiOperation({ summary: 'Восстановить номер из архива' })
+  restore(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.service.restore(id);
+  }
+
+  /** Физическое удаление — выключено (`room-delete.switch.ts`), 403. */
   @Delete(':id')
   @RequirePermissions('room.update')
-  @ApiOperation({ summary: 'Delete a room' })
+  @ApiOperation({ summary: 'Delete a room (выключено: удаление — в архив)' })
   remove(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.service.remove(id);
   }

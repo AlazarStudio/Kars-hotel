@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { RoomPartnerHold, RoomStatus } from '@prisma/client';
+import { ReservationStatus, RoomPartnerHold, RoomStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   PRISMA_FOREIGN_KEY_VIOLATION,
@@ -23,7 +23,12 @@ export interface ListRoomsFilter {
   q?: string;
   /** Д4/Д7 · фильтр по договорному блоку: NONE | QUOTA | RESERVE. */
   partnerHold?: RoomPartnerHold;
+  /** true — только удалённые в архив; иначе архивные не отдаются. */
+  archived?: boolean;
 }
+
+/** Брони, которые ещё впереди или идут сейчас: с ними номер в архив не убрать. */
+const LIVE_RESERVATION_STATUSES: ReservationStatus[] = ['NEW', 'CONFIRMED', 'CHECKED_IN'];
 
 @Injectable()
 export class RoomsService {
@@ -38,6 +43,7 @@ export class RoomsService {
           status: filter.status,
           isActive: filter.isActive,
           partnerHold: filter.partnerHold,
+          archivedAt: filter.archived ? { not: null } : null,
           /* Д7 · поиск. Ищем по номеру и заметке: заметка — единственное место,
            * где живёт «угловой, шумно от лифта», и искать по ней приходится
            * ровно тогда, когда гость просит «не как в прошлый раз». */
@@ -98,6 +104,18 @@ export class RoomsService {
         }),
       );
     } catch (e) {
+      /* Номер уникален и среди архивных: «такой уже есть» про невидимый в
+         фонде номер ставит в тупик — подсказываем, где он. */
+      if (prismaErrorCode(e) === PRISMA_UNIQUE_VIOLATION) {
+        const archived = await this.prisma.forTenant((tx) =>
+          tx.room.findFirst({ where: { number: dto.number, archivedAt: { not: null } }, select: { id: true } }),
+        );
+        if (archived) {
+          throw new ConflictException(
+            `Номер "${dto.number}" есть в архиве удалённых — восстановите его вместо нового`,
+          );
+        }
+      }
       throw this.translatePrismaError(e, dto.number);
     }
     await this.prisma.writeAuditLog({
@@ -194,6 +212,14 @@ export class RoomsService {
 
   async update(id: string, dto: UpdateRoomDto) {
     const tenantId = TenantContext.getTenantIdOrThrow();
+    /* Архивный номер не правится: правкой (isActive) его можно было бы
+       незаметно вернуть в продажу мимо «Восстановить». */
+    const current = await this.prisma.forTenant((tx) =>
+      tx.room.findUnique({ where: { id }, select: { archivedAt: true } }),
+    );
+    if (current?.archivedAt) {
+      throw new ConflictException('Номер в архиве удалённых — сначала восстановите его');
+    }
     if (dto.roomTypeId) {
       const rt = await this.prisma.forTenant((tx) =>
         tx.roomType.findUnique({ where: { id: dto.roomTypeId }, select: { id: true } }),
@@ -251,6 +277,96 @@ export class RoomsService {
       diff: { before: {}, after: { status } },
     });
     return result;
+  }
+
+  /**
+   * Удаление номера «в архив» (25.10.2026, решение владельца: удаление не
+   * должно стирать данные из базы). Строка номера остаётся со всеми бронями и
+   * историей; ставится пометка кто и когда, и номер выключается
+   * (isActive=false) — продажа, шахматка, наличие и партнёрский API смотрят
+   * только на включённые, так что архивный не всплывёт и там, где фильтр по
+   * архиву забыли. Из номерного фонда его прячет `list`.
+   *
+   * Ограничение: номер с действующей бронью (новая, подтверждённая, гость
+   * живёт) в архив не убрать — бронь осталась бы на номере, которого нет в
+   * шахматке. Сначала её переносят. Прошлые и отменённые брони не мешают:
+   * это история, она остаётся при номере.
+   *
+   * Повторный вызов на архивном — тот же ответ, без второй записи в журнале.
+   */
+  async archive(id: string) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    const actor = TenantContext.get()?.userId || null;
+    const result = await this.prisma.forTenant(async (tx) => {
+      const room = await tx.room.findUnique({
+        where: { id },
+        select: { number: true, isActive: true, archivedAt: true },
+      });
+      if (!room) throw new NotFoundException('Номер не найден');
+      if (room.archivedAt) return { room, changed: false };
+      const live = await tx.reservation.count({
+        where: { roomId: id, status: { in: LIVE_RESERVATION_STATUSES } },
+      });
+      if (live > 0) {
+        throw new ConflictException(
+          `Номер №${room.number} нельзя удалить: на нём ${live} ${plural(live, 'действующая бронь', 'действующие брони', 'действующих броней')}. ` +
+            'Перенесите их на другой номер, затем удалите.',
+        );
+      }
+      const archivedAt = new Date();
+      await tx.room.update({
+        where: { id },
+        data: { isActive: false, archivedAt, archivedBy: actor },
+      });
+      return { room: { ...room, archivedAt }, changed: true };
+    });
+    if (result.changed) {
+      await this.prisma.writeAuditLog({
+        tenantId,
+        entity: 'room',
+        entityId: id,
+        action: 'archive',
+        diff: {
+          before: { number: result.room.number, isActive: result.room.isActive, archivedAt: null },
+          after: { isActive: false, archivedAt: result.room.archivedAt },
+        },
+      });
+    }
+    return { ok: true, archivedAt: result.room.archivedAt };
+  }
+
+  /**
+   * Восстановление номера из архива: пометка снимается, номер снова включён
+   * и виден в фонде, шахматке и продаже. Повторный вызов — тот же ответ.
+   */
+  async restore(id: string) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    const result = await this.prisma.forTenant(async (tx) => {
+      const room = await tx.room.findUnique({
+        where: { id },
+        select: { number: true, archivedAt: true, archivedBy: true },
+      });
+      if (!room) throw new NotFoundException('Номер не найден');
+      if (!room.archivedAt) return { room, changed: false };
+      await tx.room.update({
+        where: { id },
+        data: { isActive: true, archivedAt: null, archivedBy: null },
+      });
+      return { room, changed: true };
+    });
+    if (result.changed) {
+      await this.prisma.writeAuditLog({
+        tenantId,
+        entity: 'room',
+        entityId: id,
+        action: 'restore',
+        diff: {
+          before: { number: result.room.number, archivedAt: result.room.archivedAt, archivedBy: result.room.archivedBy },
+          after: { isActive: true, archivedAt: null },
+        },
+      });
+    }
+    return { ok: true };
   }
 
   /**

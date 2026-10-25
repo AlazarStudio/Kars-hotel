@@ -103,6 +103,11 @@ model Tenant {
   /// «показывать ли сейчас», а этот — «что это за запись». Заключили договор →
   /// снимаем признак, и гостиница появляется везде.
   provisional       Boolean    @default(false)
+  /// Удалена «в архив» (25.10.2026, решение владельца: удаление не стирает
+  /// данные). Архивная гостиница выключена (isActive=false — вход и каталог
+  /// партнёра закрыты), скрыта из списков панели и восстанавливается.
+  archivedAt        DateTime?  @map("archived_at")
+  archivedBy        String?    @map("archived_by") @db.Uuid
   /// Контакт гостиницы для уведомления об инциденте с ПДн (152-ФЗ, Р-29;
   /// план 13.11): спрашивается при принятии оферты.
   incidentContactName  String? @map("incident_contact_name")
@@ -1050,6 +1055,12 @@ model Room {
   /// Держится ли номер за партнёром по договору (Д4). Информационный признак,
   /// продажу в PMS не блокирует — см. комментарий к RoomPartnerHold.
   partnerHold RoomPartnerHold @default(NONE) @map("partner_hold")
+  /// Удалён «в архив» (25.10.2026, решение владельца: удаление не стирает
+  /// данные). Архивный номер выключен (isActive=false — продажа, шахматка,
+  /// наличие и партнёрский API его не видят), скрыт из номерного фонда и
+  /// восстанавливается. Брони и история остаются при нём.
+  archivedAt DateTime?  @map("archived_at")
+  archivedBy String?    @map("archived_by") @db.Uuid
   notes      String?
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt

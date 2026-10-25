@@ -327,3 +327,119 @@ describe('Удаление пустой гостиницы', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
+
+/* Удаление гостиницы «в архив» (решение владельца 25.10.2026: удаление не
+ * стирает данные; право — суперадмину и всем диспетчерам). */
+describe('Удаление гостиницы «в архив»', () => {
+  function archiveService(opts: { tenant?: object | null; live?: number } = {}) {
+    const tenant =
+      opts.tenant === undefined
+        ? { id: 't1', slug: 'h1', name: 'Отель', isActive: true, archivedAt: null, archivedBy: null }
+        : opts.tenant;
+    const tx = {
+      reservation: { count: jest.fn(async () => opts.live ?? 0) },
+      tenant: { update: jest.fn(async () => ({})) },
+      auditLog: { create: jest.fn(async () => ({})) },
+    };
+    const admin = {
+      tenant: {
+        findUnique: jest.fn(async () => tenant),
+        update: jest.fn(async () => ({})),
+        delete: jest.fn(),
+      },
+      auditLog: { create: jest.fn(async () => ({})) },
+      $transaction: jest.fn(async (arg: unknown) =>
+        typeof arg === 'function' ? (arg as (t: typeof tx) => unknown)(tx) : Promise.all(arg as unknown[]),
+      ),
+      $executeRawUnsafe: jest.fn(),
+    };
+    const svc = Object.create(SuperAdminService.prototype) as SuperAdminService;
+    Object.assign(svc, { prisma: { admin }, auth: {} });
+    return { svc, tx, admin };
+  }
+
+  it('данные НЕ стираются: гостиница выключена, пометка кто и когда, запись в журнал', async () => {
+    const { svc, tx, admin } = archiveService();
+    const r = await svc.archiveTenant('t1', ACTOR);
+    expect(r.ok).toBe(true);
+    expect(admin.tenant.delete).not.toHaveBeenCalled();
+    expect(admin.$executeRawUnsafe).not.toHaveBeenCalled();
+    expect(tx.tenant.update).toHaveBeenCalledWith({
+      where: { id: 't1' },
+      data: { isActive: false, archivedAt: expect.any(Date), archivedBy: 'actor-1' },
+    });
+    expect(tx.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ userId: 'actor-1', action: 'admin.archive' }),
+    });
+  });
+
+  it('действующие брони — только новые, подтверждённые и с гостем', async () => {
+    const { svc, tx } = archiveService();
+    await svc.archiveTenant('t1', ACTOR);
+    expect(tx.reservation.count).toHaveBeenCalledWith({
+      where: { tenantId: 't1', status: { in: ['NEW', 'CONFIRMED', 'CHECKED_IN'] } },
+    });
+  });
+
+  it('с действующими бронями — 409, гостиница НЕ трогается', async () => {
+    const { svc, tx } = archiveService({ live: 1 });
+    const err = await svc.archiveTenant('t1', ACTOR).catch((e) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    expect(err.message).toContain('1 действующая бронь');
+    expect(tx.tenant.update).not.toHaveBeenCalled();
+    expect(tx.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('уже в архиве — тот же ответ, без второй правки', async () => {
+    const at = new Date('2026-10-25T20:00:00Z');
+    const { svc, admin, tx } = archiveService({
+      tenant: { id: 't1', slug: 'h1', name: 'Отель', isActive: false, archivedAt: at },
+    });
+    await expect(svc.archiveTenant('t1', ACTOR)).resolves.toEqual({ ok: true, archivedAt: at });
+    expect(admin.$transaction).not.toHaveBeenCalled();
+    expect(tx.tenant.update).not.toHaveBeenCalled();
+  });
+
+  it('платформенная и несуществующая — 404', async () => {
+    await expect(
+      archiveService({ tenant: { id: 'p', slug: 'platform', name: 'P', archivedAt: null } }).svc.archiveTenant('p', ACTOR),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(archiveService({ tenant: null }).svc.archiveTenant('x', ACTOR)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('восстановление — пометка снята, гостиница включена, в журнал — кто удалял', async () => {
+    const at = new Date('2026-10-25T20:00:00Z');
+    const { svc, admin } = archiveService({
+      tenant: { id: 't1', slug: 'h1', archivedAt: at, archivedBy: 'u-disp' },
+    });
+    await svc.restoreTenant('t1', ACTOR);
+    expect(admin.tenant.update).toHaveBeenCalledWith({
+      where: { id: 't1' },
+      data: { isActive: true, archivedAt: null, archivedBy: null },
+    });
+    expect(admin.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'admin.restore',
+        diff: expect.objectContaining({ before: { archivedAt: at, archivedBy: 'u-disp' } }),
+      }),
+    });
+  });
+
+  it('не в архиве — восстановление ничего не меняет', async () => {
+    const { svc, admin } = archiveService();
+    await svc.restoreTenant('t1', ACTOR);
+    expect(admin.tenant.update).not.toHaveBeenCalled();
+  });
+
+  it('архивную НЕ включить «Вкл.» и НЕ править — только «Восстановить»', async () => {
+    const at = new Date();
+    const { svc, admin } = archiveService({
+      tenant: { id: 't1', slug: 'h1', name: 'Отель', isActive: false, archivedAt: at, currency: 'RUB' },
+    });
+    await expect(svc.toggleActive('t1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(svc.updateTenant('t1', { name: 'Новое' }, ACTOR)).rejects.toBeInstanceOf(ConflictException);
+    expect(admin.tenant.update).not.toHaveBeenCalled();
+  });
+});

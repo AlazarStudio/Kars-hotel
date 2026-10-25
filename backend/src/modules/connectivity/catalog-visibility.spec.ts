@@ -7,13 +7,30 @@ import { ConnectivityService } from './connectivity.service';
  * поэтому PMS отдаёт скрытые и выключенные ТОЛЬКО по просьбе и с признаками
  * в карточке, а без просьбы — прежний каталог. */
 
-type T = { id: string; slug: string; isActive: boolean; partnerVisible: boolean; provisional: boolean };
+type T = {
+  id: string;
+  slug: string;
+  isActive: boolean;
+  partnerVisible: boolean;
+  provisional: boolean;
+  archivedAt: Date | null;
+};
 const TENANTS: T[] = [
-  { id: '1', slug: 'visible', isActive: true, partnerVisible: true, provisional: false },
-  { id: '2', slug: 'hidden', isActive: true, partnerVisible: false, provisional: false },
-  { id: '3', slug: 'off', isActive: false, partnerVisible: true, provisional: false },
-  { id: '4', slug: 'once', isActive: true, partnerVisible: false, provisional: true },
-  { id: '5', slug: 'platform', isActive: true, partnerVisible: true, provisional: false },
+  { id: '1', slug: 'visible', isActive: true, partnerVisible: true, provisional: false, archivedAt: null },
+  { id: '2', slug: 'hidden', isActive: true, partnerVisible: false, provisional: false, archivedAt: null },
+  { id: '3', slug: 'off', isActive: false, partnerVisible: true, provisional: false, archivedAt: null },
+  { id: '4', slug: 'once', isActive: true, partnerVisible: false, provisional: true, archivedAt: null },
+  { id: '5', slug: 'platform', isActive: true, partnerVisible: true, provisional: false, archivedAt: null },
+  /* Удалённая «в архив» (25.10.2026): выключена и с пометкой — не отдаётся даже
+     по просьбе о выключенных. */
+  {
+    id: '6',
+    slug: 'gone',
+    isActive: false,
+    partnerVisible: true,
+    provisional: false,
+    archivedAt: new Date('2026-10-25T20:00:00Z'),
+  },
 ];
 
 /* Ровно та форма условия, которую строит listHotels: равенства, slug.not и OR. */
@@ -56,6 +73,11 @@ describe('Каталог PMS — скрытые и выключенные тол
 
   it('includeInactive — добавляет выключенные, но не скрытые', async () => {
     expect(await slugs({ includeInactive: true })).toEqual(['off', 'visible']);
+  });
+
+  it('удалённая «в архив» — нет ни с какой просьбой', async () => {
+    const all = await slugs({ includeInactive: true, includeHidden: true, includeProvisional: true });
+    expect(all).not.toContain('gone');
   });
 
   it('разовые — своей просьбой, скрытые к ним не подмешиваются', async () => {

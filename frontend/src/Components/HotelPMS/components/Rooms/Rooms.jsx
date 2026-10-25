@@ -19,21 +19,21 @@ import {
   useCreateRoom,
   useUpdateRoom,
   useUpdateRoomStatus,
-  useDeleteRoom,
+  useArchiveRoom,
+  useRestoreRoom,
 } from '../../../../hooks/api/useRooms';
 import { useRunDemoSeed } from '../../../../hooks/api/useDemoSeed';
 
-/* Удаление номеров ВЫКЛЮЧЕНО (решение владельца 25.10.2026, вечер): удаление
-   не должно стирать данные из базы, а сервер пока стирает строку номера.
-   Включать, когда удаление станет «в архив». Кнопка «Удалить номер» — в окне
-   правки номера. Переключать — вместе с `roomDeleteSwitch` на сервере
-   (backend/src/modules/rooms/room-delete.switch.ts), иначе кнопка будет
-   получать отказ 403. */
-const ROOM_DELETE_ENABLED = false;
+/* Удаление номера — «в архив» (решение владельца 25.10.2026: удаление не
+   стирает данные из базы). Кнопка «Удалить номер» в окне правки убирает номер
+   из фонда, шахматки и продажи; брони и история остаются, номер возвращается
+   кнопкой «Восстановить» в разделе «Удалённые номера» внизу страницы.
+   Физическое удаление (DELETE) выключено на сервере — room-delete.switch.ts. */
 
 function Rooms() {
   const roomTypesQ = useRoomTypes();
   const roomsQ = useRooms();
+  const archivedQ = useRooms({ archived: true });
 
   const createRT = useCreateRoomType();
   const updateRT = useUpdateRoomType();
@@ -41,8 +41,12 @@ function Rooms() {
   const createRoom = useCreateRoom();
   const updateRoom = useUpdateRoom();
   const updateRoomStatus = useUpdateRoomStatus();
-  const deleteRoom = useDeleteRoom();
+  const archiveRoom = useArchiveRoom();
+  const restoreRoom = useRestoreRoom();
   const runDemoSeed = useRunDemoSeed();
+  const [showArchived, setShowArchived] = useState(false);
+  const [restoreError, setRestoreError] = useState(null);
+  const archived = archivedQ.data ?? [];
 
   // ── Modal state ────────────────────────────────────────────────────────────
   const [rtModal, setRtModal] = useState({ open: false, editing: null });
@@ -328,15 +332,11 @@ function Rooms() {
             ? updateRoom.mutateAsync({ id: roomModal.editing.id, payload })
             : createRoom.mutateAsync(payload)
         }
-        onDelete={
-          ROOM_DELETE_ENABLED
-            ? () => {
-                const room = roomModal.editing;
-                setRoomModal({ open: false, editing: null, defaultRoomTypeId: undefined });
-                setConfirm({ type: 'room', target: room, name: room.number });
-              }
-            : undefined
-        }
+        onDelete={() => {
+          const room = roomModal.editing;
+          setRoomModal({ open: false, editing: null, defaultRoomTypeId: undefined });
+          setConfirm({ type: 'room', target: room, name: room.number });
+        }}
       />
 
       <ConfirmDialog
@@ -345,16 +345,72 @@ function Rooms() {
         message={
           confirm?.type === 'roomType'
             ? `Категория «${confirm?.name}» будет удалена. Если в ней есть номера — удаление не пройдёт.`
-            : `Номер №${confirm?.name} будет удалён без возможности восстановить. Номер с бронями удалить нельзя — сначала перенесите брони на другой номер.`
+            : `Номер №${confirm?.name} пропадёт из номерного фонда, шахматки и продажи. Брони и история сохранятся — номер можно восстановить в разделе «Удалённые номера» внизу страницы. Номер с действующими бронями удалить нельзя: сначала перенесите их на другой номер.`
         }
         confirmLabel="Удалить"
         danger
         onClose={() => setConfirm(null)}
         onConfirm={async () => {
           if (confirm?.type === 'roomType') await deleteRT.mutateAsync(confirm.target.id);
-          else if (confirm?.type === 'room') await deleteRoom.mutateAsync(confirm.target.id);
+          else if (confirm?.type === 'room') await archiveRoom.mutateAsync(confirm.target.id);
         }}
       />
+
+      {/* ── Удалённые номера (архив) ───────────────────────────────────────── */}
+      {archived.length > 0 && (
+        <div className={classes.archiveSection}>
+          <button
+            type="button"
+            className={classes.archiveToggle}
+            onClick={() => setShowArchived((v) => !v)}
+            aria-expanded={showArchived}
+          >
+            {showArchived ? 'Скрыть' : 'Показать'} удалённые номера ({archived.length})
+          </button>
+          {showArchived && (
+            <>
+              {restoreError && <div className={classes.archiveError}>{restoreError}</div>}
+              <table className={classes.archiveTable}>
+                <thead>
+                  <tr>
+                    <th style={{ width: '40%' }}>Номер</th>
+                    <th style={{ width: '30%' }}>Категория</th>
+                    <th style={{ width: '15%' }}>Удалён</th>
+                    <th style={{ width: '15%' }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {archived.map((room) => (
+                    <tr key={room.id}>
+                      <td>№{room.number}</td>
+                      <td>{room.roomType?.name ?? '—'}</td>
+                      <td>{room.archivedAt ? new Date(room.archivedAt).toLocaleDateString('ru-RU') : '—'}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        <button
+                          type="button"
+                          className={classes.btnGhost}
+                          disabled={restoreRoom.isPending}
+                          onClick={() => {
+                            setRestoreError(null);
+                            restoreRoom.mutate(room.id, {
+                              onError: (e) => {
+                                const msg = e?.response?.data?.message || e?.message || 'Не удалось восстановить';
+                                setRestoreError(Array.isArray(msg) ? msg.join(', ') : msg);
+                              },
+                            });
+                          }}
+                        >
+                          Восстановить
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -37,6 +37,17 @@ export async function deleteTenant(id) {
   return data; // { actId, counts, files }
 }
 
+/* Удаление гостиницы «в архив» (25.10.2026): данные не стираются, восстановить можно. */
+export async function archiveTenant(id) {
+  const { data } = await api.post(`/admin/tenants/${id}/archive`);
+  return data;
+}
+
+export async function restoreTenant(id) {
+  const { data } = await api.post(`/admin/tenants/${id}/restore`);
+  return data;
+}
+
 export async function toggleTenantActive(id) {
   const { data } = await api.patch(`/admin/tenants/${id}/toggle-active`);
   return data;
