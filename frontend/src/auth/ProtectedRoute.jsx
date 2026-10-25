@@ -1,6 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { AUTH_STATUS, useAuth } from './AuthContext';
-import SessionDisplaced from '../Components/Auth/SessionDisplaced';
+import SessionStopped from '../Components/Auth/SessionStopped';
 
 export default function ProtectedRoute({ children, requireSuperAdmin = false }) {
   const { status, isSuperAdmin, isImpersonating, user } = useAuth();
@@ -26,7 +26,7 @@ export default function ProtectedRoute({ children, requireSuperAdmin = false }) 
     );
   }
 
-  if (status === AUTH_STATUS.DISPLACED) return <SessionDisplaced />;
+  if (status === AUTH_STATUS.STOPPED) return <SessionStopped />;
 
   if (status === AUTH_STATUS.UNAUTHENTICATED) {
     return <Navigate to="/login" state={{ from: location }} replace />;

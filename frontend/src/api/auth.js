@@ -1,5 +1,6 @@
 import {
   api,
+  authCookiePath,
   setAccessToken,
   setImpersonatingFlag,
   performRefresh,
@@ -23,9 +24,10 @@ export async function login(payload) {
   return data; // { user, accessToken, accessTtlSeconds }
 }
 
+// Выход гасит куку входа этой вкладки: у гостиницы по ссылке — её собственную.
 export async function logout() {
   try {
-    await api.post("/auth/logout");
+    await api.post(`${authCookiePath()}/logout`);
   } finally {
     setAccessToken(null);
   }
@@ -49,7 +51,8 @@ export async function me() {
  * Partner SSO (вход по одноразовому коду из диспетчерской Kars Avia).
  *
  * Кода хватает на один обмен, но сессия теперь ПОЛНОЦЕННАЯ: сервер ставит
- * refresh-куку, привязанную к этой же гостинице. Поэтому автообновление здесь
+ * refresh-куку ЭТОЙ гостиницы, на её собственном пути (`/auth/hotel/<id>`).
+ * Поэтому автообновление здесь
  * НЕ блокируется — раньше блокировка стояла из-за отсутствия куки, и вместе с
  * коротким токеном давала выход на форму входа через час работы.
  *

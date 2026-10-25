@@ -12,6 +12,7 @@ import {
   UnauthorizedException,
   UseGuards,
   Param,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { OwnerInviteService } from './owner-invite.service';
 import { AcceptOwnerInviteDto } from './dto/accept-owner-invite.dto';
@@ -25,6 +26,14 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthenticatedRequestUser } from './strategies/jwt.strategy';
 
 const REFRESH_COOKIE = 'refresh_token';
+
+/* Вход в гостиницу по ссылке из Kars Avia продлевается СВОЕЙ кукой — на пути
+   этой гостиницы. Общая кука одна на браузер, а вкладки диспетчера — разные
+   гостиницы: вход в соседней вкладке переписывал её, и продление уводило
+   вкладку в чужую гостиницу (бой, 25.10.2026). Кука с путём гостиницы уходит
+   только на её ручки — вкладки разных гостиниц друг другу не мешают. */
+const HOTEL_REFRESH_COOKIE = 'refresh_hotel';
+const hotelCookiePath = (tenantId: string) => `/api/auth/hotel/${tenantId}`;
 
 @ApiTags('auth')
 @Controller('auth')
@@ -120,8 +129,13 @@ export class AuthController {
       req.headers['user-agent'],
     );
     /* Кука ставится так же, как при обычном входе: иначе сессия жила ровно
-       час, а перезагрузка обрывала её и раньше. */
-    this.setRefreshCookie(res, refreshToken, refreshTtlSeconds);
+       час, а перезагрузка обрывала её и раньше. Вход в гостиницу — кукой
+       гостиницы; без её id куки нет вовсе, но общей она не станет. */
+    if (rest.mode === 'admin') {
+      this.setRefreshCookie(res, refreshToken, refreshTtlSeconds);
+    } else if (rest.tenant) {
+      this.setHotelRefreshCookie(res, rest.tenant.id, refreshToken, refreshTtlSeconds);
+    }
     return rest;
   }
 
@@ -149,9 +163,7 @@ export class AuthController {
       req.headers['user-agent'],
       user.tenantId,
     );
-    /* Кука одна на браузер: пока шла работа в гостинице, в ней лежала сессия
-       гостиницы. Заменяем — иначе через час обновление вернуло бы человека в
-       режим, из которого он только что вышел. */
+    /* Вкладка после выхода — в своей панели и продлевается общей кукой. */
     this.setRefreshCookie(res, refreshToken, refreshTtlSeconds);
     return rest;
   }
@@ -162,22 +174,28 @@ export class AuthController {
   @ApiResponse({ status: 200 })
   @ApiResponse({ status: 401, description: 'Refresh token missing/invalid/expired' })
   async refresh(@Req() req: Request, @Res() res: Response) {
-    const cookies = (req as Request & { cookies?: Record<string, string> }).cookies;
-    const refreshToken = cookies?.[REFRESH_COOKIE];
-    if (!refreshToken) {
-      res
-        .status(401)
-        .json({ statusCode: 401, message: 'Missing refresh token', error: 'Unauthorized' });
-      return;
-    }
-    try {
-      const tokens = await this.auth.refresh(refreshToken, req.ip, req.headers['user-agent']);
-      this.setRefreshCookie(res, tokens.refreshToken, tokens.refreshTtlSeconds);
-      res.json({ accessToken: tokens.accessToken, accessTtlSeconds: tokens.accessTtlSeconds });
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Invalid or expired refresh token';
-      res.status(401).json({ statusCode: 401, message: msg, error: 'Unauthorized' });
-    }
+    return this.rotate(req, res, REFRESH_COOKIE, (token, ttl) =>
+      this.setRefreshCookie(res, token, ttl),
+    );
+  }
+
+  @Public()
+  @Post('hotel/:tenantId/refresh')
+  @ApiOperation({ summary: 'Rotate the hotel refresh token of a Kars Avia SSO session in that hotel' })
+  @ApiResponse({ status: 201 })
+  @ApiResponse({ status: 401, description: 'No refresh token of this hotel, or it belongs to another session' })
+  async refreshHotel(
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    return this.rotate(
+      req,
+      res,
+      HOTEL_REFRESH_COOKIE,
+      (token, ttl) => this.setHotelRefreshCookie(res, tenantId, token, ttl),
+      tenantId,
+    );
   }
 
   @Public()
@@ -188,6 +206,23 @@ export class AuthController {
     const cookies = (req as Request & { cookies?: Record<string, string> }).cookies;
     await this.auth.logout(cookies?.[REFRESH_COOKIE]);
     this.clearRefreshCookie(res);
+    return;
+  }
+
+  /* Выход из гостиницы — её кукой. Общую не трогает: в ней может жить панель
+     диспетчера или вход паролем в соседней вкладке. */
+  @Public()
+  @Post('hotel/:tenantId/logout')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Revoke the hotel refresh token of a Kars Avia SSO session in that hotel' })
+  async logoutHotel(
+    @Param('tenantId', ParseUUIDPipe) tenantId: string,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const cookies = (req as Request & { cookies?: Record<string, string> }).cookies;
+    await this.auth.logout(cookies?.[HOTEL_REFRESH_COOKIE]);
+    res.clearCookie(HOTEL_REFRESH_COOKIE, { path: hotelCookiePath(tenantId) });
     return;
   }
 
@@ -217,14 +252,57 @@ export class AuthController {
     return !(process.env.PUBLIC_URL ?? '').startsWith('http://');
   }
 
+  /* Продление по куке `cookie`; `hotelTenantId` — вход в эту гостиницу. */
+  private async rotate(
+    req: Request,
+    res: Response,
+    cookie: string,
+    setCookie: (token: string, ttlSeconds: number) => void,
+    hotelTenantId?: string,
+  ) {
+    const cookies = (req as Request & { cookies?: Record<string, string> }).cookies;
+    const refreshToken = cookies?.[cookie];
+    if (!refreshToken) {
+      res
+        .status(401)
+        .json({ statusCode: 401, message: 'Missing refresh token', error: 'Unauthorized' });
+      return;
+    }
+    try {
+      const tokens = await this.auth.refresh(
+        refreshToken,
+        req.ip,
+        req.headers['user-agent'],
+        hotelTenantId,
+      );
+      setCookie(tokens.refreshToken, tokens.refreshTtlSeconds);
+      res.json({ accessToken: tokens.accessToken, accessTtlSeconds: tokens.accessTtlSeconds });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Invalid or expired refresh token';
+      res.status(401).json({ statusCode: 401, message: msg, error: 'Unauthorized' });
+    }
+  }
+
   private setRefreshCookie(res: Response, token: string, ttlSeconds: number) {
-    res.cookie(REFRESH_COOKIE, token, {
+    res.cookie(REFRESH_COOKIE, token, AuthController.cookieOptions(ttlSeconds, '/api/auth'));
+  }
+
+  private setHotelRefreshCookie(res: Response, tenantId: string, token: string, ttlSeconds: number) {
+    res.cookie(
+      HOTEL_REFRESH_COOKIE,
+      token,
+      AuthController.cookieOptions(ttlSeconds, hotelCookiePath(tenantId)),
+    );
+  }
+
+  private static cookieOptions(ttlSeconds: number, path: string) {
+    return {
       httpOnly: true,
       secure: AuthController.cookieSecure(),
-      sameSite: 'lax',
+      sameSite: 'lax' as const,
       maxAge: ttlSeconds * 1000,
-      path: '/api/auth',
-    });
+      path,
+    };
   }
 
   private clearRefreshCookie(res: Response) {

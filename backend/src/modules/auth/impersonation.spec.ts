@@ -196,7 +196,7 @@ describe('продление сессии «от имени»', () => {
   it('возвращает ту же гостиницу и ту же метку «от имени»', async () => {
     const { service, signed } = serviceForRefresh(ROW);
 
-    await service.refresh('refresh-token');
+    await service.refresh('refresh-token', undefined, undefined, TENANT);
 
     const access = signed[0] as { tid: string; imp?: string; perms: string[] };
     expect(access.tid).toBe(TENANT);
@@ -223,5 +223,26 @@ describe('продление сессии «от имени»', () => {
     const access = signed[0] as { imp?: string; perms: string[] };
     expect(access.imp).toBeUndefined();
     expect(access.perms).toEqual(['user.read']);
+  });
+
+  /* Своя кука — у каждого входа (бой, 25.10.2026: продление вкладки
+     «Апартаментов» общей кукой выдало токен «Европы»). Отказ — ДО отзыва:
+     чужой записью продолжает работать её вкладка. */
+  const OTHER_HOTEL = '33333333-3333-3333-3333-333333333333';
+
+  it.each([
+    ['кука гостиницы — вход в ДРУГУЮ гостиницу', ROW, OTHER_HOTEL],
+    ['кука гостиницы — собственный вход без «от имени», пусть и этой гостиницы', { ...ROW, impersonatedBy: null }, TENANT],
+    ['общая кука — вход «от имени» в гостиницу', ROW, undefined],
+  ])('НЕ продлевает: %s — и запись не отзывает', async (_case, row, hotelTenantId) => {
+    const { service, signed, prisma } = serviceForRefresh(row);
+
+    await expect(
+      service.refresh('refresh-token', undefined, undefined, hotelTenantId),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(prisma.admin.refreshToken.update).not.toHaveBeenCalled();
+    expect(prisma.admin.refreshToken.create).not.toHaveBeenCalled();
+    expect(signed).toHaveLength(0);
   });
 });

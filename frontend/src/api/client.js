@@ -1,6 +1,6 @@
 import axios from "axios";
 import { journalHeaders } from "../lib/journal";
-import { createSessionRefresh } from "./session-refresh";
+import { createSessionRefresh, sessionCookiePath, sessionOf } from "./session-refresh";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
@@ -20,9 +20,9 @@ let impersonating = false;
  * закрытие вкладки сессию заканчивает. В `localStorage` такой токен жил бы
  * во всех вкладках и после ухода человека с рабочего места.
  *
- * Refresh-кука же одна на БРАУЗЕР, и вход по ссылке из Kars Avia её тоже
- * ставит (с 25.08.2026). Поэтому продление принимает только вход этой же
- * вкладки — см. `session-refresh.js`.
+ * Продление же — по куке браузера: общей у входа паролем и панели, своей у
+ * каждой гостиницы для входа по ссылке из Kars Avia. Какой — решает вход
+ * вкладки, и принимается только он же — см. `session-refresh.js`.
  */
 const SESSION_KEY = "kars-pms.session";
 
@@ -89,12 +89,18 @@ export function onAccessTokenChange(cb) {
   return () => accessListeners.delete(cb);
 }
 
-const displacedListeners = new Set();
+const stopListeners = new Set();
 
-/** Вкладку остановили: вход браузера теперь от другой гостиницы. */
-export function onSessionDisplaced(cb) {
-  displacedListeners.add(cb);
-  return () => displacedListeners.delete(cb);
+/** Вкладку остановили: вход браузера чужой или вход в гостиницу кончился. */
+export function onSessionStopped(cb) {
+  stopListeners.add(cb);
+  return () => stopListeners.delete(cb);
+}
+
+/** Ручки куки входа этой вкладки — для выхода. Вход «от имени» из панели
+ *  платформы своей куки не имеет: выходит общей, гася сессию суперадмина. */
+export function authCookiePath() {
+  return impersonating ? "/auth" : sessionCookiePath(sessionOf(accessToken));
 }
 
 export function setImpersonatingFlag(val) {
@@ -120,16 +126,16 @@ api.interceptors.request.use((cfg) => {
 
 // ─── Response: on 401 try ONE refresh+retry — but never while impersonating ─
 const sessionRefresh = createSessionRefresh({
-  post: () =>
+  post: (path) =>
     axios
-      .post(`${API_BASE_URL}/auth/refresh`, null, { withCredentials: true })
+      .post(`${API_BASE_URL}${path}`, null, { withCredentials: true })
       .then((r) => r.data.accessToken),
   retry: (cfg) => api.request(cfg),
   getToken: () => accessToken,
   setToken: setAccessToken,
   canRefresh: () => !impersonating,
-  onDisplaced: (err) => {
-    for (const cb of displacedListeners) cb(err);
+  onStopped: (err) => {
+    for (const cb of stopListeners) cb(err);
   },
 });
 

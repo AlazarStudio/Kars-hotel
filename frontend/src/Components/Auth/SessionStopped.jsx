@@ -2,11 +2,12 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 
 /**
- * Вкладка остановлена: вход в браузере сменился на другую гостиницу или
- * учётку (api/session-refresh.js). Работать дальше здесь — значит сохранять
- * изменения не в ту гостиницу, поэтому экран только объясняет, что делать.
+ * Вкладка остановлена (api/session-refresh.js): вход в гостиницу по ссылке
+ * кончился, или вход в браузере сменился на другую гостиницу либо учётку.
+ * Работать дальше здесь — значит сохранять изменения не туда, поэтому экран
+ * только объясняет, что делать.
  */
-export default function SessionDisplaced() {
+export default function SessionStopped() {
   const { impersonatedTenant, dropTabSession } = useAuth();
   const name = impersonatedTenant?.name;
 
@@ -24,7 +25,7 @@ export default function SessionDisplaced() {
       <div style={{ fontSize: 18, fontWeight: 600 }}>Работа в этой вкладке остановлена</div>
       <div style={{ maxWidth: 460, textAlign: 'center', lineHeight: 1.5 }}>
         {name
-          ? `Вкладка открыта в гостинице «${name}», а вход в браузере уже сменился на другую гостиницу — её открыли в соседней вкладке.`
+          ? `Вход в гостиницу «${name}» в этой вкладке больше не действует.`
           : 'Вход в браузере сменился: в соседней вкладке вошли в другую гостиницу или под другой учёткой.'}
         {' '}Чтобы изменения не ушли не туда, здесь больше ничего не сохраняется.
       </div>

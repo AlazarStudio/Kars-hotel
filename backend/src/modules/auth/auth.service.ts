@@ -263,7 +263,20 @@ export class AuthService implements OnModuleInit {
     };
   }
 
-  async refresh(refreshToken: string, ip?: string, userAgent?: string): Promise<AuthTokens> {
+  /* Продление — только СВОЕЙ кукой.
+   *
+   * Вход в гостиницу по ссылке из Kars Avia продлевается кукой этой
+   * гостиницы (`hotelTenantId` — из пути ручки), общая кука браузера — только
+   * собственный вход (пароль, панель диспетчера). Пока вход в гостиницу жил в
+   * общей куке, вход в соседней вкладке переписывал её, и продление уводило
+   * вкладку в чужую гостиницу (бой, 25.10.2026). Проверка стоит ДО отзыва:
+   * чужую запись не трогаем — ею продолжает работать её вкладка. */
+  async refresh(
+    refreshToken: string,
+    ip?: string,
+    userAgent?: string,
+    hotelTenantId?: string,
+  ): Promise<AuthTokens> {
     let payload: JwtRefreshPayload;
     try {
       payload = await this.jwt.verifyAsync<JwtRefreshPayload>(refreshToken, {
@@ -290,6 +303,12 @@ export class AuthService implements OnModuleInit {
     }
     if (tokenRow.userId !== payload.sub || tokenRow.tenantId !== payload.tid) {
       throw new UnauthorizedException('Refresh token does not match payload');
+    }
+    const ownCookie = hotelTenantId
+      ? !!tokenRow.impersonatedBy && tokenRow.tenantId === hotelTenantId
+      : !tokenRow.impersonatedBy;
+    if (!ownCookie) {
+      throw new UnauthorizedException('Refresh token belongs to another session');
     }
     if (!tokenRow.user.isActive) {
       throw new ForbiddenException('User is inactive');
@@ -430,10 +449,9 @@ export class AuthService implements OnModuleInit {
    */
   /* Выход из режима «от имени» перевыпускает и продление.
    *
-   * Кука одна на браузер: пока идёт работа в гостинице, в ней лежит сессия
-   * гостиницы. Если при выходе её не заменить, то через час обновление
-   * вернуло бы человека обратно в гостиницу — из режима, из которого он
-   * только что вышел. */
+   * Вкладка после выхода — в своей панели и продлевается общей кукой; в неё и
+   * ложится собственный вход вышедшего. Кука гостиницы остаётся на своём
+   * пути: ею продолжают работать другие вкладки этой гостиницы. */
   async exitImpersonation(
     operatorUserId: string,
     ip?: string,
@@ -646,8 +664,8 @@ export class AuthService implements OnModuleInit {
    *
    * Раньше отдавался только access-токен на час: сессия жила ровно час, а
    * перезагрузка страницы обрывала её и раньше. Диспетчеру, который ведёт
-   * гостиницу полдня, это возвращало форму входа посреди работы. Кука
-   * ставится контроллером, как и при обычном входе. */
+   * гостиницу полдня, это возвращало форму входа посреди работы. Куку ставит
+   * контроллер — для входа в гостиницу это кука ЭТОЙ гостиницы, не общая. */
   async exchangeSsoCode(
     code: string,
     ip?: string,

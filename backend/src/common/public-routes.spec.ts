@@ -17,6 +17,8 @@ const ALLOWED: Record<string, string> = {
   'AuthController.login': 'вход',
   'AuthController.refresh': 'продление по куке',
   'AuthController.logout': 'выход по куке',
+  'AuthController.refreshHotel': 'продление входа в гостиницу — её кукой',
+  'AuthController.logoutHotel': 'выход из гостиницы — её кукой',
   'AuthController.peekInvite': 'чья гостиница в приглашении — по одноразовому токену',
   'AuthController.acceptInvite': 'принять приглашение — по одноразовому токену',
   'AuthController.ssoExchange': 'вход диспетчера — по одноразовому коду',

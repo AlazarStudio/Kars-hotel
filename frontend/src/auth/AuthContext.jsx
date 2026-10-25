@@ -10,12 +10,12 @@ import * as authApi from "../api/auth";
 import * as superAdminApi from "../api/superadmin";
 import { getTenantSettings } from "../api/tenant";
 import { flushJournal, startJournal } from "../lib/journal";
-import { isSessionDisplaced } from "../api/session-refresh";
+import { isSessionStopped } from "../api/session-refresh";
 import {
   API_BASE_URL,
   clearStoredSession,
   getAccessToken,
-  onSessionDisplaced,
+  onSessionStopped,
   readStoredSession,
   setAccessToken,
   setImpersonatedTenant as persistImpersonatedTenant,
@@ -28,8 +28,8 @@ const STATUS = Object.freeze({
   LOADING: "loading",
   AUTHENTICATED: "authenticated",
   UNAUTHENTICATED: "unauthenticated",
-  // Вход браузера сменился под вкладкой — работа в ней остановлена (api/session-refresh.js).
-  DISPLACED: "displaced",
+  // Вход вкладки сменился или кончился — работа в ней остановлена (api/session-refresh.js).
+  STOPPED: "stopped",
 });
 
 export function AuthProvider({ children }) {
@@ -37,15 +37,15 @@ export function AuthProvider({ children }) {
   const [status, setStatus] = useState(STATUS.LOADING);
   const [impersonatedTenant, setImpersonatedTenant] = useState(null);
 
-  useEffect(() => onSessionDisplaced(() => setStatus(STATUS.DISPLACED)), []);
+  useEffect(() => onSessionStopped(() => setStatus(STATUS.STOPPED)), []);
 
   /* На старте — ДВА пути, и порядок важен.
    *
    * 1. Сессия этой вкладки. Сначала пробуем восстановленный токен: отвечает
    *    `/auth/me` — сессия жива, кука не нужна вовсе.
-   * 2. Иначе продлеваем кукой. Кука одна на браузер, и в ней может лежать
-   *    вход ДРУГОЙ гостиницы, открытой в соседней вкладке, — поэтому токен
-   *    вкладки держим до ответа: по нему продление сверит, что вход тот же.
+   * 2. Иначе продлеваем кукой. Токен вкладки держим до ответа: по нему
+   *    продление выберет куку этого входа (у гостиницы по ссылке — её
+   *    собственную) и сверит, что вход тот же.
    */
   useEffect(() => {
     let cancelled = false;
@@ -105,10 +105,10 @@ export function AuthProvider({ children }) {
         }
       } catch (err) {
         if (cancelled) return;
-        if (isSessionDisplaced(err)) {
+        if (isSessionStopped(err)) {
           // Экрану остановки — название гостиницы, в которой открыта вкладка.
           setImpersonatedTenant(stored?.tenant ?? null);
-          setStatus(STATUS.DISPLACED);
+          setStatus(STATUS.STOPPED);
           return;
         }
         // Never downgrade an already-authenticated session: a sign-in on this
@@ -147,10 +147,11 @@ export function AuthProvider({ children }) {
   const logout = useCallback(async () => {
     // Нажатие «Выйти» и всё до него — в журнал, пока токен ещё жив.
     flushJournal();
-    setImpersonatingFlag(false);
     try {
       await authApi.logout();
     } finally {
+      // Флаг панели — ПОСЛЕ выхода: по нему выход выбирает, чью куку гасить.
+      setImpersonatingFlag(false);
       setAccessToken(null);
       setUser(null);
       setImpersonatedTenant(null);
@@ -160,8 +161,8 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  /* Остановленная вкладка: забыть её вход, НЕ выходя на сервере — кука теперь
-     принадлежит соседней вкладке, и выход оборвал бы работу там. */
+  /* Остановленная вкладка: забыть её вход, НЕ выходя на сервере — кука может
+     принадлежать соседней вкладке, и выход оборвал бы работу там. */
   const dropTabSession = useCallback(() => {
     setImpersonatingFlag(false);
     persistImpersonatedTenant(null);
