@@ -9,6 +9,7 @@ import { DAY_WIDTH, LEFT_PANEL_WIDTH, BOOKING_STATUS, HK_STATUS } from '../../co
 import BookingForm from './BookingForm';
 import { stayRows } from './stayTimes';
 import { PARTNER_HOLD_CONFIG } from '../../shared/status-config';
+import { reservationErrorText } from '../../shared/reservation-errors';
 import { useTimeline } from '../../../../hooks/useTimeline';
 import { createReservation, updateReservation, swapReservations } from '../../../../api/reservations';
 
@@ -385,8 +386,7 @@ function Timeline({ multiPlaceEnabled = true }) {
       await reload();
       setPendingDrag(null);
     } catch (err) {
-      const msg = err?.response?.data?.message ?? err.message ?? 'Ошибка сохранения';
-      setDragError(msg);
+      setDragError(reservationErrorText(err, 'Ошибка сохранения'));
     } finally {
       setDragSaving(false);
     }
@@ -437,8 +437,7 @@ function Timeline({ multiPlaceEnabled = true }) {
       setShowForm(false);
       setFormData(null);
     } catch (err) {
-      const msg = err?.response?.data?.message ?? err.message ?? 'Ошибка сохранения';
-      setFormError(msg);
+      setFormError(reservationErrorText(err, 'Ошибка сохранения'));
     }
   }, [reload]);
 
@@ -452,8 +451,7 @@ function Timeline({ multiPlaceEnabled = true }) {
       setShowForm(false);
       setFormData(null);
     } catch (err) {
-      const msg = err?.response?.data?.message ?? err.message ?? 'Ошибка';
-      setFormError(msg);
+      setFormError(reservationErrorText(err, 'Ошибка'));
     }
   }, [bookings, reload]);
 

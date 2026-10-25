@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import classes from './Bookings.module.css';
 import { BOOKING_STATUS, BOOKING_SOURCE } from '../../constants';
 import BookingForm from '../Timeline/BookingForm';
+import { reservationErrorText } from '../../shared/reservation-errors';
 import GuestExportModal from './GuestExportModal';
 import { useAuth } from '../../../../auth/AuthContext';
 import { useTimeline } from '../../../../hooks/useTimeline';
@@ -56,7 +57,7 @@ function Bookings() {
       await checkIn(id);
       refetchArrivals();
     } catch (err) {
-      setSavingError(err?.response?.data?.message ?? err.message ?? 'Ошибка заселения');
+      setSavingError(reservationErrorText(err, 'Ошибка заселения'));
     }
   };
 
@@ -65,7 +66,7 @@ function Bookings() {
       await checkOut(id);
       refetchDepartures();
     } catch (err) {
-      setSavingError(err?.response?.data?.message ?? err.message ?? 'Ошибка выселения');
+      setSavingError(reservationErrorText(err, 'Ошибка выселения'));
     }
   };
 
@@ -173,8 +174,7 @@ function Bookings() {
       setShowForm(false);
       setFormData(null);
     } catch (err) {
-      const msg = err?.response?.data?.message ?? err.message ?? 'Ошибка сохранения';
-      setSavingError(msg);
+      setSavingError(reservationErrorText(err, 'Ошибка сохранения'));
     }
   };
 
@@ -188,8 +188,7 @@ function Bookings() {
       setShowForm(false);
       setFormData(null);
     } catch (err) {
-      const msg = err?.response?.data?.message ?? err.message ?? 'Ошибка';
-      setSavingError(msg);
+      setSavingError(reservationErrorText(err, 'Ошибка'));
     }
   };
 
