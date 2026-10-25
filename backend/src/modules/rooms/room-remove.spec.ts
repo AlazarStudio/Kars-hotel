@@ -41,16 +41,13 @@ function setup(opts: { room?: object | null; reservations?: number; deleteError?
 }
 
 describe('Выключатель удаления номеров', () => {
-  afterEach(() => {
-    roomDeleteSwitch.enabled = true;
-  });
-
-  it('включено (решение владельца 25.10.2026)', () => {
-    expect(roomDeleteSwitch.enabled).toBe(true);
+  /* Выключено (решение владельца 25.10.2026, вечер): удаление не должно
+     стирать данные из базы, а remove стирает строку. */
+  it('выключено, пока удаление не станет «в архив»', () => {
+    expect(roomDeleteSwitch.enabled).toBe(false);
   });
 
   it('выключенное — 403, база не тронута, журнал не пишется', async () => {
-    roomDeleteSwitch.enabled = false;
     const { svc, tx, prisma } = setup({ reservations: 0 });
     await expect(svc.remove('room-1')).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.forTenant).not.toHaveBeenCalled();
@@ -59,9 +56,15 @@ describe('Выключатель удаления номеров', () => {
   });
 });
 
-describe('Удаление номера', () => {
-  beforeEach(() => jest.spyOn(TenantContext, 'getTenantIdOrThrow').mockReturnValue('t1'));
-  afterEach(() => jest.restoreAllMocks());
+describe('Удаление номера (если выключатель включить)', () => {
+  beforeEach(() => {
+    roomDeleteSwitch.enabled = true;
+    jest.spyOn(TenantContext, 'getTenantIdOrThrow').mockReturnValue('t1');
+  });
+  afterEach(() => {
+    roomDeleteSwitch.enabled = false;
+    jest.restoreAllMocks();
+  });
 
   it('номер без броней удаляется, в журнале — каким он был', async () => {
     const { svc, tx, prisma } = setup();

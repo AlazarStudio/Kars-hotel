@@ -23,11 +23,13 @@ import {
 } from '../../../../hooks/api/useRooms';
 import { useRunDemoSeed } from '../../../../hooks/api/useDemoSeed';
 
-/* Удаление номеров ВКЛЮЧЕНО (решение владельца 25.10.2026): кнопка «Удалить
-   номер» — в окне правки номера. Переключать — вместе с `roomDeleteSwitch` на
-   сервере (backend/src/modules/rooms/room-delete.switch.ts), иначе кнопка
-   будет получать отказ 403. */
-const ROOM_DELETE_ENABLED = true;
+/* Удаление номеров ВЫКЛЮЧЕНО (решение владельца 25.10.2026, вечер): удаление
+   не должно стирать данные из базы, а сервер пока стирает строку номера.
+   Включать, когда удаление станет «в архив». Кнопка «Удалить номер» — в окне
+   правки номера. Переключать — вместе с `roomDeleteSwitch` на сервере
+   (backend/src/modules/rooms/room-delete.switch.ts), иначе кнопка будет
+   получать отказ 403. */
+const ROOM_DELETE_ENABLED = false;
 
 function Rooms() {
   const roomTypesQ = useRoomTypes();

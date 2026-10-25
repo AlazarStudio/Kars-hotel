@@ -4,7 +4,15 @@ import Modal from '../HotelPMS/shared/Modal';
 import formClasses from '../HotelPMS/shared/Form.module.css';
 import * as superAdminApi from '../../api/superadmin';
 import classes from './TenantDialogs.module.css';
-import { CURRENCIES, PLANS, TIMEZONES, bookings, errorText, withCurrent } from './tenant-options';
+import {
+  CURRENCIES,
+  PLANS,
+  TENANT_EMPTY_DELETE_ENABLED,
+  TIMEZONES,
+  bookings,
+  errorText,
+  withCurrent,
+} from './tenant-options';
 
 /* Гостиницы из панели платформы (решение владельца 25.10.2026): правка
    карточки и удаление — суперадмину и диспетчеру Kars Avia. Ограничения
@@ -230,7 +238,8 @@ export function TenantDeleteModal({ tenant, open, onClose, onDone, onToggleActiv
   }
 
   const s = summary.data;
-  const empty = s && s.reservations === 0;
+  // Пока удаление пустой выключено, и пустую гостиницу окно ведёт по акту.
+  const empty = TENANT_EMPTY_DELETE_ENABLED && s && s.reservations === 0;
   const close = busy ? undefined : onClose;
 
   let body;

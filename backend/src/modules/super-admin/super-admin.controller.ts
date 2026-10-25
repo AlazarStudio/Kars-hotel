@@ -9,10 +9,10 @@ import { ApplyFeatureDto } from './dto/apply-feature.dto';
 import { AuthenticatedRequestUser } from '../auth/strategies/jwt.strategy';
 
 /* Гард — у каждой ручки: диспетчеру (PlatformOperatorGuard) открыты сводка,
-   гостиницы (список, заведение, правка, выключение, удаление и уход по акту),
-   вход «от имени» и функции гостиниц; сотрудники гостиниц и настройки —
-   суперадмину. Новая ручка без гарда сюда не пройдёт незамеченной: тест
-   super-admin-guards. */
+   гостиницы (список, заведение, правка, выключение, удаление пустой — пока
+   выключено), вход «от имени» и функции гостиниц; уход по акту с выгрузкой,
+   сотрудники гостиниц и настройки — суперадмину. Новая ручка без гарда сюда
+   не пройдёт незамеченной: тест super-admin-guards. */
 @Controller('admin')
 export class SuperAdminController {
   constructor(
@@ -65,7 +65,8 @@ export class SuperAdminController {
     return this.svc.tenantSummary(id);
   }
 
-  /** Пустая гостиница (без броней) — удаляется сразу; с бронями — 409, только по акту. */
+  /** Пустая гостиница (без броней) — удаляется сразу; с бронями — 409, только по акту.
+   *  Пока ВЫКЛЮЧЕНО (`tenant-delete.switch.ts`): 403, ждёт удаления «в архив». */
   @Delete('tenants/:id')
   @UseGuards(PlatformOperatorGuard)
   deleteTenant(@Param('id') id: string, @Req() req: Request) {
@@ -73,9 +74,12 @@ export class SuperAdminController {
     return this.exit.deleteEmpty(id, user.userId);
   }
 
-  /* Уход гостиницы (152-ФЗ, план 13.8): выгрузка, затем уничтожение по акту. */
+  /* Уход гостиницы (152-ФЗ, план 13.8): выгрузка, затем уничтожение по акту.
+     Только суперадмину: уничтожение стирает данные, а выгрузка отдаёт все
+     персональные данные гостиницы одним файлом (днём 25.10.2026 были открыты
+     диспетчеру, вечером владелец вернул как было). */
   @Get('tenants/:id/export')
-  @UseGuards(PlatformOperatorGuard)
+  @UseGuards(SuperAdminGuard)
   async exportTenant(@Param('id') id: string, @Req() req: Request, @Res() res: Response) {
     const user = req.user as AuthenticatedRequestUser;
     const { fileName, json } = await this.exit.export(id, user.userId);
@@ -85,7 +89,7 @@ export class SuperAdminController {
   }
 
   @Post('tenants/:id/destroy')
-  @UseGuards(PlatformOperatorGuard)
+  @UseGuards(SuperAdminGuard)
   destroyTenant(@Param('id') id: string, @Body() body: { confirmSlug?: string }, @Req() req: Request) {
     const user = req.user as AuthenticatedRequestUser;
     return this.exit.destroy(id, body?.confirmSlug, user.userId);

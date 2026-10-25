@@ -7,7 +7,7 @@ import classes from './AdminPanel.module.css';
 import JournalSection from './JournalSection';
 import ConfirmDialog from '../HotelPMS/shared/ConfirmDialog';
 import { TenantDeleteModal, TenantEditModal } from './TenantDialogs';
-import { CURRENCIES, PLANS, TIMEZONES, errorText } from './tenant-options';
+import { CURRENCIES, PLANS, TENANT_EMPTY_DELETE_ENABLED, TIMEZONES, errorText } from './tenant-options';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -178,12 +178,17 @@ function OverviewSection() {
 
 // ─── Hotels ───────────────────────────────────────────────────────────────────
 
-/* Гостиницы (решение владельца 25.10.2026): заведение, правка, выключение и
-   удаление — суперадмину и диспетчеру Kars Avia. Удаление: пустую (без
-   броней) — сразу, с бронями — по акту 152-ФЗ (выключить → выгрузить →
-   ввести код); окно `TenantDeleteModal` само выбирает путь. */
+/* Гостиницы (решение владельца 25.10.2026): заведение, правка и выключение —
+   суперадмину и диспетчеру Kars Avia. Удаление пустой (без броней) сразу —
+   ВЫКЛЮЧЕНО (TENANT_EMPTY_DELETE_ENABLED): удаление не должно стирать данные;
+   пока остаётся уход по акту 152-ФЗ (выключить → выгрузить → ввести код) —
+   у суперадмина. Окно `TenantDeleteModal` само выбирает путь. */
 function HotelsSection() {
-  const { impersonate } = useAuth();
+  const { impersonate, user } = useAuth();
+  /* Выгрузка и удаление: пока удаление пустой гостиницы выключено, остаётся
+     только уход по акту (выгрузка → код) — он у суперадмина (сервер отвечает
+     диспетчеру 403). Включённое удаление «в архив» откроет кнопку всем. */
+  const canExit = TENANT_EMPTY_DELETE_ENABLED || !user?.isDispatcher;
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [search, setSearch] = React.useState('');
@@ -272,19 +277,23 @@ function HotelsSection() {
                       >
                         {t.isActive ? 'Откл.' : 'Вкл.'}
                       </button>
-                      <button className={classes.btnAction} onClick={() => handleExport(t)} title="Выгрузить все данные гостиницы">
-                        Выгрузить
-                      </button>
-                      <button
-                        className={`${classes.btnAction} ${classes.btnActionOff}`}
-                        onClick={() => {
-                          setDeleteId(t.id);
-                          setDeleteSnap(t);
-                        }}
-                        title="Удалить гостиницу"
-                      >
-                        Удалить
-                      </button>
+                      {canExit && (
+                        <button className={classes.btnAction} onClick={() => handleExport(t)} title="Выгрузить все данные гостиницы">
+                          Выгрузить
+                        </button>
+                      )}
+                      {canExit && (
+                        <button
+                          className={`${classes.btnAction} ${classes.btnActionOff}`}
+                          onClick={() => {
+                            setDeleteId(t.id);
+                            setDeleteSnap(t);
+                          }}
+                          title="Удалить гостиницу"
+                        >
+                          Удалить
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

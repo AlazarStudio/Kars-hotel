@@ -22,17 +22,18 @@ describe('Панель платформы — гарды', () => {
 
   /* + функции гостиниц массово (решение владельца 22.10.2026): персональных
      данных в них нет.
-     + заведение, правка, выключение, удаление гостиниц и уход по акту с
-     выгрузкой (решение владельца 25.10.2026). Сотрудники гостиниц
-     (getTenant, listUsers, toggleUserActive) и настройки — НЕ диспетчеру. */
+     + заведение, правка, выключение и удаление пустой гостиницы (решение
+     владельца 25.10.2026). Уход по акту с выгрузкой (exportTenant,
+     destroyTenant) — НЕ диспетчеру: днём 25.10 был открыт, вечером владелец
+     вернул суперадмину (стирает данные, выгрузка — все ПДн гостиницы).
+     Сотрудники гостиниц (getTenant, listUsers, toggleUserActive) и
+     настройки — тоже НЕ диспетчеру. */
   it('диспетчеру — ровно сводка, гостиницы, вход «от имени» и функции гостиниц', () => {
     const forDispatcher = handlers.filter((h) => guardsOf(h).includes(PlatformOperatorGuard)).sort();
     expect(forDispatcher).toEqual([
       'applyFeature',
       'createTenant',
       'deleteTenant',
-      'destroyTenant',
-      'exportTenant',
       'getStats',
       'impersonate',
       'listFeatures',

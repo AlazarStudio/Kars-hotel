@@ -1,6 +1,12 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { SuperAdminService } from './super-admin.service';
 import { EMPTY_HOTEL_MARK, TenantExitService } from './tenant-exit.service';
+import { tenantDeleteSwitch } from './tenant-delete.switch';
 
 /* Гостиницы из панели платформы (решение владельца 25.10.2026): заведение без
  * владельца, предупреждение о дубле, правка с ограничением на валюту, удаление
@@ -226,6 +232,12 @@ describe('Правка гостиницы', () => {
   });
 });
 
+describe('Выключатель удаления гостиниц', () => {
+  it('выключен, пока удаление не станет «в архив» (25.10.2026)', () => {
+    expect(tenantDeleteSwitch.enabled).toBe(false);
+  });
+});
+
 describe('Удаление пустой гостиницы', () => {
   function exitService(opts: { reservations?: number; tenant?: object | null } = {}) {
     const tx = {
@@ -252,8 +264,26 @@ describe('Удаление пустой гостиницы', () => {
       storage,
       logger: { log: jest.fn(), error: jest.fn() },
     });
-    return { svc, tx, storage };
+    return { svc, tx, storage, admin };
   }
+
+  /* Выключено (решение владельца 25.10.2026, вечер): удаление не должно
+     стирать данные из базы. Остальные тесты — поведение при включённом. */
+  beforeEach(() => {
+    tenantDeleteSwitch.enabled = true;
+  });
+  afterEach(() => {
+    tenantDeleteSwitch.enabled = false;
+  });
+
+  it('выключенное — 403, ни транзакции, ни файлов, ни акта', async () => {
+    tenantDeleteSwitch.enabled = false;
+    const { svc, admin, storage } = exitService();
+    await expect(svc.deleteEmpty('t1', 'actor-1')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(admin.$transaction).not.toHaveBeenCalled();
+    expect(admin.tenant.findUnique).not.toHaveBeenCalled();
+    expect(storage.deleteTenantFiles).not.toHaveBeenCalled();
+  });
 
   it('с бронями — 409, ничего не стирается, файлы целы, акта нет', async () => {
     const { svc, tx, storage } = exitService({ reservations: 1 });

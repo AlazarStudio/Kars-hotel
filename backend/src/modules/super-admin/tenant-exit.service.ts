@@ -1,13 +1,22 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { StorageService } from '../../common/storage/storage.service';
+import { tenantDeleteSwitch } from './tenant-delete.switch';
 
 /* УХОД ГОСТИНИЦЫ ИЗ PMS (152-ФЗ, Г-22, ГС-09; план 13.8).
  *
- * Две ступени, обе — суперадмин или диспетчер Kars Avia (решение владельца
- * 25.10.2026; до того — только суперадмин). Пустую гостиницу, без броней,
- * удаляют сразу — `deleteEmpty`:
+ * Две ступени, обе — только суперадмин платформы (25.10.2026 днём были
+ * открыты и диспетчеру, вечером владелец вернул как было: уничтожение стирает
+ * данные). Пустую гостиницу, без броней, удаляет сразу `deleteEmpty` — он
+ * выключен (`tenant-delete.switch.ts`), пока удаление не станет «в архив»:
  *  1. ВЫГРУЗКА — все строки всех таблиц с tenant_id одним JSON (гостинице —
  *     её данные). Секреты вырезаются: хеши паролей и токенов, ключ отчётов.
  *     В акт — время, кто и контрольная сумма файла.
@@ -138,6 +147,9 @@ export class TenantExitService {
    * контрольной суммы: журнал гостиницы уходит вместе с ней.
    */
   async deleteEmpty(tenantId: string, actorId: string) {
+    if (!tenantDeleteSwitch.enabled) {
+      throw new ForbiddenException('Удаление гостиниц пока выключено');
+    }
     const tenant = await this.tenantOr404(tenantId);
     const tables = await this.tenantTables();
     let counts: Record<string, number> = {};
