@@ -21,6 +21,10 @@ const RULES = [
     `Заселить можно только бронь в статусе ${st('new')} или ${st('confirmed')}.`],
   [409, /^Cannot mark as no-show:/, () =>
     `${st('no_show')} отмечается только у брони в статусе ${st('new')} или ${st('confirmed')}.`],
+  [403, /^This reservation belongs to an external partner \(Kars Avia\) and cannot be cancelled/, () =>
+    'Бронь из Kars Avia отменяется только в заявке Kars Avia.'],
+  [409, /^Cannot cancel: reservation is already cancelled or checked out/, () =>
+    `Отменить нельзя: бронь уже в статусе ${st('cancelled')} или ${st('checked_out')}.`],
   [409, /^Reservation was modified by another user/, () =>
     'Бронь уже изменили — обновите страницу и повторите.'],
   [409, /^No available place in this room/, () =>

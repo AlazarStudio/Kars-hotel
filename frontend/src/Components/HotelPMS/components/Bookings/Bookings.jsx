@@ -178,20 +178,6 @@ function Bookings() {
     }
   };
 
-  const handleDelete = async (id) => {
-    const booking = bookings.find(b => b.id === id);
-    if (!booking) return;
-    setSavingError(null);
-    try {
-      await updateReservation(id, { version: booking.version, status: 'CANCELLED' });
-      await reload();
-      setShowForm(false);
-      setFormData(null);
-    } catch (err) {
-      setSavingError(reservationErrorText(err, 'Ошибка'));
-    }
-  };
-
   const renderBookingsTable = (list, emptyText) => (
     <div className={classes.table}>
       <div className={classes.tableHead}>
@@ -446,7 +432,7 @@ function Bookings() {
           categories={categories}
           bookings={bookings}
           onSave={handleSave}
-          onDelete={formData.id ? handleDelete : undefined}
+          onCancelled={reload}
           onClose={() => { setShowForm(false); setFormData(null); setSavingError(null); }}
           savingError={savingError}
         />

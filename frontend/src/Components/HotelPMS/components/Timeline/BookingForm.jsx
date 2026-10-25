@@ -3,6 +3,7 @@ import { differenceInDays, parseISO } from 'date-fns';
 import classes from './Timeline.module.css';
 import { BOOKING_STATUS, BOOKING_SOURCE } from '../../constants';
 import { anonymizeReservation, cancelReservation, markReservationViewed } from '../../../../api/reservations';
+import { formStatuses } from '../../shared/booking-statuses';
 import { useAuth } from '../../../../auth/AuthContext';
 import { useFolio, useAddPayment } from '../../../../hooks/api/useFolio';
 import { useReservationMeals } from '../../../../hooks/api/useMeals';
@@ -166,7 +167,7 @@ function getConflict(bookings, roomId, checkIn, checkOut, excludeId, roomCapacit
   return overlapping[0] ?? null;
 }
 
-function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDelete, onClose, savingError }) {
+function BookingForm({ booking, rooms, categories, bookings = [], onSave, onCancelled, onClose, savingError }) {
   const isNew = !booking.id;
   // Bookings owned by an external partner channel (Kars Avia) are managed there —
   // hotel staff can view them but cannot cancel them locally. The backend enforces
@@ -292,7 +293,7 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
       await cancelReservation(booking.id, reason);
       setShowCancel(false);
       onClose?.();
-      if (typeof onDelete === 'function') onDelete(booking.id);
+      onCancelled?.();
     } catch (err) {
       console.error('Cancel failed:', err);
       setCancelError('Не удалось отменить бронь. Попробуйте ещё раз.');
@@ -475,17 +476,20 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onDele
             <div className={`${classes.formGroup} ${classes.formFull}`}>
               <div className={classes.formLabel}>Статус</div>
               <div className={classes.statusGrid}>
-                {Object.entries(BOOKING_STATUS).map(([key, cfg]) => (
-                  <div
-                    key={key}
-                    className={`${classes.statusOption} ${form.status === key ? classes.selected : ''}`}
-                    style={form.status === key ? { background: cfg.color, borderColor: cfg.color, color: '#fff' } : {}}
-                    onClick={() => setForm(prev => ({ ...prev, status: key }))}
-                    title={cfg.hint}
-                  >
-                    {cfg.label}
-                  </div>
-                ))}
+                {formStatuses(booking).map(key => {
+                  const cfg = BOOKING_STATUS[key];
+                  return (
+                    <div
+                      key={key}
+                      className={`${classes.statusOption} ${form.status === key ? classes.selected : ''}`}
+                      style={form.status === key ? { background: cfg.color, borderColor: cfg.color, color: '#fff' } : {}}
+                      onClick={() => setForm(prev => ({ ...prev, status: key }))}
+                      title={cfg.hint}
+                    >
+                      {cfg.label}
+                    </div>
+                  );
+                })}
               </div>
               {form.status && BOOKING_STATUS[form.status]?.hint && (
                 <div style={{ fontSize: 11, color: '#8896AB', marginTop: 5, lineHeight: 1.4 }}>

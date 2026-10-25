@@ -46,6 +46,27 @@ const FACTS: Record<Fact, { from: string[]; action: string; refusal: string }> =
 };
 const isFact = (status: string): status is Fact => Object.keys(FACTS).includes(status);
 
+/* Отмена — тоже действие, а не поле формы (25.10.2026): одно правило для
+ * кнопки «Отменить бронь», статуса «Отменено» в форме и отмены партнёром.
+ * Бронь партнёра (Kars Avia) отменяет только он; отменённую и выселенную
+ * отменить нельзя. */
+type CancelRefusal = 'CHANNEL_MANAGED' | 'ALREADY_CLOSED';
+const cancelRefusal = (
+  cur: { status: string; channel_managed: boolean },
+  fromChannel?: boolean,
+): CancelRefusal | null => {
+  if (cur.channel_managed && !fromChannel) return 'CHANNEL_MANAGED';
+  if (['CANCELLED', 'CHECKED_OUT'].includes(cur.status)) return 'ALREADY_CLOSED';
+  return null;
+};
+const cancelRefused = (refusal: CancelRefusal) =>
+  refusal === 'CHANNEL_MANAGED'
+    ? new ForbiddenException(
+        'This reservation belongs to an external partner (Kars Avia) and cannot be ' +
+          'cancelled from the hotel. Please cancel it through the partner that created it.',
+      )
+    : new ConflictException(`Cannot cancel: reservation is already cancelled or checked out`);
+
 @Injectable()
 export class ReservationsService {
   private readonly logger = new Logger(ReservationsService.name);
@@ -229,6 +250,7 @@ export class ReservationsService {
           status: string;
           changes: { before: Record<string, unknown>; after: Record<string, unknown> };
           fact: { type: Fact; before: string; roomId: string } | null;
+          cancelledFrom: string | null;
         }
       | {
           ok: false;
@@ -241,7 +263,8 @@ export class ReservationsService {
             | 'BOOKING_CONFLICT'
             | 'CHANNEL_GUESTS';
         }
-      | { ok: false; reason: 'WRONG_STATUS'; fact: Fact };
+      | { ok: false; reason: 'WRONG_STATUS'; fact: Fact }
+      | { ok: false; reason: 'CANCEL_REFUSED'; refusal: CancelRefusal };
 
     const result = await this.prisma.forTenant(async (tx): Promise<TxResult> => {
       // 1. Fetch the current row
@@ -327,6 +350,14 @@ export class ReservationsService {
       if (fact && !(await this.admitFact(tx, id, fact, cur.status))) {
         return { ok: false, reason: 'WRONG_STATUS', fact };
       }
+
+      /* 3b. «Отменено» формой — тем же правилом, что кнопкой «Отменить бронь»
+         (25.10.2026). Сетка статусов ставила CANCELLED напрямую: бронь Kars
+         Avia отменялась из кабинета в обход 403, а выселенная — «отменялась»
+         задним числом. Тот же статус повторно — не новая отмена. */
+      const cancelling = status !== cur.status && status === 'CANCELLED';
+      const refusal = cancelling ? cancelRefusal(cur, opts.fromChannel) : null;
+      if (refusal) return { ok: false, reason: 'CANCEL_REFUSED', refusal };
 
       const source = dto.source
         ? VALID_SOURCES.includes(dto.source.toUpperCase())
@@ -474,6 +505,7 @@ export class ReservationsService {
         ...res,
         changes: { before, after },
         fact: fact && { type: fact, before: cur.status, roomId },
+        cancelledFrom: cancelling ? cur.status : null,
       };
     });
 
@@ -501,6 +533,8 @@ export class ReservationsService {
           );
         case 'WRONG_STATUS':
           throw new ConflictException(FACTS[result.fact].refusal);
+        case 'CANCEL_REFUSED':
+          throw cancelRefused(result.refusal);
       }
     }
 
@@ -522,6 +556,9 @@ export class ReservationsService {
     if (result.fact) {
       const { type, before, roomId } = result.fact;
       await this.announceFact(tenantId, result.id, type, before, roomId);
+    }
+    if (result.cancelledFrom) {
+      await this.journalCancel(tenantId, result.id, result.cancelledFrom);
     }
 
     /* Правка брони партнёра — ему сообщается ЗДЕСЬ, откуда бы она ни пришла:
@@ -846,7 +883,8 @@ export class ReservationsService {
 
     type TxResult =
       | { ok: true; id: string; version: number; before: string }
-      | { ok: false; reason: 'NOT_FOUND' | 'WRONG_STATUS' | 'CHANNEL_MANAGED' };
+      | { ok: false; reason: 'NOT_FOUND' }
+      | { ok: false; reason: 'CANCEL_REFUSED'; refusal: CancelRefusal };
 
     const result = await this.prisma.forTenant(async (tx): Promise<TxResult> => {
       const rows = await tx.$queryRaw<
@@ -857,12 +895,8 @@ export class ReservationsService {
       if (!rows.length) return { ok: false, reason: 'NOT_FOUND' };
       const cur = rows[0];
       // A partner owns this booking — hotel staff cannot cancel it locally.
-      if (cur.channel_managed && !opts.fromChannel) {
-        return { ok: false, reason: 'CHANNEL_MANAGED' };
-      }
-      if (['CANCELLED', 'CHECKED_OUT'].includes(cur.status)) {
-        return { ok: false, reason: 'WRONG_STATUS' };
-      }
+      const refusal = cancelRefusal(cur, opts.fromChannel);
+      if (refusal) return { ok: false, reason: 'CANCEL_REFUSED', refusal };
 
       const notesSuffix = reason ? `\n[Cancelled: ${reason}]` : '';
 
@@ -881,15 +915,26 @@ export class ReservationsService {
 
     if (!result.ok) {
       if (result.reason === 'NOT_FOUND') throw new NotFoundException('Reservation not found');
-      if (result.reason === 'CHANNEL_MANAGED') {
-        throw new ForbiddenException(
-          'This reservation belongs to an external partner (Kars Avia) and cannot be ' +
-            'cancelled from the hotel. Please cancel it through the partner that created it.',
-        );
-      }
-      throw new ConflictException(`Cannot cancel: reservation is already cancelled or checked out`);
+      throw cancelRefused(result.refusal);
     }
 
+    await this.journalCancel(tenantId, id, result.before, userId, reason);
+
+    await this.timelineService.invalidate(tenantId);
+    this.timelineGateway.notifyUpdate(tenantId, { action: 'updated' });
+
+    return { id: result.id, status: 'CANCELLED', version: result.version, cancelled: true };
+  }
+
+  /** Отмена — в журнал: кнопкой, формой или партнёром. `userId` не передан —
+   *  журнал берёт пользователя из запроса. */
+  private async journalCancel(
+    tenantId: string,
+    id: string,
+    before: string,
+    userId?: string,
+    reason?: string,
+  ) {
     await this.prisma.writeAuditLog({
       tenantId,
       userId,
@@ -897,15 +942,10 @@ export class ReservationsService {
       entityId: id,
       action: 'cancel',
       diff: {
-        before: { status: result.before },
+        before: { status: before },
         after: { status: 'CANCELLED', reason: reason ?? null },
       },
     });
-
-    await this.timelineService.invalidate(tenantId);
-    this.timelineGateway.notifyUpdate(tenantId, { action: 'updated' });
-
-    return { id: result.id, status: 'CANCELLED', version: result.version, cancelled: true };
   }
 
   /* Раскладка питания брони — то, что кухня готовит по дням (KARV3-51).

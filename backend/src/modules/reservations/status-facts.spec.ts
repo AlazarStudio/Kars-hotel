@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { TenantContext } from '../../common/context/tenant-context';
 import { FolioService } from '../folio/folio.service';
 import { ReservationsService } from './reservations.service';
@@ -8,7 +8,10 @@ import { ReservationsService } from './reservations.service';
  * рабочая»). Статус «Выехал» из формы вставал напрямую: без сверки счёта, без
  * времени выезда, номер не уходил в уборку, партнёр не получал
  * guest.checked_out. Отрицанием: форма НЕ выселяет с долгом и без заезда;
- * тот же статус повторно — НЕ новый факт; прочие статусы фактов НЕ шлют. */
+ * тот же статус повторно — НЕ новый факт; прочие статусы фактов НЕ шлют.
+ *
+ * «Отменено» формой — тем же правилом, что кнопкой «Отменить бронь» (там же,
+ * 25.10.2026): кабинет НЕ отменяет бронь Kars Avia и выселенную бронь. */
 
 const CUR = {
   id: 'r1',
@@ -121,8 +124,8 @@ const asOwner = <T>(fn: () => Promise<T>) =>
     fn,
   );
 
-const save = (svc: ReservationsService, dto: object) =>
-  asOwner(() => svc.update('r1', { ...FORM, ...dto } as never));
+const save = (svc: ReservationsService, dto: object, opts?: { fromChannel?: boolean }) =>
+  asOwner(() => svc.update('r1', { ...FORM, ...dto } as never, opts));
 
 describe('«Выехал» формой брони', () => {
   it('при долге по счёту — НЕ выселяет: 409, статус не пишется, партнёру ничего', async () => {
@@ -239,5 +242,76 @@ describe('кнопка «Выселить» — то же правило', () =>
     expect(t.events()).toEqual(['guest.checked_out']);
     expect(t.executed.some((s) => s.includes(`'DIRTY'`))).toBe(true);
     expect(t.audit).toEqual([expect.objectContaining({ action: 'check_out', userId: 'u1' })]);
+  });
+});
+
+describe('«Отменено» формой брони', () => {
+  it('бронь Kars Avia — кабинет НЕ отменяет: 403 тем же текстом, что кнопка; статус не пишется, партнёру ничего', async () => {
+    const form = make({ status: 'CONFIRMED', channel_managed: true });
+    const formErr = await save(form.svc, { status: 'cancelled' }).catch((e) => e);
+    expect(formErr).toBeInstanceOf(ForbiddenException);
+    expect(form.wrote()).toBe(false);
+    expect(form.audit).toEqual([]);
+    expect(form.webhooks.emitReservationChanged).not.toHaveBeenCalled();
+
+    const button = make({ status: 'CONFIRMED', channel_managed: true });
+    const buttonErr = await asOwner(() => button.svc.cancel('r1', 'u1')).catch((e) => e);
+    expect(buttonErr).toBeInstanceOf(ForbiddenException);
+    expect(formErr.message).toBe(buttonErr.message);
+    expect(button.wrote()).toBe(false);
+  });
+
+  it('бронь Kars Avia — партнёрский API отменяет: и правкой, и отменой', async () => {
+    const edit = make({ status: 'CONFIRMED', channel_managed: true });
+    await expect(save(edit.svc, { status: 'cancelled' }, { fromChannel: true })).resolves.toMatchObject({
+      status: 'CANCELLED',
+    });
+    expect(edit.audit.map((a) => a.action)).toEqual(['update', 'cancel']);
+    expect(edit.webhooks.emitReservationChanged).toHaveBeenCalledWith('r1');
+
+    const cancel = make({ status: 'CONFIRMED', channel_managed: true });
+    await expect(
+      asOwner(() => cancel.svc.cancel('r1', undefined as never, 'Рейс отменён', { fromChannel: true })),
+    ).resolves.toMatchObject({ status: 'CANCELLED', cancelled: true });
+    expect(cancel.wrote()).toBe(true);
+    expect(cancel.audit).toEqual([
+      expect.objectContaining({
+        action: 'cancel',
+        diff: { before: { status: 'CONFIRMED' }, after: { status: 'CANCELLED', reason: 'Рейс отменён' } },
+      }),
+    ]);
+  });
+
+  it('своя бронь гостиницы — отменяет, как раньше: журнал «cancel», без событий заезда и выезда', async () => {
+    const t = make({ status: 'CONFIRMED', channel_managed: false });
+    await expect(save(t.svc, { status: 'cancelled' })).resolves.toMatchObject({ status: 'CANCELLED' });
+    expect(t.audit.map((a) => a.action)).toEqual(['update', 'cancel']);
+    expect(t.audit[1]).toMatchObject({
+      diff: { before: { status: 'CONFIRMED' }, after: { status: 'CANCELLED', reason: null } },
+    });
+    expect(t.webhooks.emitForReservation).not.toHaveBeenCalled();
+    expect(t.executed).toEqual([]);
+  });
+
+  it('выселенную бронь — НЕ отменяет, отказ тот же, что у кнопки', async () => {
+    const form = make({ status: 'CHECKED_OUT', channel_managed: false });
+    const formErr = await save(form.svc, { status: 'cancelled' }).catch((e) => e);
+    expect(formErr).toBeInstanceOf(ConflictException);
+    expect(form.wrote()).toBe(false);
+    expect(form.audit).toEqual([]);
+
+    const button = make({ status: 'CHECKED_OUT', channel_managed: false });
+    const buttonErr = await asOwner(() => button.svc.cancel('r1', 'u1')).catch((e) => e);
+    expect(buttonErr).toBeInstanceOf(ConflictException);
+    expect(formErr.message).toBe(buttonErr.message);
+  });
+
+  it.each([
+    ['бронь Kars Avia', true],
+    ['своя бронь', false],
+  ])('повторно «Отменено» — НЕ новая отмена (%s): правка проходит, журнал без «cancel»', async (_n, channel) => {
+    const t = make({ status: 'CANCELLED', channel_managed: channel });
+    await expect(save(t.svc, { status: 'cancelled', notes: 'Гость звонил' })).resolves.toBeDefined();
+    expect(t.audit.map((a) => a.action)).toEqual(['update']);
   });
 });

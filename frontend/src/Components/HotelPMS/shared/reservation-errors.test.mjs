@@ -41,6 +41,19 @@ test('неверный исходный статус — названия ста
   );
 });
 
+test('отказ в отмене — по-русски: бронь Kars Avia и закрытая бронь', () => {
+  assert.equal(
+    reservationErrorText(refusal(403,
+      'This reservation belongs to an external partner (Kars Avia) and cannot be cancelled from the hotel. ' +
+        'Please cancel it through the partner that created it.')),
+    'Бронь из Kars Avia отменяется только в заявке Kars Avia.',
+  );
+  assert.equal(
+    reservationErrorText(refusal(409, 'Cannot cancel: reservation is already cancelled or checked out')),
+    'Отменить нельзя: бронь уже в статусе «Отменено» или «Выехал».',
+  );
+});
+
 test('бронь изменили параллельно — и правка, и обмен местами', () => {
   for (const msg of [
     'Reservation was modified by another user — please reload and try again.',

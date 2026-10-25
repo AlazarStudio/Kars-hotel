@@ -441,20 +441,6 @@ function Timeline({ multiPlaceEnabled = true }) {
     }
   }, [reload]);
 
-  const handleFormDelete = useCallback(async (id) => {
-    const booking = bookings.find(b => b.id === id);
-    if (!booking) return;
-    setFormError(null);
-    try {
-      await updateReservation(id, { version: booking.version, status: 'CANCELLED' });
-      await reload();
-      setShowForm(false);
-      setFormData(null);
-    } catch (err) {
-      setFormError(reservationErrorText(err, 'Ошибка'));
-    }
-  }, [bookings, reload]);
-
   const openEditForm = useCallback((booking) => {
     // Prevent click that fires right after mouseup from opening the form
     if (dragRef.current || dragMovedRef.current) {
@@ -861,7 +847,7 @@ function Timeline({ multiPlaceEnabled = true }) {
           categories={categories}
           bookings={bookings}
           onSave={handleFormSave}
-          onDelete={handleFormDelete}
+          onCancelled={reload}
           onClose={() => { setShowForm(false); setFormData(null); setFormError(null); }}
           savingError={formError}
         />
