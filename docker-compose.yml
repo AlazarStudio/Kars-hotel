@@ -23,7 +23,7 @@ x-logging: &logging
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     logging: *logging
     environment:
