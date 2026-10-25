@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Modal from './Modal';
 import formClasses from './Form.module.css';
 
@@ -18,6 +18,12 @@ export default function ConfirmDialog({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+
+  // Диалог не размонтируется между показами: без сброса отказ прошлого
+  // подтверждения («на номере №201 есть брони») висел над следующим.
+  useEffect(() => {
+    if (open) setError(null);
+  }, [open]);
 
   const handleConfirm = async () => {
     setBusy(true);

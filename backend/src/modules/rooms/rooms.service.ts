@@ -1,7 +1,8 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { RoomPartnerHold, RoomStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
+  PRISMA_FOREIGN_KEY_VIOLATION,
   PRISMA_RECORD_NOT_FOUND,
   PRISMA_UNIQUE_VIOLATION,
   asError,
@@ -11,6 +12,7 @@ import { TenantContext } from '../../common/context/tenant-context';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 import { CreateManyRoomsDto } from './dto/create-many-rooms.dto';
+import { roomDeleteSwitch } from './room-delete.switch';
 
 export interface ListRoomsFilter {
   roomTypeId?: string;
@@ -251,11 +253,54 @@ export class RoomsService {
     return result;
   }
 
+  /**
+   * Удаление номера — чтобы убирать лишние записи (дубли переноса из старой
+   * системы, 24.10.2026: «61» и «61 (2)» — одна комната).
+   *
+   * Номер, на котором есть хоть одна бронь — действующая, прошлая или
+   * отменённая, — НЕ удаляется: на брони держатся счёт, оплаты и отчёты, и
+   * удаление оборвало бы их историю (в схеме это Restrict). Отказ — 409 со
+   * словами, а не 500 от внешнего ключа: сперва брони переносят на другой
+   * номер. Проверка и удаление — в одной транзакции, а внешний ключ ловит
+   * бронь, заведённую между ними. Задачи уборки уходят вместе с номером
+   * (каскад в схеме).
+   *
+   * В журнал пишется, каким номер был: восстановить его можно только по нему.
+   *
+   * Выключатель — `room-delete.switch.ts`: выключенное удаление отказывает
+   * раньше любого обращения к базе.
+   */
   async remove(id: string) {
+    if (!roomDeleteSwitch.enabled) {
+      throw new ForbiddenException('Удаление номеров пока выключено');
+    }
     const tenantId = TenantContext.getTenantIdOrThrow();
+    let before: Record<string, unknown>;
     try {
-      await this.prisma.forTenant((tx) => tx.room.delete({ where: { id } }));
+      before = await this.prisma.forTenant(async (tx) => {
+        const room = await tx.room.findUnique({
+          where: { id },
+          select: {
+            number: true,
+            roomTypeId: true,
+            floor: true,
+            capacity: true,
+            bedType: true,
+            view: true,
+            status: true,
+            isActive: true,
+            partnerHold: true,
+            notes: true,
+          },
+        });
+        if (!room) throw new NotFoundException('Номер не найден');
+        const reservations = await tx.reservation.count({ where: { roomId: id } });
+        if (reservations > 0) throw hasReservations(room.number, reservations);
+        await tx.room.delete({ where: { id } });
+        return room;
+      });
     } catch (e) {
+      if (prismaErrorCode(e) === PRISMA_FOREIGN_KEY_VIOLATION) throw hasReservations();
       throw this.translatePrismaError(e);
     }
     await this.prisma.writeAuditLog({
@@ -263,7 +308,7 @@ export class RoomsService {
       entity: 'room',
       entityId: id,
       action: 'delete',
-      diff: { before: { id }, after: {} },
+      diff: { before: { id, ...before }, after: {} },
     });
     return { ok: true };
   }
@@ -278,4 +323,21 @@ export class RoomsService {
         return asError(e);
     }
   }
+}
+
+/** Отказ в удалении номера с бронями. Без числа — когда бронь поймал внешний ключ. */
+function hasReservations(number?: string, count?: number): ConflictException {
+  const which = number ? `Номер №${number}` : 'Номер';
+  const what = count ? `${count} ${plural(count, 'бронь', 'брони', 'броней')}` : 'есть брони';
+  return new ConflictException(
+    `${which} нельзя удалить: на нём ${what}, а на них держатся счёт и история. Перенесите брони на другой номер, затем удалите.`,
+  );
+}
+
+function plural(n: number, one: string, few: string, many: string): string {
+  const m10 = n % 10;
+  const m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
 }

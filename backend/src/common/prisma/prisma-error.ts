@@ -28,6 +28,9 @@ export const PRISMA_UNIQUE_VIOLATION = 'P2002';
 /** Record required by the operation was not found. */
 export const PRISMA_RECORD_NOT_FOUND = 'P2025';
 
+/** Foreign key constraint failed — e.g. deleting a row other rows still point to. */
+export const PRISMA_FOREIGN_KEY_VIOLATION = 'P2003';
+
 /**
  * Last step of a `translatePrismaError`: whatever we could not classify must
  * still reach the global filter as an Error, so it becomes an honest 500

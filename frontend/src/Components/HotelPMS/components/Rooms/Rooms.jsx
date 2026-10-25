@@ -23,6 +23,12 @@ import {
 } from '../../../../hooks/api/useRooms';
 import { useRunDemoSeed } from '../../../../hooks/api/useDemoSeed';
 
+/* Удаление номеров ВКЛЮЧЕНО (решение владельца 25.10.2026): кнопка «Удалить
+   номер» — в окне правки номера. Переключать — вместе с `roomDeleteSwitch` на
+   сервере (backend/src/modules/rooms/room-delete.switch.ts), иначе кнопка
+   будет получать отказ 403. */
+const ROOM_DELETE_ENABLED = true;
+
 function Rooms() {
   const roomTypesQ = useRoomTypes();
   const roomsQ = useRooms();
@@ -320,6 +326,15 @@ function Rooms() {
             ? updateRoom.mutateAsync({ id: roomModal.editing.id, payload })
             : createRoom.mutateAsync(payload)
         }
+        onDelete={
+          ROOM_DELETE_ENABLED
+            ? () => {
+                const room = roomModal.editing;
+                setRoomModal({ open: false, editing: null, defaultRoomTypeId: undefined });
+                setConfirm({ type: 'room', target: room, name: room.number });
+              }
+            : undefined
+        }
       />
 
       <ConfirmDialog
@@ -328,7 +343,7 @@ function Rooms() {
         message={
           confirm?.type === 'roomType'
             ? `Категория «${confirm?.name}» будет удалена. Если в ней есть номера — удаление не пройдёт.`
-            : `Номер №${confirm?.name} будет удалён без возможности восстановить.`
+            : `Номер №${confirm?.name} будет удалён без возможности восстановить. Номер с бронями удалить нельзя — сначала перенесите брони на другой номер.`
         }
         confirmLabel="Удалить"
         danger
@@ -338,9 +353,6 @@ function Rooms() {
           else if (confirm?.type === 'room') await deleteRoom.mutateAsync(confirm.target.id);
         }}
       />
-
-      {/* Edit room: add a delete button at top of edit modal? Keep simple — */}
-      {/* delete is accessible by long-press / right-click in a future iteration. */}
     </div>
   );
 }

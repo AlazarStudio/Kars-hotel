@@ -30,8 +30,9 @@ const EMPTY = {
  *   defaultRoomTypeId: string | undefined  (auto-select when creating from inside a category)
  *   onClose: () => void
  *   onSubmit: (payload) => Promise<void>
+ *   onDelete: (() => void) | undefined  (only when editing; opens the confirm dialog)
  */
-export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTypeId, onClose, onSubmit }) {
+export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTypeId, onClose, onSubmit, onDelete }) {
   const [values, setValues] = useState(EMPTY);
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState(null);
@@ -107,6 +108,11 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
       onClose={busy ? undefined : onClose}
       footer={
         <>
+          {editing && onDelete && (
+            <button type="button" className={formClasses.btnDangerGhost} onClick={onDelete} disabled={busy}>
+              Удалить номер
+            </button>
+          )}
           <button type="button" className={formClasses.btnSecondary} onClick={onClose} disabled={busy}>
             Отмена
           </button>
