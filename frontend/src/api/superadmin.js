@@ -25,6 +25,18 @@ export async function updateTenant(id, payload) {
   return data;
 }
 
+/** Сколько в гостинице броней, номеров, категорий и учёток — для окон правки и удаления. */
+export async function getTenantSummary(id) {
+  const { data } = await api.get(`/admin/tenants/${id}/summary`);
+  return data; // { reservations, rooms, roomTypes, users }
+}
+
+/** Удаление пустой гостиницы (без броней). С бронями сервер отвечает 409 — только по акту. */
+export async function deleteTenant(id) {
+  const { data } = await api.delete(`/admin/tenants/${id}`);
+  return data; // { actId, counts, files }
+}
+
 export async function toggleTenantActive(id) {
   const { data } = await api.patch(`/admin/tenants/${id}/toggle-active`);
   return data;

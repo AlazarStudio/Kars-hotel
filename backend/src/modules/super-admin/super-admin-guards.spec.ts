@@ -4,9 +4,10 @@ import { SuperAdminController } from './super-admin.controller';
 import { PlatformOperatorGuard, SuperAdminGuard } from './super-admin.guard';
 
 /* 152-ФЗ, Р-34; план 13.3. Диспетчер Kars Avia — не суперадмин: в панели
- * платформы ему открыты сводка, список гостиниц и вход «от имени». Сотрудники
- * всех гостиниц, заведение и выключение гостиниц, настройки — только
- * суперадмину. У КАЖДОЙ ручки свой гард: новая без гарда валит тест. */
+ * платформы ему открыты сводка, гостиницы (с 25.10.2026 — и заведение,
+ * правка, выключение, удаление) и вход «от имени». Сотрудники всех гостиниц
+ * и настройки — только суперадмину. У КАЖДОЙ ручки свой гард: новая без
+ * гарда валит тест. */
 
 const handlers = Object.getOwnPropertyNames(SuperAdminController.prototype).filter((n) => n !== 'constructor');
 const guardsOf = (name: string) =>
@@ -20,10 +21,26 @@ describe('Панель платформы — гарды', () => {
   });
 
   /* + функции гостиниц массово (решение владельца 22.10.2026): персональных
-     данных в них нет. */
-  it('диспетчеру — ровно сводка, список гостиниц, вход «от имени» и функции гостиниц', () => {
+     данных в них нет.
+     + заведение, правка, выключение, удаление гостиниц и уход по акту с
+     выгрузкой (решение владельца 25.10.2026). Сотрудники гостиниц
+     (getTenant, listUsers, toggleUserActive) и настройки — НЕ диспетчеру. */
+  it('диспетчеру — ровно сводка, гостиницы, вход «от имени» и функции гостиниц', () => {
     const forDispatcher = handlers.filter((h) => guardsOf(h).includes(PlatformOperatorGuard)).sort();
-    expect(forDispatcher).toEqual(['applyFeature', 'getStats', 'impersonate', 'listFeatures', 'listTenants']);
+    expect(forDispatcher).toEqual([
+      'applyFeature',
+      'createTenant',
+      'deleteTenant',
+      'destroyTenant',
+      'exportTenant',
+      'getStats',
+      'impersonate',
+      'listFeatures',
+      'listTenants',
+      'tenantSummary',
+      'toggleActive',
+      'updateTenant',
+    ]);
     expect(handlers.filter((h) => !forDispatcher.includes(h)).every((h) => guardsOf(h).includes(SuperAdminGuard))).toBe(true);
   });
 

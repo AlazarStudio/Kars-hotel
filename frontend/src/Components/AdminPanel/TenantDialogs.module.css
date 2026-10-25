@@ -1,0 +1,95 @@
+/* Предупреждение — янтарём: не ошибка, а «подумайте». Ошибка — .alert в Form.module.css. */
+.warn {
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  border-radius: 8px;
+  color: #92400E;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.text {
+  font-size: 14px;
+  color: #374151;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.counts {
+  margin: 0 0 14px;
+  padding-left: 18px;
+  font-size: 13.5px;
+  color: #374151;
+  line-height: 1.6;
+}
+
+.steps {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  font-size: 13.5px;
+  color: #374151;
+}
+
+.stepDone {
+  border-color: #BBF7D0;
+  background: #F0FDF4;
+}
+
+.stepNo {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #E5E7EB;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stepDone .stepNo {
+  background: #16A34A;
+  color: #fff;
+}
+
+.stepBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.stepAction {
+  flex: none;
+}
+
+.code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #F3F4F6;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.success {
+  padding: 10px 12px;
+  background: #F0FDF4;
+  border: 1px solid #BBF7D0;
+  border-radius: 8px;
+  color: #166534;
+  font-size: 13.5px;
+}

@@ -349,8 +349,11 @@
 
 /* ─── Row actions ─────────────────────────────────────────────────────────── */
 
+/* Пять действий у строки гостиницы (с 25.10.2026) на узком экране не влезают
+   в карточку — переносятся на вторую строку, а не уезжают за её край. */
 .rowActions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
@@ -576,6 +579,17 @@
   padding: 10px 14px;
   background: #fef2f2;
   border: 1px solid #fecaca;
+  border-radius: 7px;
+}
+
+/* Предупреждение (возможный дубль гостиницы) — янтарём: не ошибка, решает человек. */
+.formWarn {
+  color: #92400e;
+  font-size: 13px;
+  margin: 16px 0;
+  padding: 10px 14px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
   border-radius: 7px;
 }
 

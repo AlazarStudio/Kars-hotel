@@ -1,16 +1,18 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { PlatformOperatorGuard, SuperAdminGuard } from './super-admin.guard';
 import { SuperAdminService } from './super-admin.service';
 import { TenantExitService } from './tenant-exit.service';
-import { RegisterTenantDto } from '../auth/dto/register-tenant.dto';
+import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { ApplyFeatureDto } from './dto/apply-feature.dto';
 import { AuthenticatedRequestUser } from '../auth/strategies/jwt.strategy';
 
-/* Гард — у каждой ручки: диспетчеру (PlatformOperatorGuard) открыты только
-   сводка, список гостиниц и вход «от имени»; остальное — суперадмину. Новая
-   ручка без гарда сюда не пройдёт незамеченной: тест super-admin-guards. */
+/* Гард — у каждой ручки: диспетчеру (PlatformOperatorGuard) открыты сводка,
+   гостиницы (список, заведение, правка, выключение, удаление и уход по акту),
+   вход «от имени» и функции гостиниц; сотрудники гостиниц и настройки —
+   суперадмину. Новая ручка без гарда сюда не пройдёт незамеченной: тест
+   super-admin-guards. */
 @Controller('admin')
 export class SuperAdminController {
   constructor(
@@ -40,21 +42,40 @@ export class SuperAdminController {
     return this.svc.getTenant(id);
   }
 
+  /* Заведение, правка, выключение и удаление гостиниц — суперадмину и
+     диспетчеру Kars Avia (решение владельца 25.10.2026; до того — только
+     суперадмину). Сотрудники гостиниц (`getTenant`, `users`) и настройки
+     платформы — по-прежнему только суперадмину. */
   @Post('tenants')
-  @UseGuards(SuperAdminGuard)
-  createTenant(@Body() dto: RegisterTenantDto) {
-    return this.svc.createTenant(dto);
+  @UseGuards(PlatformOperatorGuard)
+  createTenant(@Body() dto: CreateTenantDto, @Req() req: Request) {
+    return this.svc.createTenant(dto, req.user as AuthenticatedRequestUser);
   }
 
   @Patch('tenants/:id')
-  @UseGuards(SuperAdminGuard)
-  updateTenant(@Param('id') id: string, @Body() dto: UpdateTenantDto) {
-    return this.svc.updateTenant(id, dto);
+  @UseGuards(PlatformOperatorGuard)
+  updateTenant(@Param('id') id: string, @Body() dto: UpdateTenantDto, @Req() req: Request) {
+    return this.svc.updateTenant(id, dto, req.user as AuthenticatedRequestUser);
+  }
+
+  /** Сколько в гостинице броней, номеров, категорий и сотрудников — для окон удаления и правки. */
+  @Get('tenants/:id/summary')
+  @UseGuards(PlatformOperatorGuard)
+  tenantSummary(@Param('id') id: string) {
+    return this.svc.tenantSummary(id);
+  }
+
+  /** Пустая гостиница (без броней) — удаляется сразу; с бронями — 409, только по акту. */
+  @Delete('tenants/:id')
+  @UseGuards(PlatformOperatorGuard)
+  deleteTenant(@Param('id') id: string, @Req() req: Request) {
+    const user = req.user as AuthenticatedRequestUser;
+    return this.exit.deleteEmpty(id, user.userId);
   }
 
   /* Уход гостиницы (152-ФЗ, план 13.8): выгрузка, затем уничтожение по акту. */
   @Get('tenants/:id/export')
-  @UseGuards(SuperAdminGuard)
+  @UseGuards(PlatformOperatorGuard)
   async exportTenant(@Param('id') id: string, @Req() req: Request, @Res() res: Response) {
     const user = req.user as AuthenticatedRequestUser;
     const { fileName, json } = await this.exit.export(id, user.userId);
@@ -64,14 +85,14 @@ export class SuperAdminController {
   }
 
   @Post('tenants/:id/destroy')
-  @UseGuards(SuperAdminGuard)
+  @UseGuards(PlatformOperatorGuard)
   destroyTenant(@Param('id') id: string, @Body() body: { confirmSlug?: string }, @Req() req: Request) {
     const user = req.user as AuthenticatedRequestUser;
     return this.exit.destroy(id, body?.confirmSlug, user.userId);
   }
 
   @Patch('tenants/:id/toggle-active')
-  @UseGuards(SuperAdminGuard)
+  @UseGuards(PlatformOperatorGuard)
   toggleActive(@Param('id') id: string) {
     return this.svc.toggleActive(id);
   }

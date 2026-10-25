@@ -5,6 +5,9 @@ import { useAuth } from '../../auth/AuthContext';
 import * as superAdminApi from '../../api/superadmin';
 import classes from './AdminPanel.module.css';
 import JournalSection from './JournalSection';
+import ConfirmDialog from '../HotelPMS/shared/ConfirmDialog';
+import { TenantDeleteModal, TenantEditModal } from './TenantDialogs';
+import { CURRENCIES, PLANS, TIMEZONES, errorText } from './tenant-options';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -67,11 +70,12 @@ const DIVIDER_BEFORE = 'create';
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
-/* Диспетчеру Kars Avia (152-ФЗ, Р-34; план 13.3) — только обзор и отели со
-   входом «от имени»: сотрудники гостиниц, заведение и выключение гостиниц,
-   настройки платформы — суперадмину (сервер отвечает ему 403). Функции
-   гостиниц массово — и диспетчеру (решение владельца 22.10.2026). */
-const DISPATCHER_SECTIONS = ['overview', 'hotels', 'features', 'journal'];
+/* Диспетчеру Kars Avia (152-ФЗ, Р-34; план 13.3) — обзор и отели со входом
+   «от имени»: сотрудники гостиниц и настройки платформы — суперадмину
+   (сервер отвечает ему 403). Функции гостиниц массово — и диспетчеру (решение
+   владельца 22.10.2026); заведение, правка, выключение и удаление гостиниц —
+   тоже (решение владельца 25.10.2026). */
+const DISPATCHER_SECTIONS = ['overview', 'hotels', 'features', 'journal', 'create'];
 
 function AdminSidebar({ activeId }) {
   const { user, logout } = useAuth();
@@ -174,48 +178,43 @@ function OverviewSection() {
 
 // ─── Hotels ───────────────────────────────────────────────────────────────────
 
+/* Гостиницы (решение владельца 25.10.2026): заведение, правка, выключение и
+   удаление — суперадмину и диспетчеру Kars Avia. Удаление: пустую (без
+   броней) — сразу, с бронями — по акту 152-ФЗ (выключить → выгрузить →
+   ввести код); окно `TenantDeleteModal` само выбирает путь. */
 function HotelsSection() {
-  const { impersonate, user } = useAuth();
-  const isDispatcher = user?.isDispatcher === true;
+  const { impersonate } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [search, setSearch] = React.useState('');
   const [impersonatingId, setImpersonatingId] = React.useState(null);
+  // Храним id, а не объект: после выключения строка списка обновится, и окно увидит новое состояние.
+  const [editId, setEditId] = React.useState(null);
+  const [deleteId, setDeleteId] = React.useState(null);
+  // Снимок на случай, когда гостиница уже удалена и из списка пропала, а окно ещё показывает «удалена».
+  const [deleteSnap, setDeleteSnap] = React.useState(null);
+  const [toggleId, setToggleId] = React.useState(null);
 
   const { data: tenants = [], isLoading } = useQuery({ queryKey: ['admin', 'tenants'], queryFn: superAdminApi.listTenants });
+  const byId = (id) => tenants.find((t) => t.id === id) ?? null;
+  const refresh = () => qc.invalidateQueries({ queryKey: ['admin'] });
 
-  const toggleActive = useMutation({
-    mutationFn: (id) => superAdminApi.toggleTenantActive(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin'] }),
-  });
+  async function toggleTenant(tenant) {
+    await superAdminApi.toggleTenantActive(tenant.id);
+    await refresh();
+  }
 
   const filtered = tenants.filter((t) =>
     !search || t.name.toLowerCase().includes(search.toLowerCase()) || (t.city ?? '').toLowerCase().includes(search.toLowerCase())
   );
 
-  /* Уход гостиницы (152-ФЗ, план 13.8): выгрузка, затем уничтожение —
-     только выключенной, при выгрузке не старше 7 дней, с вводом её кода. */
+  /* Уход гостиницы (152-ФЗ, план 13.8): выгрузка — отдельной кнопкой и
+     вторым шагом в окне удаления. */
   async function handleExport(tenant) {
     try {
       await superAdminApi.exportTenant(tenant.id);
     } catch (err) {
-      alert('Ошибка выгрузки: ' + (err?.response?.data?.message ?? err.message));
-    }
-  }
-
-  async function handleDestroy(tenant) {
-    const code = window.prompt(
-      `Уничтожить «${tenant.name}» безвозвратно? Брони, гости, счета, сотрудники, журнал и файлы будут стёрты.
-` +
-        `Для подтверждения введите код гостиницы: ${tenant.slug}`,
-    );
-    if (code === null) return;
-    try {
-      const res = await superAdminApi.destroyTenant(tenant.id, code);
-      alert(`Уничтожено по акту ${res.actId}.`);
-      qc.invalidateQueries({ queryKey: ['admin'] });
-    } catch (err) {
-      alert(err?.response?.data?.message ?? err.message);
+      alert('Ошибка выгрузки: ' + errorText(err));
     }
   }
 
@@ -240,9 +239,7 @@ function HotelsSection() {
             <svg className={classes.searchIcon} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input className={classes.searchInput} placeholder="Поиск…" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
-          {!isDispatcher && (
-            <button className={classes.btnPrimary} onClick={() => navigate('/admin/create')}>+ Добавить отель</button>
-          )}
+          <button className={classes.btnPrimary} onClick={() => navigate('/admin/create')}>+ Добавить отель</button>
         </div>
       </div>
 
@@ -266,21 +263,28 @@ function HotelsSection() {
                       <button className={classes.btnAction} onClick={() => handleImpersonate(t)} disabled={!t.isActive || impersonatingId === t.id} title="Войти от имени">
                         {impersonatingId === t.id ? '…' : 'Войти'}
                       </button>
-                      {!isDispatcher && (
-                        <button className={`${classes.btnAction} ${t.isActive ? classes.btnActionOff : classes.btnActionOn}`} onClick={() => toggleActive.mutate(t.id)} disabled={toggleActive.isPending}>
-                          {t.isActive ? 'Откл.' : 'Вкл.'}
-                        </button>
-                      )}
-                      {!isDispatcher && (
-                        <button className={classes.btnAction} onClick={() => handleExport(t)} title="Выгрузить все данные гостиницы">
-                          Выгрузить
-                        </button>
-                      )}
-                      {!isDispatcher && !t.isActive && (
-                        <button className={`${classes.btnAction} ${classes.btnActionOff}`} onClick={() => handleDestroy(t)} title="Уничтожить по акту">
-                          Уничтожить
-                        </button>
-                      )}
+                      <button className={classes.btnAction} onClick={() => setEditId(t.id)} title="Изменить карточку гостиницы">
+                        Править
+                      </button>
+                      <button
+                        className={`${classes.btnAction} ${t.isActive ? classes.btnActionOff : classes.btnActionOn}`}
+                        onClick={() => (t.isActive ? setToggleId(t.id) : toggleTenant(t).catch((err) => alert(errorText(err))))}
+                      >
+                        {t.isActive ? 'Откл.' : 'Вкл.'}
+                      </button>
+                      <button className={classes.btnAction} onClick={() => handleExport(t)} title="Выгрузить все данные гостиницы">
+                        Выгрузить
+                      </button>
+                      <button
+                        className={`${classes.btnAction} ${classes.btnActionOff}`}
+                        onClick={() => {
+                          setDeleteId(t.id);
+                          setDeleteSnap(t);
+                        }}
+                        title="Удалить гостиницу"
+                      >
+                        Удалить
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -290,6 +294,28 @@ function HotelsSection() {
           </table>
         )}
       </div>
+
+      <TenantEditModal tenant={byId(editId)} open={!!editId} onClose={() => setEditId(null)} onSaved={refresh} />
+      <TenantDeleteModal
+        tenant={byId(deleteId) ?? (deleteSnap?.id === deleteId ? deleteSnap : null)}
+        open={!!deleteId}
+        onClose={() => {
+          setDeleteId(null);
+          setDeleteSnap(null);
+        }}
+        onDone={refresh}
+        onToggleActive={toggleTenant}
+      />
+      {/* Выключение — с предупреждением: гостиница выпадает целиком, вместе со входом сотрудников. */}
+      <ConfirmDialog
+        open={!!toggleId}
+        title={`Выключить «${byId(toggleId)?.name ?? ''}»?`}
+        message="Сотрудники гостиницы не смогут войти в PMS, а Kars Avia перестанет её видеть и бронировать. Данные сохранятся — гостиницу можно включить обратно."
+        confirmLabel="Выключить"
+        danger
+        onClose={() => setToggleId(null)}
+        onConfirm={() => toggleTenant(byId(toggleId))}
+      />
     </div>
   );
 }
@@ -512,31 +538,57 @@ function UsersSection() {
 
 // ─── Create hotel ─────────────────────────────────────────────────────────────
 
+/* Заведение гостиницы (решение владельца 25.10.2026): учётка владельца — по
+   желанию; гостиница с тем же названием в том же городе — предупреждение
+   сервера (409 DUPLICATE_HOTEL) и «Всё равно создать». */
+const EMPTY_HOTEL = {
+  hotelName: '', city: '', address: '', phone: '', email: '',
+  timezone: 'Europe/Moscow', currency: 'RUB', plan: 'LITE',
+  ownerFullName: '', ownerEmail: '', ownerPassword: '',
+};
+
 function CreateSection() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [form, setForm] = React.useState({ hotelName: '', email: '', password: '', fullName: '', timezone: 'Europe/Moscow', currency: 'RUB', plan: 'LITE' });
+  const [form, setForm] = React.useState(EMPTY_HOTEL);
+  const [withOwner, setWithOwner] = React.useState(false);
   const [error, setError] = React.useState('');
   const [success, setSuccess] = React.useState('');
+  const [duplicate, setDuplicate] = React.useState(null); // { message, duplicates }
 
   const create = useMutation({
     mutationFn: superAdminApi.createTenant,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin'] }),
   });
 
-  function handleChange(e) { setForm((f) => ({ ...f, [e.target.name]: e.target.value })); }
+  function handleChange(e) {
+    setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
+    setDuplicate(null);
+  }
 
-  async function handleSubmit(e) {
-    e.preventDefault();
+  async function submit(allowDuplicate) {
     setError(''); setSuccess('');
+    const payload = Object.fromEntries(
+      Object.entries(form).filter(([k, v]) => v.trim() !== '' && (withOwner || !k.startsWith('owner'))),
+    );
     try {
-      await create.mutateAsync(form);
-      setSuccess(`Отель «${form.hotelName}» успешно создан!`);
-      setForm({ hotelName: '', email: '', password: '', fullName: '', timezone: 'Europe/Moscow', currency: 'RUB', plan: 'LITE' });
+      const res = await create.mutateAsync({ ...payload, ...(allowDuplicate ? { allowDuplicate: true } : {}) });
+      setSuccess(
+        `Отель «${res.name}» создан (код ${res.slug}).` +
+          (res.withOwner ? ' Владелец может входить.' : ' Учётки владельца нет — пригласите его позже.'),
+      );
+      setForm(EMPTY_HOTEL);
+      setDuplicate(null);
     } catch (err) {
-      const msg = err?.response?.data?.message;
-      setError(Array.isArray(msg) ? msg.join(', ') : (msg ?? 'Ошибка при создании'));
+      const data = err?.response?.data;
+      if (data?.code === 'DUPLICATE_HOTEL') setDuplicate(data);
+      else setError(errorText(err, 'Ошибка при создании'));
     }
+  }
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    submit(false);
   }
 
   return (
@@ -549,32 +601,33 @@ function CreateSection() {
           <div className={classes.formSectionTitle}>Информация об отеле</div>
           <div className={classes.formGrid}>
             <label className={classes.formLabel}>Название <span className={classes.req}>*</span>
-              <input className={classes.formInput} name="hotelName" value={form.hotelName} onChange={handleChange} required placeholder="Гранд Отель Москва" />
+              <input className={classes.formInput} name="hotelName" value={form.hotelName} onChange={handleChange} required minLength={2} maxLength={200} placeholder="Гранд Отель Москва" />
+            </label>
+            <label className={classes.formLabel}>Город
+              <input className={classes.formInput} name="city" value={form.city} onChange={handleChange} maxLength={100} placeholder="Москва" />
+            </label>
+            <label className={classes.formLabel}>Адрес
+              <input className={classes.formInput} name="address" value={form.address} onChange={handleChange} maxLength={300} placeholder="ул. Тверская, 1" />
+            </label>
+            <label className={classes.formLabel}>Телефон
+              <input className={classes.formInput} name="phone" value={form.phone} onChange={handleChange} maxLength={50} placeholder="+7 900 000-00-00" />
+            </label>
+            <label className={classes.formLabel}>Почта гостиницы
+              <input className={classes.formInput} name="email" type="email" value={form.email} onChange={handleChange} placeholder="info@hotel.ru" />
             </label>
             <label className={classes.formLabel}>Тарифный план
               <select className={classes.formSelect} name="plan" value={form.plan} onChange={handleChange}>
-                <option value="LITE">Lite — базовый</option>
-                <option value="STANDART">Standart — стандартный</option>
-                <option value="PREMIUM">Premium — расширенный</option>
+                {PLANS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
             </label>
             <label className={classes.formLabel}>Часовой пояс
               <select className={classes.formSelect} name="timezone" value={form.timezone} onChange={handleChange}>
-                <option value="Europe/Kaliningrad">Калининград (UTC+2)</option>
-                <option value="Europe/Moscow">Москва (UTC+3)</option>
-                <option value="Europe/Samara">Самара (UTC+4)</option>
-                <option value="Asia/Yekaterinburg">Екатеринбург (UTC+5)</option>
-                <option value="Asia/Novosibirsk">Новосибирск (UTC+7)</option>
-                <option value="Asia/Vladivostok">Владивосток (UTC+10)</option>
-                <option value="UTC">UTC</option>
+                {TIMEZONES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
             </label>
             <label className={classes.formLabel}>Валюта
               <select className={classes.formSelect} name="currency" value={form.currency} onChange={handleChange}>
-                <option value="RUB">RUB — Рубль</option>
-                <option value="USD">USD — Доллар</option>
-                <option value="EUR">EUR — Евро</option>
-                <option value="KZT">KZT — Тенге</option>
+                {CURRENCIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
             </label>
           </div>
@@ -582,26 +635,53 @@ function CreateSection() {
           <div className={classes.formDivider} />
 
           <div className={classes.formSectionTitle}>Аккаунт владельца</div>
-          <div className={classes.formGrid}>
-            <label className={classes.formLabel}>Имя и фамилия <span className={classes.req}>*</span>
-              <input className={classes.formInput} name="fullName" value={form.fullName} onChange={handleChange} required placeholder="Иванов Иван" />
-            </label>
-            <label className={classes.formLabel}>Email <span className={classes.req}>*</span>
-              <input className={classes.formInput} name="email" type="email" value={form.email} onChange={handleChange} required placeholder="owner@hotel.ru" />
-            </label>
-            <label className={classes.formLabel}>Пароль <span className={classes.req}>*</span>
-              <input className={classes.formInput} name="password" type="password" value={form.password} onChange={handleChange} required minLength={8} placeholder="Минимум 8 символов" />
-            </label>
-          </div>
+          <label className={classes.formLabel} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <input type="checkbox" checked={withOwner} onChange={(e) => setWithOwner(e.target.checked)} />
+            Сразу завести учётку владельца
+          </label>
+          {!withOwner && (
+            <div className={classes.muted} style={{ fontSize: 13, margin: '6px 0 0' }}>
+              Гостиница появится без кабинета — владельца можно пригласить позже.
+            </div>
+          )}
+          {withOwner && (
+            <div className={classes.formGrid}>
+              <label className={classes.formLabel}>Имя и фамилия <span className={classes.req}>*</span>
+                <input className={classes.formInput} name="ownerFullName" value={form.ownerFullName} onChange={handleChange} required placeholder="Иванов Иван" />
+              </label>
+              <label className={classes.formLabel}>Email для входа <span className={classes.req}>*</span>
+                <input className={classes.formInput} name="ownerEmail" type="email" value={form.ownerEmail} onChange={handleChange} required placeholder="owner@hotel.ru" />
+              </label>
+              <label className={classes.formLabel}>Пароль <span className={classes.req}>*</span>
+                <input className={classes.formInput} name="ownerPassword" type="password" value={form.ownerPassword} onChange={handleChange} required minLength={8} placeholder="Минимум 8 символов" />
+              </label>
+            </div>
+          )}
 
+          {duplicate && (
+            <div className={classes.formWarn}>
+              <div>{duplicate.message}</div>
+              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                {(duplicate.duplicates ?? []).map((d) => (
+                  <li key={d.id}>«{d.name}»{d.city ? `, ${d.city}` : ''}{d.isActive ? '' : ' (выключена)'}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           {error && <div className={classes.formError}>{error}</div>}
           {success && <div className={classes.formSuccess}>{success}</div>}
 
           <div className={classes.formActions}>
             <button type="button" className={classes.btnSecondary} onClick={() => navigate('/admin/hotels')}>Отмена</button>
-            <button type="submit" className={classes.btnPrimary} disabled={create.isPending}>
-              {create.isPending ? 'Создание…' : 'Создать отель'}
-            </button>
+            {duplicate ? (
+              <button type="button" className={classes.btnPrimary} disabled={create.isPending} onClick={() => submit(true)}>
+                {create.isPending ? 'Создание…' : 'Всё равно создать'}
+              </button>
+            ) : (
+              <button type="submit" className={classes.btnPrimary} disabled={create.isPending}>
+                {create.isPending ? 'Создание…' : 'Создать отель'}
+              </button>
+            )}
           </div>
         </form>
       </div>

@@ -1,8 +1,15 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { TenantPlan } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
-import { RegisterTenantDto } from '../auth/dto/register-tenant.dto';
+import { seedDefaultRoles } from '../auth/tenant-roles';
+import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { AuthenticatedRequestUser } from '../auth/strategies/jwt.strategy';
 import { ApplyFeatureDto } from './dto/apply-feature.dto';
@@ -79,16 +86,41 @@ export class SuperAdminService {
       orderBy: { createdAt: 'desc' },
     });
 
+    /* Поля карточки — для окна правки (без персональных данных: сотрудники
+       гостиницы — только суперадмину, `getTenant`). */
     return tenants.map((t) => ({
       id: t.id,
       slug: t.slug,
       name: t.name,
       city: t.city,
+      address: t.address,
+      phone: t.phone,
+      email: t.email,
+      stars: t.stars,
+      timezone: t.timezone,
+      currency: t.currency,
       plan: t.plan,
       isActive: t.isActive,
+      provisional: t.provisional,
       createdAt: t.createdAt,
       usersCount: t._count.users,
     }));
+  }
+
+  /**
+   * Что в гостинице есть — для окна удаления и правки: по нему решается,
+   * удалить сразу (броней нет) или только по акту, и можно ли менять валюту.
+   */
+  async tenantSummary(id: string) {
+    const t = await this.prisma.admin.tenant.findUnique({ where: { id }, select: { id: true, slug: true } });
+    if (!t || t.slug === 'platform') throw new NotFoundException('Гостиница не найдена');
+    const [reservations, rooms, roomTypes, users] = await Promise.all([
+      this.prisma.admin.reservation.count({ where: { tenantId: id } }),
+      this.prisma.admin.room.count({ where: { tenantId: id } }),
+      this.prisma.admin.roomType.count({ where: { tenantId: id } }),
+      this.prisma.admin.user.count({ where: { tenantId: id } }),
+    ]);
+    return { reservations, rooms, roomTypes, users };
   }
 
   async getTenant(id: string) {
@@ -111,31 +143,156 @@ export class SuperAdminService {
     return t;
   }
 
-  async createTenant(dto: RegisterTenantDto) {
-    // Delegate to AuthService.registerTenant which handles slug resolution,
-    // role seeding, and user creation in one transaction.
-    return this.auth.registerTenant(dto);
-  }
+  /**
+   * Заведение гостиницы из панели платформы.
+   *
+   * С владельцем — прежний путь `AuthService.registerTenant` (гостиница, роли
+   * и учётка одной транзакцией); без владельца — гостиница и роли, учётку
+   * заводят потом. Токены нового владельца наружу НЕ отдаются: панель
+   * заводит гостиницу, а не входит в неё.
+   *
+   * Предупреждение о дубле: гостиница с тем же названием в том же городе
+   * (без учёта регистра и пробелов) — 409 DUPLICATE_HOTEL со списком
+   * совпавших; «всё равно создать» — `allowDuplicate`. Дубли — не теория:
+   * у перенесённых гостиниц они уже есть.
+   */
+  async createTenant(dto: CreateTenantDto, actor: AuthenticatedRequestUser) {
+    const name = dto.hotelName.trim();
+    if (name.length < 2) throw new BadRequestException('Название гостиницы — не короче 2 символов');
+    assertTimezone(dto.timezone);
+    const owner = ownerOf(dto);
+    const city = clean(dto.city);
 
-  async updateTenant(id: string, dto: UpdateTenantDto) {
-    const tenant = await this.prisma.admin.tenant.findUnique({
-      where: { id },
-      select: { id: true, slug: true },
-    });
-    if (!tenant || tenant.slug === 'platform') throw new NotFoundException('Tenant not found');
+    if (!dto.allowDuplicate) {
+      /* Сравниваем в коде, а не `mode: 'insensitive'` базы: при C-локали
+         Postgres не сворачивает регистр кириллицы, и «Отель» с «отель» для
+         него разные (поймано на стенде 25.10.2026). Гостиниц — сотни строк. */
+      const all = await this.prisma.admin.tenant.findMany({
+        where: { slug: { not: 'platform' } },
+        select: { id: true, name: true, city: true, isActive: true },
+      });
+      const duplicates = all.filter((t) => norm(t.name) === norm(name) && norm(t.city) === norm(city));
+      if (duplicates.length > 0) {
+        throw new ConflictException({
+          statusCode: 409,
+          code: 'DUPLICATE_HOTEL',
+          message: `Гостиница «${name}»${city ? ` в городе ${city}` : ''} уже есть. Проверьте, не дубль ли это.`,
+          duplicates,
+        });
+      }
+    }
 
-    return this.prisma.admin.tenant.update({
-      where: { id },
+    const card = {
+      city,
+      address: clean(dto.address),
+      phone: clean(dto.phone),
+      email: clean(dto.email)?.toLowerCase() ?? null,
+    };
+
+    let tenantId: string;
+    if (owner) {
+      const res = await this.auth.registerTenant({
+        hotelName: name,
+        email: owner.email,
+        password: owner.password,
+        fullName: owner.fullName,
+        timezone: dto.timezone,
+        currency: dto.currency,
+        plan: dto.plan,
+      });
+      tenantId = res.tenantId;
+      await this.prisma.admin.tenant.update({ where: { id: tenantId }, data: card });
+    } else {
+      const slug = await this.auth.resolveUniqueSlug(name);
+      tenantId = await this.prisma.admin.$transaction(async (tx) => {
+        const tenant = await tx.tenant.create({
+          data: {
+            slug,
+            name,
+            timezone: dto.timezone ?? 'Europe/Moscow',
+            currency: dto.currency ?? 'RUB',
+            plan: (dto.plan ?? 'LITE') as TenantPlan,
+            ...card,
+          },
+        });
+        await seedDefaultRoles(tx, tenant.id);
+        return tenant.id;
+      });
+    }
+
+    await this.prisma.admin.auditLog.create({
       data: {
-        ...(dto.name ? { name: dto.name } : {}),
-        ...(dto.city !== undefined ? { city: dto.city } : {}),
-        ...(dto.address !== undefined ? { address: dto.address } : {}),
-        ...(dto.stars !== undefined ? { stars: dto.stars } : {}),
-        ...(dto.timezone ? { timezone: dto.timezone } : {}),
-        ...(dto.currency ? { currency: dto.currency } : {}),
-        ...(dto.plan ? { plan: dto.plan as TenantPlan } : {}),
+        tenantId,
+        userId: actor.userId,
+        entity: 'tenant',
+        entityId: tenantId,
+        action: 'admin.create',
+        diff: { before: {}, after: { name, ...card, withOwner: !!owner } },
       },
     });
+    const t = await this.prisma.admin.tenant.findUniqueOrThrow({
+      where: { id: tenantId },
+      select: { id: true, slug: true, name: true },
+    });
+    return { ...t, withOwner: !!owner };
+  }
+
+  /**
+   * Правка карточки гостиницы. Ограничение: валюту нельзя сменить, когда у
+   * гостиницы есть брони — суммы броней и счетов записаны в прежней валюте,
+   * и после смены они молча стали бы другими деньгами. В журнал гостиницы —
+   * «было → стало» по изменённым полям.
+   */
+  async updateTenant(id: string, dto: UpdateTenantDto, actor: AuthenticatedRequestUser) {
+    const tenant = await this.prisma.admin.tenant.findUnique({ where: { id } });
+    if (!tenant || tenant.slug === 'platform') throw new NotFoundException('Гостиница не найдена');
+    assertTimezone(dto.timezone);
+
+    const next: Record<string, unknown> = {};
+    if (dto.name !== undefined) {
+      const name = dto.name.trim();
+      if (name.length < 2) throw new BadRequestException('Название гостиницы — не короче 2 символов');
+      next.name = name;
+    }
+    for (const k of ['city', 'address', 'phone'] as const) {
+      if (dto[k] !== undefined) next[k] = clean(dto[k]);
+    }
+    if (dto.email !== undefined) next.email = clean(dto.email)?.toLowerCase() ?? null;
+    if (dto.stars !== undefined) next.stars = dto.stars;
+    if (dto.timezone) next.timezone = dto.timezone;
+    if (dto.currency) next.currency = dto.currency;
+    if (dto.plan) next.plan = dto.plan as TenantPlan;
+
+    const changed = Object.keys(next).filter(
+      (k) => (tenant as Record<string, unknown>)[k] !== next[k],
+    );
+    if (changed.length === 0) return tenant;
+
+    if (changed.includes('currency')) {
+      const reservations = await this.prisma.admin.reservation.count({ where: { tenantId: id } });
+      if (reservations > 0) {
+        throw new ConflictException(
+          `Валюту не сменить: у гостиницы есть брони (${reservations}), их суммы и счета записаны в ${tenant.currency}.`,
+        );
+      }
+    }
+
+    const data = Object.fromEntries(changed.map((k) => [k, next[k]]));
+    const updated = await this.prisma.admin.tenant.update({ where: { id }, data });
+    await this.prisma.admin.auditLog.create({
+      data: {
+        tenantId: id,
+        userId: actor.userId,
+        entity: 'tenant',
+        entityId: id,
+        action: 'admin.update',
+        diff: {
+          before: Object.fromEntries(changed.map((k) => [k, (tenant as Record<string, unknown>)[k] ?? null])),
+          after: data,
+        } as never,
+      },
+    });
+    return updated;
   }
 
   async toggleActive(id: string) {
@@ -232,4 +389,40 @@ export class SuperAdminService {
 
     return { totalTenants, activeTenants, totalUsers };
   }
+}
+
+/** Пустая строка и пробелы — «нет значения». */
+function clean(v: string | undefined | null): string | null {
+  const s = v?.trim();
+  return s ? s : null;
+}
+
+/** Для сравнения названий и городов: без регистра, ё = е, пробелы схлопнуты. */
+function norm(v: string | null | undefined): string {
+  return (v ?? '').trim().toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ');
+}
+
+/** Часовой пояс — только известный среде (IANA): опечатка сдвинула бы все сроки гостиницы. */
+function assertTimezone(tz: string | undefined) {
+  if (tz === undefined) return;
+  try {
+    new Intl.DateTimeFormat('ru-RU', { timeZone: tz });
+  } catch {
+    throw new BadRequestException(`Неизвестный часовой пояс: ${tz}`);
+  }
+}
+
+/** Учётка владельца — все три поля или ни одного. */
+function ownerOf(dto: CreateTenantDto): { fullName: string; email: string; password: string } | null {
+  const fullName = clean(dto.ownerFullName);
+  const email = clean(dto.ownerEmail);
+  const password = dto.ownerPassword ?? '';
+  const filled = [fullName, email, password].filter(Boolean).length;
+  if (filled === 0) return null;
+  if (filled < 3 || !fullName || !email) {
+    throw new BadRequestException(
+      'Учётка владельца: заполните имя, email и пароль — или оставьте все три поля пустыми',
+    );
+  }
+  return { fullName, email, password };
 }

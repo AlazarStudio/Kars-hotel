@@ -5,7 +5,9 @@ import { StorageService } from '../../common/storage/storage.service';
 
 /* УХОД ГОСТИНИЦЫ ИЗ PMS (152-ФЗ, Г-22, ГС-09; план 13.8).
  *
- * Две ступени, обе — суперадмин платформы:
+ * Две ступени, обе — суперадмин или диспетчер Kars Avia (решение владельца
+ * 25.10.2026; до того — только суперадмин). Пустую гостиницу, без броней,
+ * удаляют сразу — `deleteEmpty`:
  *  1. ВЫГРУЗКА — все строки всех таблиц с tenant_id одним JSON (гостинице —
  *     её данные). Секреты вырезаются: хеши паролей и токенов, ключ отчётов.
  *     В акт — время, кто и контрольная сумма файла.
@@ -19,6 +21,8 @@ import { StorageService } from '../../common/storage/storage.service';
 
 const SECRET_COLUMNS = ['password_hash', 'token_hash', 'key', 'key_hash'];
 const EXPORT_FRESH_DAYS = 7;
+/** Вместо контрольной суммы выгрузки в акте удаления пустой гостиницы: выгрузки не было. */
+export const EMPTY_HOTEL_MARK = 'empty-hotel:no-export';
 
 @Injectable()
 export class TenantExitService {
@@ -103,25 +107,10 @@ export class TenantExitService {
     if (!act) throw new ConflictException(`Сначала выгрузите данные гостиницы (выгрузка не старше ${EXPORT_FRESH_DAYS} дней)`);
 
     const tables = await this.tenantTables();
-    const counts: Record<string, number> = {};
+    let counts: Record<string, number> = {};
     await this.prisma.admin.$transaction(
       async (tx) => {
-        // Порядок удаления не важен: внешние ключи на время транзакции молчат,
-        // а уходит всё, что принадлежит гостинице, целиком.
-        await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = replica`);
-        for (const t of tables) {
-          counts[t] = await tx.$executeRawUnsafe(`DELETE FROM "${t}" WHERE tenant_id = $1::uuid`, tenantId);
-        }
-        counts.tenant = await tx.$executeRawUnsafe(`DELETE FROM "tenant" WHERE id = $1::uuid`, tenantId);
-        /* Каскады при молчащих ключах тоже молчат: строки таблиц без tenant_id,
-           висевшие на удалённых (права ролей гостиницы), стираем явно. Связи —
-           из схемы базы, как и список таблиц. */
-        for (const fk of await this.dependents(tx, tables)) {
-          counts[`${fk.child} (связанные)`] = await tx.$executeRawUnsafe(
-            `DELETE FROM "${fk.child}" x WHERE x."${fk.col}" IS NOT NULL
-               AND NOT EXISTS (SELECT 1 FROM "${fk.parent}" p WHERE p."${fk.pcol}" = x."${fk.col}")`,
-          );
-        }
+        counts = await this.wipe(tx, tenantId, tables);
         await tx.tenantExitAct.update({
           where: { id: act.id },
           data: { destroyedAt: new Date(), destroyedBy: actorId, counts },
@@ -129,12 +118,90 @@ export class TenantExitService {
       },
       { timeout: 120_000 },
     );
-    // Файлы — после фиксации: откат не оставит строк, указывающих на стёртое.
-    const files = await this.storage.deleteTenantFiles(tenantId).catch((e: unknown) => {
-      this.logger.error(`Файлы гостиницы ${tenant.slug} не стёрты: ${e instanceof Error ? e.message : String(e)}`);
-      return -1;
-    });
+    const files = await this.deleteFiles(tenantId, tenant.slug);
     this.logger.log(`Гостиница ${tenant.slug} уничтожена по акту ${act.id}: ${JSON.stringify(counts)}, файлов ${files}`);
     return { actId: act.id, counts, files };
+  }
+
+  /**
+   * Удаление ПУСТОЙ гостиницы — без выгрузки (решение владельца 25.10.2026):
+   * ошибочно заведённая, дубль, так и не начавшая работать.
+   *
+   * «Пустая» — ни одной брони, в любом статусе: на бронях держатся гости,
+   * счета и оплаты, то есть персональные данные и деньги. Гостиница с
+   * бронями — только прежним порядком: выключить, выгрузить, уничтожить по
+   * акту. Номера, категории, цены, роли и учётки сотрудников уходят вместе с
+   * пустой гостиницей — окно в панели называет, сколько их.
+   *
+   * Брони считаются в той же транзакции, что и стирание. След — акт ухода
+   * (его таблица не стирается) с пометкой «пустая, без выгрузки» вместо
+   * контрольной суммы: журнал гостиницы уходит вместе с ней.
+   */
+  async deleteEmpty(tenantId: string, actorId: string) {
+    const tenant = await this.tenantOr404(tenantId);
+    const tables = await this.tenantTables();
+    let counts: Record<string, number> = {};
+    const act = await this.prisma.admin.$transaction(
+      async (tx) => {
+        const reservations = await tx.reservation.count({ where: { tenantId } });
+        if (reservations > 0) {
+          throw new ConflictException(
+            `У гостиницы «${tenant.name}» есть брони (${reservations}) — сразу удалить нельзя. ` +
+              'Гостиницу с данными удаляют по акту: выключить, выгрузить, уничтожить.',
+          );
+        }
+        counts = await this.wipe(tx, tenantId, tables);
+        return tx.tenantExitAct.create({
+          data: {
+            tenantId,
+            tenantSlug: tenant.slug,
+            tenantName: tenant.name,
+            exportedBy: actorId,
+            exportSha256: EMPTY_HOTEL_MARK,
+            destroyedAt: new Date(),
+            destroyedBy: actorId,
+            counts,
+          },
+        });
+      },
+      { timeout: 120_000 },
+    );
+    const files = await this.deleteFiles(tenantId, tenant.slug);
+    this.logger.log(`Пустая гостиница ${tenant.slug} удалена (акт ${act.id}): ${JSON.stringify(counts)}, файлов ${files}`);
+    return { actId: act.id, counts, files };
+  }
+
+  /** Все строки гостиницы во всех её таблицах — внутри транзакции вызывающего. */
+  private async wipe(
+    tx: { $executeRawUnsafe: PrismaService['$executeRawUnsafe']; $queryRaw: PrismaService['$queryRaw'] },
+    tenantId: string,
+    tables: string[],
+  ): Promise<Record<string, number>> {
+    const counts: Record<string, number> = {};
+    // Порядок удаления не важен: внешние ключи на время транзакции молчат,
+    // а уходит всё, что принадлежит гостинице, целиком.
+    await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = replica`);
+    for (const t of tables) {
+      counts[t] = await tx.$executeRawUnsafe(`DELETE FROM "${t}" WHERE tenant_id = $1::uuid`, tenantId);
+    }
+    counts.tenant = await tx.$executeRawUnsafe(`DELETE FROM "tenant" WHERE id = $1::uuid`, tenantId);
+    /* Каскады при молчащих ключах тоже молчат: строки таблиц без tenant_id,
+       висевшие на удалённых (права ролей гостиницы), стираем явно. Связи —
+       из схемы базы, как и список таблиц. */
+    for (const fk of await this.dependents(tx, tables)) {
+      counts[`${fk.child} (связанные)`] = await tx.$executeRawUnsafe(
+        `DELETE FROM "${fk.child}" x WHERE x."${fk.col}" IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM "${fk.parent}" p WHERE p."${fk.pcol}" = x."${fk.col}")`,
+      );
+    }
+    return counts;
+  }
+
+  /** Файлы — после фиксации: откат не оставит строк, указывающих на стёртое. */
+  private deleteFiles(tenantId: string, slug: string): Promise<number> {
+    return this.storage.deleteTenantFiles(tenantId).catch((e: unknown) => {
+      this.logger.error(`Файлы гостиницы ${slug} не стёрты: ${e instanceof Error ? e.message : String(e)}`);
+      return -1;
+    });
   }
 }

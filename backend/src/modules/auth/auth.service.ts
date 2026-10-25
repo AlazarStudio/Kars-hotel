@@ -12,11 +12,12 @@ import { RoleCode, TenantPlan } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { DEFAULT_ROLE_NAMES, DEFAULT_ROLE_PERMISSIONS, SYSTEM_PERMISSIONS } from './auth.constants';
+import { DEFAULT_ROLE_PERMISSIONS, SYSTEM_PERMISSIONS } from './auth.constants';
 import { RegisterTenantDto } from './dto/register-tenant.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtAccessPayload, JwtRefreshPayload } from './types/jwt-payload';
 import { slugifyHotelName } from './slug.util';
+import { seedDefaultRoles } from './tenant-roles';
 import { LoginThrottle, MAX_PER_EMAIL } from './login-throttle';
 import { RedisService } from '../../common/redis/redis.service';
 
@@ -118,32 +119,7 @@ export class AuthService implements OnModuleInit {
       });
 
       // Seed default roles + permissions.
-      const allPerms = await tx.permission.findMany();
-      const permByCode = new Map(allPerms.map((p) => [p.code, p.id]));
-
-      const roleByCode: Partial<Record<RoleCode, string>> = {};
-      for (const code of Object.keys(DEFAULT_ROLE_PERMISSIONS) as RoleCode[]) {
-        const role = await tx.role.create({
-          data: {
-            tenantId: tenant.id,
-            code,
-            name: DEFAULT_ROLE_NAMES[code] ?? code,
-            isSystem: true,
-          },
-        });
-        roleByCode[code] = role.id;
-
-        const permCodes = DEFAULT_ROLE_PERMISSIONS[code] ?? [];
-        if (permCodes.length > 0) {
-          await tx.rolePermission.createMany({
-            data: permCodes
-              .map((c) => permByCode.get(c))
-              .filter((id): id is string => !!id)
-              .map((permissionId) => ({ roleId: role.id, permissionId })),
-            skipDuplicates: true,
-          });
-        }
-      }
+      const roleByCode = await seedDefaultRoles(tx, tenant.id);
 
       const user = await tx.user.create({
         data: {
@@ -862,7 +838,7 @@ export class AuthService implements OnModuleInit {
    * try it first; otherwise transliterate. On collision, suffix `-2`, `-3`, …
    * up to 50 attempts before giving up.
    */
-  private async resolveUniqueSlug(seed: string): Promise<string> {
+  async resolveUniqueSlug(seed: string): Promise<string> {
     const base = /^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/.test(seed) ? seed : slugifyHotelName(seed);
     let candidate = base;
     for (let n = 2; n < 50; n++) {
