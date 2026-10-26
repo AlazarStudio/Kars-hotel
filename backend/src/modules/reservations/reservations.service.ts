@@ -724,8 +724,16 @@ export class ReservationsService {
     return this.recordFact(id, 'NO_SHOW', userId);
   }
 
+  /* Заезд и выезд от партнёра (26.10.2026, правка заказчика Kars Avia:
+     «отмечаем выезд в Эскадрилье, а потом ещё заходим в шахматку выселить»).
+     Время — его: диспетчер отмечает факт, когда гость заехал или выехал, а не
+     когда дошли руки. Правила те же, что у кнопки. */
+  async recordPartnerFact(id: string, fact: 'CHECKED_IN' | 'CHECKED_OUT', at: Date) {
+    return this.recordFact(id, fact, undefined, at);
+  }
+
   /** Отдельная операция факта (кнопка «Заселить», «Выселить», «Не явился»). */
-  private async recordFact(id: string, fact: Fact, userId: string) {
+  private async recordFact(id: string, fact: Fact, userId?: string, at?: Date) {
     const tenantId = TenantContext.getTenantIdOrThrow();
 
     type TxResult =
@@ -750,7 +758,7 @@ export class ReservationsService {
         WHERE id = ${id}::uuid
         RETURNING id, version
       `;
-      await this.stampFact(tx, id, fact, cur.room_id);
+      await this.stampFact(tx, id, fact, cur.room_id, at);
 
       return { ok: true, ...res, before: cur.status, roomId: cur.room_id };
     });
@@ -763,7 +771,7 @@ export class ReservationsService {
     await this.timelineService.invalidate(tenantId);
     this.timelineGateway.notifyUpdate(tenantId, { action: 'updated' });
 
-    await this.announceFact(tenantId, id, fact, result.before, result.roomId, userId);
+    await this.announceFact(tenantId, id, fact, result.before, result.roomId, userId, at);
 
     return { id: result.id, status: fact, version: result.version };
   }
@@ -783,12 +791,15 @@ export class ReservationsService {
 
   /** Следы факта в той же транзакции: время заезда или выезда; освободившийся
    *  номер — грязный. */
-  private async stampFact(tx: Prisma.TransactionClient, id: string, fact: Fact, roomId: string) {
+  private async stampFact(tx: Prisma.TransactionClient, id: string, fact: Fact, roomId: string, at?: Date) {
+    // `at` — время партнёра; без него — момент нажатия.
     if (fact === 'CHECKED_IN') {
-      await tx.$executeRaw`UPDATE reservation SET checked_in_at = now() WHERE id = ${id}::uuid`;
+      if (at) await tx.$executeRaw`UPDATE reservation SET checked_in_at = ${at} WHERE id = ${id}::uuid`;
+      else await tx.$executeRaw`UPDATE reservation SET checked_in_at = now() WHERE id = ${id}::uuid`;
     }
     if (fact === 'CHECKED_OUT') {
-      await tx.$executeRaw`UPDATE reservation SET checked_out_at = now() WHERE id = ${id}::uuid`;
+      if (at) await tx.$executeRaw`UPDATE reservation SET checked_out_at = ${at} WHERE id = ${id}::uuid`;
+      else await tx.$executeRaw`UPDATE reservation SET checked_out_at = now() WHERE id = ${id}::uuid`;
       await tx.$executeRaw`
         UPDATE room
         SET status = 'DIRTY'::"RoomStatus", "updatedAt" = now()
@@ -806,6 +817,7 @@ export class ReservationsService {
     before: string,
     roomId: string,
     userId?: string,
+    at?: Date,
   ) {
     await this.prisma.writeAuditLog({
       tenantId,
@@ -828,7 +840,7 @@ export class ReservationsService {
      * авиакомпанией. Не ждём — отправка не блокирует ответ, а сорвавшийся
      * вебхук партнёр доберёт опросом фактов. */
     const counts = await this.guestCounts(id);
-    const now = new Date().toISOString();
+    const now = (at ?? new Date()).toISOString();
     if (fact === 'CHECKED_IN') {
       await this.partnerWebhooks.emitForReservation('guest.checked_in', id, {
         reservationId: id,

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -761,6 +762,37 @@ export class ConnectivityService {
     /* «Бронь изменена» сообщает сама правка (`ReservationsService.update`) —
        и для правок гостиницы, и для правок партнёра, одним форматом. */
     return after;
+  }
+
+  /* ЗАЕЗД И ВЫЕЗД ОТ ПАРТНЁРА (26.10.2026, правка заказчика Kars Avia:
+   * «отмечаем выезд в Эскадрилье, а потом ещё заходим в шахматку выселить» —
+   * одна работа дважды).
+   *
+   * Время — партнёра: он отмечает, когда гость заехал или выехал. Будущее не
+   * принимаем: выселить «на завтра» значит сегодня показать номер свободным, а
+   * гость ещё в нём. Ждёт момента партнёр.
+   *
+   * Повтор — не ошибка: уже заселённого «заселить» и уже выселенного
+   * «выселить» отвечают тем, что есть, — партнёр может прислать факт повторно
+   * после сбоя связи. Выселить не заселённого нельзя: сначала заезд. */
+  async recordStayFact(
+    slug: string,
+    id: string,
+    partnerId: string,
+    fact: 'CHECKED_IN' | 'CHECKED_OUT',
+    atIso?: string,
+  ) {
+    const tenant = await this.resolveTenant(slug);
+    const r = await this.getReservation(slug, id, partnerId);
+    const at = atIso ? new Date(atIso) : new Date();
+    if (at.getTime() > Date.now() + 5 * 60 * 1000) {
+      throw new BadRequestException('Факт заезда или выезда не может быть в будущем');
+    }
+    const done = fact === 'CHECKED_IN' ? ['CHECKED_IN', 'CHECKED_OUT'] : ['CHECKED_OUT'];
+    if (!done.includes(r.status)) {
+      await this.runAsTenant(tenant.id, () => this.reservations.recordPartnerFact(id, fact, at));
+    }
+    return this.getFacts(slug, id, partnerId);
   }
 
   async cancelReservation(slug: string, id: string, partnerId: string, reason?: string) {

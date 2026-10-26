@@ -25,6 +25,7 @@ import { ConnectCreateReservationDto } from './dto/connect-create-reservation.dt
 import { ConnectUpdateReservationDto } from './dto/connect-update-reservation.dto';
 import { ConnectReservationMealsDto } from './dto/connect-reservation-meals.dto';
 import { ConnectCancelDto } from './dto/connect-cancel.dto';
+import { ConnectStayFactDto } from './dto/connect-stay-fact.dto';
 import { ReviewCorporateTariffDto } from './dto/review-corporate-tariff.dto';
 import {
   ConnectContractPricesDto,
@@ -261,6 +262,34 @@ export class ConnectivityController {
   @ApiOperation({ summary: 'Stay facts for reconciliation' })
   getFacts(@Param('slug') slug: string, @Param('id') id: string, @Req() req: PartnerRequest) {
     return this.connectivity.getFacts(slug, id, req.partner!.partnerId);
+  }
+
+  /* Заезд и выезд от партнёра — действия, а не поля PATCH: те же правила, что
+     у кнопок «Заселить» и «Выселить» в шахматке. Повтор безопасен. */
+  @Post('hotels/:slug/reservations/:id/check-in')
+  @HttpCode(HttpStatus.OK)
+  @RequireScopes(PARTNER_SCOPES.ReservationsWrite)
+  @ApiOperation({ summary: 'Check in the guests of a partner reservation at the given moment' })
+  checkIn(
+    @Param('slug') slug: string,
+    @Param('id') id: string,
+    @Body() dto: ConnectStayFactDto,
+    @Req() req: PartnerRequest,
+  ) {
+    return this.connectivity.recordStayFact(slug, id, req.partner!.partnerId, 'CHECKED_IN', dto.at);
+  }
+
+  @Post('hotels/:slug/reservations/:id/check-out')
+  @HttpCode(HttpStatus.OK)
+  @RequireScopes(PARTNER_SCOPES.ReservationsWrite)
+  @ApiOperation({ summary: 'Check out the guests of a partner reservation at the given moment' })
+  checkOut(
+    @Param('slug') slug: string,
+    @Param('id') id: string,
+    @Body() dto: ConnectStayFactDto,
+    @Req() req: PartnerRequest,
+  ) {
+    return this.connectivity.recordStayFact(slug, id, req.partner!.partnerId, 'CHECKED_OUT', dto.at);
   }
 
   /* Э6 · Зеркало закупочных цен договора. PUT, а не POST: приложение одно на
