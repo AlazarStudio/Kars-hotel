@@ -74,6 +74,9 @@ function transformTimeline(data) {
           arrivalAt: res.arrivalAt ?? null,
           departureAt: res.departureAt ?? null,
           flight: res.flight ?? null,
+          // Факт заезда и выезда — местное время гостиницы тем же текстом.
+          checkedInAt: res.checkedInAt ?? null,
+          checkedOutAt: res.checkedOutAt ?? null,
         });
       }
     }

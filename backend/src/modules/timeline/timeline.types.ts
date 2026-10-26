@@ -46,6 +46,9 @@ export interface TimelineReservation {
   arrivalAt: string | null;
   departureAt: string | null;
   flight: string | null;
+  /** Факт заезда и выезда — местное время гостиницы «ГГГГ-ММ-ДДTЧЧ:ММ»; null — не было. */
+  checkedInAt: string | null;
+  checkedOutAt: string | null;
 }
 
 /** One room row in the timeline grid. */

@@ -53,6 +53,8 @@ interface RawReservationRow {
   arrival_at: string | null;
   departure_at: string | null;
   flight: string | null;
+  checked_in_local: string | null;
+  checked_out_local: string | null;
 }
 
 @Injectable()
@@ -162,7 +164,11 @@ export class TimelineService {
           place_number,
           arrival_at,
           departure_at,
-          flight
+          flight,
+          -- Факт заезда и выезда — часами гостиницы, тем же текстом, что прилёт
+          -- (26.10.2026: «не пишет время заезда и время выезда в шахматке»).
+          to_char((checked_in_at AT TIME ZONE 'UTC') AT TIME ZONE coalesce((SELECT t.timezone FROM tenant t WHERE t.id = tenant_id), 'Europe/Moscow'), 'YYYY-MM-DD"T"HH24:MI') AS checked_in_local,
+          to_char((checked_out_at AT TIME ZONE 'UTC') AT TIME ZONE coalesce((SELECT t.timezone FROM tenant t WHERE t.id = tenant_id), 'Europe/Moscow'), 'YYYY-MM-DD"T"HH24:MI') AS checked_out_local
         FROM reservation
         WHERE check_in  < ${toDate}::date + INTERVAL '1 day'
           AND check_out > ${fromDate}::date
@@ -197,6 +203,8 @@ export class TimelineService {
           arrivalAt: r.arrival_at,
           departureAt: r.departure_at,
           flight: r.flight,
+          checkedInAt: r.checked_in_local,
+          checkedOutAt: r.checked_out_local,
         });
       }
 
