@@ -237,10 +237,13 @@ export class ConnectivityService {
     const { roomTypes, ratePlans, standardRates, services } = await this.prisma.forTenantExplicit(
       tenant.id,
       async (tx) => {
+        /* «Сколько таких номеров» — без удалённых в архив: архивный номер
+           остаётся строкой, и карточка гостиницы у оператора не менялась бы
+           после удаления номеров (жалоба 27.10.2026). */
         const roomTypes = await tx.roomType.findMany({
-          where: { isActive: true },
+          where: { isActive: true, archivedAt: null },
           orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-          include: { _count: { select: { rooms: true } } },
+          include: { _count: { select: { rooms: { where: { archivedAt: null } } } } },
         });
         const ratePlans = await tx.ratePlan.findMany({
           where: { isActive: true },

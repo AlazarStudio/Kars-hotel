@@ -7,9 +7,17 @@ import { RoomsService } from './rooms.service';
  * номер с действующей бронью НЕ уходит в архив, архивный НЕ правится и НЕ
  * попадает в номерной фонд. */
 
-type Room = { number: string; isActive: boolean; archivedAt: Date | null; archivedBy?: string | null };
+type Room = {
+  number: string;
+  isActive: boolean;
+  archivedAt: Date | null;
+  archivedBy?: string | null;
+  roomType?: { id: string; code: string; archivedAt: Date | null };
+};
 
-function setup(opts: { room?: Room | null; live?: number } = {}) {
+const LIVE_TYPE = { id: 'cat', code: 'STD', archivedAt: null };
+
+function setup(opts: { room?: Room | null; live?: number; codeTaken?: boolean } = {}) {
   const room: Room | null =
     opts.room === undefined ? { number: '61 (2)', isActive: true, archivedAt: null } : opts.room;
   const tx = {
@@ -20,6 +28,10 @@ function setup(opts: { room?: Room | null; live?: number } = {}) {
       delete: jest.fn(),
     },
     reservation: { count: jest.fn(async () => opts.live ?? 0) },
+    roomType: {
+      findFirst: jest.fn(async () => (opts.codeTaken ? { id: 'cat-new' } : null)),
+      update: jest.fn(async () => ({})),
+    },
   };
   const prisma = {
     forTenant: jest.fn(async (cb: (t: typeof tx) => unknown) => cb(tx)),
@@ -90,8 +102,11 @@ describe('Восстановление номера из архива', () => {
 
   it('снимает пометку и включает номер, в журнал — кто удалял', async () => {
     const at = new Date('2026-10-25T20:00:00Z');
-    const { svc, tx, prisma } = setup({ room: { number: '61', isActive: false, archivedAt: at, archivedBy: 'u-disp' } });
+    const { svc, tx, prisma } = setup({
+      room: { number: '61', isActive: false, archivedAt: at, archivedBy: 'u-disp', roomType: LIVE_TYPE },
+    });
     await svc.restore('room-1');
+    expect(tx.roomType.update).not.toHaveBeenCalled();
     expect(tx.room.update).toHaveBeenCalledWith({
       where: { id: 'room-1' },
       data: { isActive: true, archivedAt: null, archivedBy: null },
@@ -109,6 +124,41 @@ describe('Восстановление номера из архива', () => {
     await svc.restore('room-1');
     expect(tx.room.update).not.toHaveBeenCalled();
     expect(prisma.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  /* 27.10.2026: категория номера удалена. Без её возврата номер встал бы вне
+     номерного фонда, а завести такой номер заново не даёт архивный тёзка. */
+  const ARCHIVED_TYPE = { id: 'cat', code: 'STD~mh8x2k', archivedAt: new Date('2026-10-27T10:00:00Z') };
+
+  it('категория удалена — возвращается вместе с номером, с прежним кодом', async () => {
+    const { svc, tx, prisma } = setup({
+      room: { number: '101', isActive: false, archivedAt: new Date(), roomType: ARCHIVED_TYPE },
+    });
+    await svc.restore('room-1');
+    expect(tx.roomType.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { code: 'STD', archivedAt: null } }),
+    );
+    expect(tx.roomType.update).toHaveBeenCalledWith({
+      where: { id: 'cat' },
+      data: { isActive: true, archivedAt: null, archivedBy: null, code: 'STD' },
+    });
+    expect(tx.room.update).toHaveBeenCalled();
+    expect(prisma.writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        diff: expect.objectContaining({ after: expect.objectContaining({ roomTypeRestored: 'cat' }) }),
+      }),
+    );
+  });
+
+  it('прежний код занят новой категорией — возвращается с кодом из архива, НЕ отбирая чужой', async () => {
+    const { svc, tx } = setup({
+      room: { number: '101', isActive: false, archivedAt: new Date(), roomType: ARCHIVED_TYPE },
+      codeTaken: true,
+    });
+    await svc.restore('room-1');
+    expect(tx.roomType.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ code: 'STD~mh8x2k' }) }),
+    );
   });
 });
 

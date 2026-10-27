@@ -344,10 +344,35 @@ export class RoomsService {
     const result = await this.prisma.forTenant(async (tx) => {
       const room = await tx.room.findUnique({
         where: { id },
-        select: { number: true, archivedAt: true, archivedBy: true },
+        select: {
+          number: true,
+          archivedAt: true,
+          archivedBy: true,
+          roomType: { select: { id: true, code: true, archivedAt: true } },
+        },
       });
       if (!room) throw new NotFoundException('Номер не найден');
       if (!room.archivedAt) return { room, changed: false };
+      /* Категория номера удалена (27.10.2026) — возвращаем и её: иначе номер
+         восстановился бы вне номерного фонда (фонд показывает номера по живым
+         категориям), а завести такой номер заново не даёт архивный тёзка.
+         Код — прежний, если его не заняла новая категория. */
+      if (room.roomType.archivedAt) {
+        const original = room.roomType.code.replace(/~[0-9a-z]+$/, '');
+        const taken = await tx.roomType.findFirst({
+          where: { code: original, archivedAt: null },
+          select: { id: true },
+        });
+        await tx.roomType.update({
+          where: { id: room.roomType.id },
+          data: {
+            isActive: true,
+            archivedAt: null,
+            archivedBy: null,
+            code: taken ? room.roomType.code : original,
+          },
+        });
+      }
       await tx.room.update({
         where: { id },
         data: { isActive: true, archivedAt: null, archivedBy: null },
@@ -362,7 +387,11 @@ export class RoomsService {
         action: 'restore',
         diff: {
           before: { number: result.room.number, archivedAt: result.room.archivedAt, archivedBy: result.room.archivedBy },
-          after: { isActive: true, archivedAt: null },
+          after: {
+            isActive: true,
+            archivedAt: null,
+            ...(result.room.roomType.archivedAt ? { roomTypeRestored: result.room.roomType.id } : {}),
+          },
         },
       });
     }

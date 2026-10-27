@@ -1009,6 +1009,12 @@ model RoomType {
   photos        Json?    @db.JsonB
   sortOrder     Int      @default(0) @map("sort_order")
   isActive      Boolean  @default(true) @map("is_active")
+  /// Удалена «в архив» (27.10.2026) — по тому же правилу, что номер: удаление
+  /// не стирает данные. Архивные номера держат категорию внешним ключом, и
+  /// стереть её нельзя. Архивная выключена и скрыта из номерного фонда; её код
+  /// освобождается (к нему дописан хвост), чтобы завести категорию заново.
+  archivedAt    DateTime? @map("archived_at")
+  archivedBy    String?   @map("archived_by") @db.Uuid
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

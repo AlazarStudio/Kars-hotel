@@ -12,8 +12,17 @@ import {
   prismaErrorCode,
 } from '../../common/prisma/prisma-error';
 import { StorageService, UploadedFile } from '../../common/storage/storage.service';
+import { TenantContext } from '../../common/context/tenant-context';
 import { CreateRoomTypeDto } from './dto/create-room-type.dto';
 import { UpdateRoomTypeDto } from './dto/update-room-type.dto';
+
+/* Число номеров категории — без удалённых «в архив» (25.10.2026). Архивный
+   номер остаётся строкой и ссылкой на категорию; считай его — и пустая
+   категория «не удаляется: привязаны 16 номеров», а каталог партнёра
+   показывает номера, которых в гостинице больше нет. */
+const LIVE_ROOMS_COUNT = {
+  _count: { select: { rooms: { where: { archivedAt: null } } } },
+} as const;
 
 @Injectable()
 export class RoomTypesService {
@@ -25,8 +34,9 @@ export class RoomTypesService {
   async list() {
     return this.prisma.forTenant((tx) =>
       tx.roomType.findMany({
+        where: { archivedAt: null },
         orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-        include: { _count: { select: { rooms: true } } },
+        include: LIVE_ROOMS_COUNT,
       }),
     );
   }
@@ -35,7 +45,7 @@ export class RoomTypesService {
     const rt = await this.prisma.forTenant((tx) =>
       tx.roomType.findUnique({
         where: { id },
-        include: { _count: { select: { rooms: true } } },
+        include: LIVE_ROOMS_COUNT,
       }),
     );
     if (!rt) throw new NotFoundException(`RoomType ${id} not found`);
@@ -96,18 +106,43 @@ export class RoomTypesService {
     }
   }
 
+  /* Удаление — «в архив», как у номера: строку не стираем (решение владельца
+     25.10.2026), да и не смогли бы — на категорию ссылаются архивные номера.
+     Архивная выключается (каталог партнёра и продажа берут только включённые)
+     и скрывается из номерного фонда. Код освобождаем хвостом: иначе завести
+     категорию с тем же кодом заново было бы нельзя, а архивной в кабинете не
+     видно — человек упёрся бы в «код уже существует» без выхода. */
   async remove(id: string) {
-    // Soft requirement: can't delete a category that still has rooms.
+    const tenantId = this.currentTenantId();
+    const actor = TenantContext.get()?.userId || null;
     const existing = await this.prisma.forTenant((tx) =>
-      tx.roomType.findUnique({ where: { id }, include: { _count: { select: { rooms: true } } } }),
+      tx.roomType.findUnique({ where: { id }, include: LIVE_ROOMS_COUNT }),
     );
     if (!existing) throw new NotFoundException(`RoomType ${id} not found`);
+    if (existing.archivedAt) return { ok: true };
     if (existing._count.rooms > 0) {
       throw new ConflictException(
         `Нельзя удалить категорию: к ней привязаны ${existing._count.rooms} номеров. Сначала удалите номера или перенесите их в другую категорию.`,
       );
     }
-    await this.prisma.forTenant((tx) => tx.roomType.delete({ where: { id } }));
+    const archivedAt = new Date();
+    const code = `${existing.code}~${archivedAt.getTime().toString(36)}`;
+    await this.prisma.forTenant((tx) =>
+      tx.roomType.update({
+        where: { id },
+        data: { isActive: false, archivedAt, archivedBy: actor, code },
+      }),
+    );
+    await this.prisma.writeAuditLog({
+      tenantId,
+      entity: 'room_type',
+      entityId: id,
+      action: 'archive',
+      diff: {
+        before: { code: existing.code, name: existing.name, isActive: existing.isActive },
+        after: { code, isActive: false, archivedAt },
+      },
+    });
     return { ok: true };
   }
 
