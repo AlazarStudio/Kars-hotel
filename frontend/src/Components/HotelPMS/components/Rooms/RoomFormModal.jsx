@@ -2,18 +2,28 @@ import { useEffect, useState } from 'react';
 import Modal from '../../shared/Modal';
 import formClasses from '../../shared/Form.module.css';
 import {
-  BED_TYPE_LABELS,
   PARTNER_HOLD_CONFIG,
   ROOM_STATUS_CONFIG,
   ROOM_VIEW_LABELS,
 } from '../../shared/status-config';
+
+/* Поля кроватей номера — в порядке формы; первые три — спальные места. */
+const BEDS = [
+  ['singleBeds', 'Односпальных'],
+  ['doubleBeds', 'Двуспальных'],
+  ['sofas', 'Диванов'],
+  ['extraBeds', 'Доп. кроватей'],
+];
 
 const EMPTY = {
   roomTypeId: '',
   number: '',
   floor: 1,
   capacity: 1,
-  bedType: 'DOUBLE',
+  singleBeds: 0,
+  doubleBeds: 1,
+  sofas: 0,
+  extraBeds: 0,
   view: 'NONE',
   status: 'CLEAN',
   partnerHold: 'NONE',
@@ -47,7 +57,10 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
               number: editing.number,
               floor: editing.floor,
               capacity: editing.capacity ?? 1,
-              bedType: editing.bedType,
+              singleBeds: editing.singleBeds ?? 0,
+              doubleBeds: editing.doubleBeds ?? 0,
+              sofas: editing.sofas ?? 0,
+              extraBeds: editing.extraBeds ?? 0,
               view: editing.view,
               status: editing.status,
               partnerHold: editing.partnerHold ?? 'NONE',
@@ -71,6 +84,9 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
     if (!values.number || values.number.trim().length === 0) e.number = 'Обязательно';
     // Тот же предел, что на сервере (CreateRoomDto): номер бывает и адресом квартиры.
     if (values.number && values.number.length > 100) e.number = 'Максимум 100 символов';
+    const beds = BEDS.map(([k]) => Number(values[k]));
+    if (beds.some((n) => !Number.isInteger(n) || n < 0 || n > 20)) e.beds = 'Целое число от 0 до 20';
+    else if (beds[0] + beds[1] + beds[2] === 0) e.beds = 'Укажите хотя бы одну кровать или диван';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -86,7 +102,10 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
         number: values.number.trim(),
         floor: Number(values.floor),
         capacity: Number(values.capacity) || 1,
-        bedType: values.bedType,
+        singleBeds: Number(values.singleBeds),
+        doubleBeds: Number(values.doubleBeds),
+        sofas: Number(values.sofas),
+        extraBeds: Number(values.extraBeds),
         view: values.view,
         status: values.status,
         partnerHold: values.partnerHold,
@@ -178,21 +197,6 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
             />
           </div>
           <div className={formClasses.field}>
-            <label className={formClasses.label}>Кровать</label>
-            <select
-              className={formClasses.select}
-              value={values.bedType}
-              onChange={(e) => set('bedType', e.target.value)}
-            >
-              {Object.entries(BED_TYPE_LABELS).map(([k, label]) => (
-                <option key={k} value={k}>{label}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className={formClasses.row}>
-          <div className={formClasses.field}>
             <label className={formClasses.label}>Вид</label>
             <select
               className={formClasses.select}
@@ -205,6 +209,27 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
             </select>
           </div>
         </div>
+
+        {/* Кровати числами (27.10.2026): из одного списка нельзя было сказать
+            «двуспальная и диван». Доп. кровати — здесь, у номера: в одной
+            категории они есть не у всех номеров. */}
+        <div className={formClasses.row4}>
+          {BEDS.map(([k, label]) => (
+            <div key={k} className={formClasses.field}>
+              <label className={formClasses.label}>{label}</label>
+              <input
+                className={formClasses.input}
+                type="number"
+                min={0}
+                max={20}
+                value={values[k]}
+                onChange={(e) => set(k, e.target.value)}
+                aria-invalid={errors.beds ? 'true' : 'false'}
+              />
+            </div>
+          ))}
+        </div>
+        {errors.beds && <div className={formClasses.fieldError}>{errors.beds}</div>}
 
         <div className={formClasses.field}>
           <label className={formClasses.label}>Статус уборки</label>

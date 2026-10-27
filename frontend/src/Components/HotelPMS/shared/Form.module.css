@@ -61,6 +61,12 @@
   gap: 12px;
 }
 
+.row4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
 .fieldError {
   margin-top: 4px;
   font-size: 12px;

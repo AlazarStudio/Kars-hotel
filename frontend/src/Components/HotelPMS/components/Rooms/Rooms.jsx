@@ -5,7 +5,7 @@ import RoomFormModal from './RoomFormModal';
 import ConfirmDialog from '../../shared/ConfirmDialog';
 import {
   ROOM_STATUS_CONFIG,
-  BED_TYPE_LABELS,
+  bedsLabel,
   PARTNER_HOLD_CONFIG,
 } from '../../shared/status-config';
 import {
@@ -248,7 +248,7 @@ function Rooms() {
                   >
                     <div className={classes.roomNumber}>№{room.number}</div>
                     <div className={classes.roomMeta}>
-                      {room.floor} этаж · {BED_TYPE_LABELS[room.bedType] || room.bedType}
+                      {room.floor} этаж · {bedsLabel(room)}
                     </div>
                     {/* А3 · договорный блок виден прямо на карточке: администратор
                         решает «продавать или нет» здесь, а не открывая номер. */}

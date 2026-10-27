@@ -71,6 +71,28 @@ export const BED_TYPE_LABELS = {
   SOFA: 'Диван-кровать',
 };
 
+const ruPlural = (n, one, few, many) => {
+  const n10 = n % 10;
+  const n100 = n % 100;
+  if (n10 === 1 && n100 !== 11) return one;
+  if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return few;
+  return many;
+};
+
+/* Кровати номера числами (27.10.2026): «1 двуспальная + 1 диван». Чисел нет
+   (номер из старого API) — прежняя подпись вида. */
+export function bedsLabel(room) {
+  const parts = [
+    [room?.singleBeds, 'односпальная', 'односпальные', 'односпальных'],
+    [room?.doubleBeds, 'двуспальная', 'двуспальные', 'двуспальных'],
+    [room?.sofas, 'диван', 'дивана', 'диванов'],
+    [room?.extraBeds, 'доп. кровать', 'доп. кровати', 'доп. кроватей'],
+  ]
+    .filter(([n]) => n > 0)
+    .map(([n, ...forms]) => `${n} ${ruPlural(n, ...forms)}`);
+  return parts.length ? parts.join(' + ') : BED_TYPE_LABELS[room?.bedType] || room?.bedType || '';
+}
+
 export const ROOM_VIEW_LABELS = {
   NONE: 'Без вида',
   CITY: 'На город',

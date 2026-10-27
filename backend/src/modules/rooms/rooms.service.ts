@@ -9,6 +9,7 @@ import {
   prismaErrorCode,
 } from '../../common/prisma/prisma-error';
 import { TenantContext } from '../../common/context/tenant-context';
+import { bedsForCreate, bedsForUpdate } from './room-beds';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 import { CreateManyRoomsDto } from './dto/create-many-rooms.dto';
@@ -93,6 +94,7 @@ export class RoomsService {
             number: dto.number,
             floor: dto.floor ?? 1,
             bedType: dto.bedType ?? 'DOUBLE',
+            ...bedsForCreate(dto),
             view: dto.view ?? 'NONE',
             status: dto.status ?? 'CLEAN',
             isActive: dto.isActive ?? true,
@@ -181,6 +183,7 @@ export class RoomsService {
               number,
               floor: dto.floor ?? 1,
               bedType: dto.bedType ?? 'DOUBLE',
+              ...bedsForCreate(dto),
               view: dto.view ?? 'NONE',
               status: dto.status ?? 'CLEAN',
               isActive: dto.isActive ?? true,
@@ -236,6 +239,7 @@ export class RoomsService {
             number: dto.number ?? undefined,
             floor: dto.floor ?? undefined,
             bedType: dto.bedType ?? undefined,
+            ...bedsForUpdate(dto),
             view: dto.view ?? undefined,
             status: dto.status ?? undefined,
             isActive: dto.isActive ?? undefined,
@@ -431,6 +435,10 @@ export class RoomsService {
             floor: true,
             capacity: true,
             bedType: true,
+            singleBeds: true,
+            doubleBeds: true,
+            sofas: true,
+            extraBeds: true,
             view: true,
             status: true,
             isActive: true,

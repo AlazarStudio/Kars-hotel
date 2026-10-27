@@ -13,7 +13,6 @@ const EMPTY = {
   description: '',
   baseOccupancy: 2,
   maxOccupancy: 2,
-  extraBeds: 0,
   basePrice: 0,
 };
 
@@ -56,7 +55,6 @@ export default function RoomTypeFormModal({ open, editing, onClose, onSubmit }) 
               description: editing.description ?? '',
               baseOccupancy: editing.baseOccupancy,
               maxOccupancy: editing.maxOccupancy,
-              extraBeds: editing.extraBeds,
               basePrice: Number(editing.basePrice ?? 0),
             }
           : EMPTY,
@@ -166,7 +164,6 @@ export default function RoomTypeFormModal({ open, editing, onClose, onSubmit }) 
           description: values.description?.trim() || undefined,
           baseOccupancy: Number(values.baseOccupancy),
           maxOccupancy: Number(values.maxOccupancy),
-          extraBeds: Number(values.extraBeds),
           basePrice: Number(values.basePrice),
         });
         // Edit mode: onSubmit resolves without an entity — nothing more to do here.
@@ -256,7 +253,10 @@ export default function RoomTypeFormModal({ open, editing, onClose, onSubmit }) 
           />
         </div>
 
-        <div className={formClasses.row3}>
+        {/* Доп. кровати отсюда ушли в номер (27.10.2026): в одной категории
+            они есть не у всех номеров. Число категории в базе не тронуто —
+            форма его просто больше не шлёт. */}
+        <div className={formClasses.row}>
           <div className={formClasses.field}>
             <label className={formClasses.label}>Базовое размещение</label>
             <input
@@ -282,17 +282,6 @@ export default function RoomTypeFormModal({ open, editing, onClose, onSubmit }) 
               aria-invalid={errors.maxOccupancy ? 'true' : 'false'}
             />
             {errors.maxOccupancy && <div className={formClasses.fieldError}>{errors.maxOccupancy}</div>}
-          </div>
-          <div className={formClasses.field}>
-            <label className={formClasses.label}>Доп. кровати</label>
-            <input
-              className={formClasses.input}
-              type="number"
-              min={0}
-              max={10}
-              value={values.extraBeds}
-              onChange={(e) => set('extraBeds', Number(e.target.value))}
-            />
           </div>
         </div>
 

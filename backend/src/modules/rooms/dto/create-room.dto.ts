@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -30,10 +31,40 @@ export class CreateRoomDto {
   @Min(-5)
   floor?: number;
 
+  /** Прежнее описание одним видом. Если чисел ниже нет — они берутся из него. */
   @ApiPropertyOptional({ enum: BedType, default: BedType.DOUBLE })
   @IsOptional()
   @IsEnum(BedType)
   bedType?: BedType;
+
+  /* Кровати числами (27.10.2026). Прислано хоть одно из трёх — остальные 0. */
+  @ApiPropertyOptional({ description: 'Односпальных кроватей' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(20)
+  singleBeds?: number;
+
+  @ApiPropertyOptional({ description: 'Двуспальных кроватей' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(20)
+  doubleBeds?: number;
+
+  @ApiPropertyOptional({ description: 'Диванов' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(20)
+  sofas?: number;
+
+  @ApiPropertyOptional({ description: 'Доп. кроватей' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(20)
+  extraBeds?: number;
 
   @ApiPropertyOptional({ enum: RoomView, default: RoomView.NONE })
   @IsOptional()

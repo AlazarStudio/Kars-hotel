@@ -351,6 +351,11 @@ export class ConnectivityService {
         floor: r.floor,
         capacity: r.capacity,
         bedType: r.bedType,
+        // Кровати числами (27.10.2026); bedType — прежнее описание, для старых клиентов.
+        singleBeds: r.singleBeds,
+        doubleBeds: r.doubleBeds,
+        sofas: r.sofas,
+        extraBeds: r.extraBeds,
         categoryId: r.roomType?.id ?? null,
         categoryCode: r.roomType?.code ?? null,
         categoryName: r.roomType?.name ?? null,
@@ -395,6 +400,10 @@ export class ConnectivityService {
         floor: number;
         capacity: number;
         bedType: string;
+        singleBeds: number;
+        doubleBeds: number;
+        sofas: number;
+        extraBeds: number;
         view: string;
         available: boolean;
       };
@@ -1260,6 +1269,10 @@ export class ConnectivityService {
       floor: number;
       capacity: number;
       bedType: string;
+      singleBeds: number;
+      doubleBeds: number;
+      sofas: number;
+      extraBeds: number;
       view: string;
       available: boolean;
       /** Д4 · держится ли номер за партнёром: NONE | QUOTA | RESERVE. */
@@ -1274,11 +1287,17 @@ export class ConnectivityService {
           floor: number;
           capacity: number;
           bed_type: string;
+          single_beds: number;
+          double_beds: number;
+          sofas: number;
+          extra_beds: number;
           view: string;
           partner_hold: string;
         }>
       >`
-        SELECT r.id, r.number, r.floor, r.capacity, r.bed_type, r.view, r.partner_hold
+        SELECT r.id, r.number, r.floor, r.capacity, r.bed_type,
+               r.single_beds, r.double_beds, r.sofas, r.extra_beds,
+               r.view, r.partner_hold
         FROM room r
         WHERE r.room_type_id = ${roomTypeId}::uuid
           AND r.is_active = true
@@ -1291,6 +1310,10 @@ export class ConnectivityService {
         floor: r.floor,
         capacity: r.capacity,
         bedType: r.bed_type,
+        singleBeds: r.single_beds,
+        doubleBeds: r.double_beds,
+        sofas: r.sofas,
+        extraBeds: r.extra_beds,
         view: r.view,
         available: fits.get(r.id) === true,
         // Признак информационный: занятость считается одинаково для всех

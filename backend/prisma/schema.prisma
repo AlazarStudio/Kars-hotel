@@ -1058,7 +1058,17 @@ model Room {
   roomType   RoomType   @relation(fields: [roomTypeId], references: [id], onDelete: Restrict)
   number     String
   floor      Int        @default(1)
+  /// Прежнее описание кроватей одним видом. С 27.10.2026 кровати — числами
+  /// (ниже); столбец остаётся как был: данные не стираем, старые клиенты API
+  /// его читают.
   bedType    BedType    @default(DOUBLE) @map("bed_type")
+  /// Кровати числами (27.10.2026): видом из списка нельзя было сказать
+  /// «двуспальная и диван» — сочетаний десятки. Доп. кровати — у номера, а не
+  /// у категории: в одной категории они бывают у одних номеров и нет у других.
+  singleBeds Int        @default(0) @map("single_beds")
+  doubleBeds Int        @default(0) @map("double_beds")
+  sofas      Int        @default(0)
+  extraBeds  Int        @default(0) @map("extra_beds")
   view       RoomView   @default(NONE)
   status     RoomStatus @default(CLEAN)
   isActive   Boolean    @default(true) @map("is_active")
