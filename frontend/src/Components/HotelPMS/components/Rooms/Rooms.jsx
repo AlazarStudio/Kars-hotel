@@ -3,7 +3,7 @@ import classes from './Rooms.module.css';
 import RoomTypeFormModal from './RoomTypeFormModal';
 import RoomFormModal from './RoomFormModal';
 import ConfirmDialog from '../../shared/ConfirmDialog';
-import SelectionBar from './SelectionBar';
+import formClasses from '../../shared/Form.module.css';
 import { useRoomSelection } from './useRoomSelection';
 import { archiveSummary, numberList, plural } from './room-range';
 import {
@@ -180,17 +180,50 @@ function Rooms() {
   // ── Main grid ──────────────────────────────────────────────────────────────
   return (
     <div className={classes.root} onClick={() => setHkMenu(null)}>
-      <div className={classes.pageHeader}>
-        <div className={classes.pageTitle}>Номерной фонд</div>
+      {/* В режиме выбора шапка становится панелью действий: счётчик и
+          «Удалить» там же, где нажали «Выбрать», и прилипают к верху при
+          прокрутке длинного фонда. */}
+      <div
+        className={
+          selection.active ? `${classes.pageHeader} ${classes.pageHeaderSelecting}` : classes.pageHeader
+        }
+      >
+        <div className={classes.pageTitle}>
+          {selection.active
+            ? `Выбрано: ${selectedRooms.length} из ${rooms.length}`
+            : 'Номерной фонд'}
+        </div>
         <div className={classes.headerActions}>
           {selection.active ? (
-            <button type="button" className={classes.btnGhost} onClick={stopSelection}>
-              Отменить выбор
-            </button>
+            <>
+              {/* Свои ключи: без них React переиспользует эти кнопки под
+                  «Категорию» и «Добавить номер», и красный фон «Удалить»
+                  на миг вспыхивает на соседней кнопке (переход цвета). */}
+              <button key="sel-cancel" type="button" className={classes.btnGhost} onClick={stopSelection}>
+                Отмена
+              </button>
+              <button
+                key="sel-delete"
+                type="button"
+                className={classes.btnDelete}
+                onClick={() => setConfirm({ type: 'rooms', target: selectedRooms })}
+                disabled={selectedRooms.length === 0}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                </svg>
+                {selectedRooms.length > 0 ? `Удалить ${selectedRooms.length}` : 'Удалить'}
+              </button>
+            </>
           ) : (
             <>
               {rooms.length > 0 && (
                 <button type="button" className={classes.btnGhost} onClick={selection.start}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="9 11 12 14 22 4" />
+                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                  </svg>
                   Выбрать
                 </button>
               )}
@@ -225,6 +258,9 @@ function Rooms() {
             </>
           )}
         </div>
+        {selection.active && archiveResult && (
+          <div className={`${formClasses.notice} ${classes.selectionNotice}`}>{archiveResult}</div>
+        )}
       </div>
 
       {roomTypes.map((cat) => {
@@ -373,15 +409,6 @@ function Rooms() {
           </div>
         );
       })}
-
-      {selection.active && (
-        <SelectionBar
-          count={selectedRooms.length}
-          result={archiveResult}
-          onCancel={stopSelection}
-          onDelete={() => setConfirm({ type: 'rooms', target: selectedRooms })}
-        />
-      )}
 
       {/* ── status dropdown ─────────────────────────────────────────────────── */}
       {hkMenu && (
