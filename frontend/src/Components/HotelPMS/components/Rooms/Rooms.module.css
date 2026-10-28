@@ -173,6 +173,36 @@
   gap: 2px;
 }
 
+/* Сворачивание категории (28.10.2026): левая часть шапки — кнопка, шеврон
+   показывает состояние. Свёрнутая — без нижней черты: под шапкой пусто. */
+.catToggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  color: inherit;
+}
+
+.catChevron {
+  flex-shrink: 0;
+  color: #6B7280;
+  transition: transform 0.15s;
+}
+
+.catChevronCollapsed { transform: rotate(-90deg); }
+
+.catHeaderCollapsed { border-bottom: none; }
+
+/* Двойной класс: .roomsGrid с display: grid стоит в файле ниже и при равной
+   силе перебил бы одиночный класс. */
+.roomsGrid.roomsGridCollapsed { display: none; }
+
 .catName {
   font-size: 15px;
   font-weight: 700;

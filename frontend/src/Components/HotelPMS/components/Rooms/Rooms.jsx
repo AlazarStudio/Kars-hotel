@@ -5,6 +5,7 @@ import RoomFormModal from './RoomFormModal';
 import ConfirmDialog from '../../shared/ConfirmDialog';
 import formClasses from '../../shared/Form.module.css';
 import { useRoomSelection } from './useRoomSelection';
+import { useCollapsedCategories } from './useCollapsedCategories';
 import { archiveSummary, numberList, plural } from './room-range';
 import {
   ROOM_STATUS_CONFIG,
@@ -51,6 +52,7 @@ function Rooms() {
   const restoreRoom = useRestoreRoom();
   const archiveRooms = useArchiveRooms();
   const selection = useRoomSelection();
+  const collapsedCats = useCollapsedCategories();
   const [archiveResult, setArchiveResult] = useState(null);
   // Страница прокручена — под прилипшей шапкой нужна черта (см. .pageHeaderStuck).
   const [stuck, setStuck] = useState(false);
@@ -269,16 +271,42 @@ function Rooms() {
         const readyCount = catRooms.filter((r) => r.status === 'READY').length;
         const catIds = catRooms.map((r) => r.id);
         const allCatSelected = catIds.length > 0 && catIds.every((id) => selection.selected.has(id));
+        const isCollapsed = collapsedCats.collapsed.has(cat.id);
         return (
           <div key={cat.id} className={classes.categorySection}>
-            <div className={classes.catHeader}>
-              <div className={classes.catInfo}>
-                <div className={classes.catName}>{cat.name}</div>
-                <div className={classes.catMeta}>
-                  {catRooms.length} номеров · {readyCount} готово · вместимость{' '}
-                  {cat.baseOccupancy}–{cat.maxOccupancy} чел.
-                </div>
-              </div>
+            <div
+              className={isCollapsed ? `${classes.catHeader} ${classes.catHeaderCollapsed}` : classes.catHeader}
+            >
+              {/* Вся левая часть шапки — кнопка сворачивания: попасть по
+                  названию проще, чем по маленькой стрелке. */}
+              <button
+                type="button"
+                className={classes.catToggle}
+                onClick={() => collapsedCats.toggle(cat.id)}
+                aria-expanded={!isCollapsed}
+                title={isCollapsed ? 'Показать номера' : 'Скрыть номера'}
+              >
+                <svg
+                  className={isCollapsed ? `${classes.catChevron} ${classes.catChevronCollapsed}` : classes.catChevron}
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+                <span className={classes.catInfo}>
+                  <span className={classes.catName}>{cat.name}</span>
+                  <span className={classes.catMeta}>
+                    {catRooms.length} номеров · {readyCount} готово · вместимость{' '}
+                    {cat.baseOccupancy}–{cat.maxOccupancy} чел.
+                  </span>
+                </span>
+              </button>
               <div className={classes.catRight}>
                 <div className={classes.catPrice}>
                   {Number(cat.basePrice ?? 0).toLocaleString('ru-RU')} ₽
@@ -329,7 +357,7 @@ function Rooms() {
               </div>
             </div>
 
-            <div className={classes.roomsGrid}>
+            <div className={isCollapsed ? `${classes.roomsGrid} ${classes.roomsGridCollapsed}` : classes.roomsGrid}>
               {catRooms.map((room) => {
                 const cfg = ROOM_STATUS_CONFIG[room.status] || ROOM_STATUS_CONFIG.CLEAN;
                 const isSelected = selection.selected.has(room.id);
