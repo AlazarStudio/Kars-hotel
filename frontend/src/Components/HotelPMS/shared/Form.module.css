@@ -152,3 +152,42 @@
 
 .btnDangerGhost:hover:not(:disabled) { background: #FEF2F2; border-color: #FECACA; }
 .btnDangerGhost:disabled { color: #FCA5A5; cursor: not-allowed; }
+
+/* Переключатель «одно из двух» в форме (28.10.2026: «Один номер / Несколько»). */
+.segmented {
+  display: inline-flex;
+  border: 1px solid #D1D5DB;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+
+.segment {
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #fff;
+  color: #6B7280;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.segment + .segment { border-left: 1px solid #D1D5DB; }
+
+.segmentActive {
+  background: #1E88E5;
+  color: #fff;
+}
+
+/* Итог, требующий внимания, но не ошибка: пачка создалась или удалилась
+   не целиком (28.10.2026). */
+.notice {
+  padding: 10px 12px;
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  border-radius: 8px;
+  color: #92400E;
+  font-size: 13px;
+  line-height: 1.5;
+}

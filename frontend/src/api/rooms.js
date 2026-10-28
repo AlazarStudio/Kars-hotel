@@ -46,3 +46,10 @@ export async function restoreRoom(id) {
   const { data } = await api.post(`/rooms/${id}/restore`);
   return data;
 }
+
+/* Пачка номеров одной категории (28.10.2026): «с номера N, столько-то штук».
+   Ответ: created, skipped (есть в фонде), skippedArchived (в удалённых). */
+export async function createRooms(payload) {
+  const { data } = await api.post('/rooms/bulk', payload);
+  return data;
+}

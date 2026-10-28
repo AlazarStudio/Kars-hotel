@@ -22,6 +22,17 @@ export function useCreateRoom() {
   });
 }
 
+export function useCreateRooms() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.createRooms,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: KEY });
+      qc.invalidateQueries({ queryKey: ['roomTypes'] });
+    },
+  });
+}
+
 export function useUpdateRoom() {
   const qc = useQueryClient();
   return useMutation({

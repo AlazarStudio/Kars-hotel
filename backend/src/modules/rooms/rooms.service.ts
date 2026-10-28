@@ -158,18 +158,25 @@ export class RoomsService {
     const existing = await this.prisma.forTenant((tx) =>
       tx.room.findMany({
         where: { number: { in: numbers } },
-        select: { number: true },
+        select: { number: true, archivedAt: true },
       }),
     );
     const taken = new Set(existing.map((r) => r.number));
-    const skipped = numbers.filter((n) => taken.has(n));
+    /* Удалённые — отдельным списком (28.10.2026): номер в архиве в фонде не
+       виден, и «уже есть» про него ставит в тупик — как и в одиночном create,
+       где подсказываем восстановить. */
+    const archived = new Set(existing.filter((r) => r.archivedAt).map((r) => r.number));
+    const skipped = numbers.filter((n) => taken.has(n) && !archived.has(n));
+    const skippedArchived = numbers.filter((n) => archived.has(n));
 
-    if (skipped.length && dto.skipExisting === false) {
-      throw new ConflictException(`Уже существуют номера: ${skipped.join(', ')}`);
+    if (taken.size && dto.skipExisting === false) {
+      throw new ConflictException(
+        `Уже существуют номера: ${[...skipped, ...skippedArchived].join(', ')}`,
+      );
     }
     const toCreate = numbers.filter((n) => !taken.has(n));
     if (!toCreate.length) {
-      return { created: 0, skipped, rooms: [] as unknown[] };
+      return { created: 0, skipped, skippedArchived, rooms: [] as unknown[] };
     }
 
     const rooms = await this.prisma.forTenant(async (tx) => {
@@ -188,6 +195,7 @@ export class RoomsService {
               status: dto.status ?? 'CLEAN',
               isActive: dto.isActive ?? true,
               capacity: dto.capacity ?? 1,
+              partnerHold: dto.partnerHold ?? 'NONE',
               notes: dto.notes ?? null,
             },
             include: { roomType: { select: { id: true, code: true, name: true } } },
@@ -206,11 +214,11 @@ export class RoomsService {
       action: 'create_many',
       diff: {
         before: {},
-        after: { created: toCreate, skipped, roomTypeId: dto.roomTypeId },
+        after: { created: toCreate, skipped, skippedArchived, roomTypeId: dto.roomTypeId },
       },
     });
 
-    return { created: rooms.length, skipped, rooms };
+    return { created: rooms.length, skipped, skippedArchived, rooms };
   }
 
   async update(id: string, dto: UpdateRoomDto) {

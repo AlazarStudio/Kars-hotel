@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { BedType, RoomStatus, RoomView } from '@prisma/client';
+import { BedType, RoomPartnerHold, RoomStatus, RoomView } from '@prisma/client';
 import {
   IsBoolean,
   IsEnum,
@@ -103,6 +103,13 @@ export class CreateManyRoomsDto {
   @IsOptional()
   @IsEnum(RoomStatus)
   status?: RoomStatus;
+
+  /* Договорный блок пачки (28.10.2026): поле стоит в той же форме, что у
+     одного номера, и должно действовать на все номера пачки. */
+  @ApiPropertyOptional({ enum: RoomPartnerHold, default: RoomPartnerHold.NONE })
+  @IsOptional()
+  @IsEnum(RoomPartnerHold)
+  partnerHold?: RoomPartnerHold;
 
   @ApiPropertyOptional({ default: true })
   @IsOptional()

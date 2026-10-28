@@ -17,6 +17,7 @@ import {
 import {
   useRooms,
   useCreateRoom,
+  useCreateRooms,
   useUpdateRoom,
   useUpdateRoomStatus,
   useArchiveRoom,
@@ -39,6 +40,7 @@ function Rooms() {
   const updateRT = useUpdateRoomType();
   const deleteRT = useDeleteRoomType();
   const createRoom = useCreateRoom();
+  const createRooms = useCreateRooms();
   const updateRoom = useUpdateRoom();
   const updateRoomStatus = useUpdateRoomStatus();
   const archiveRoom = useArchiveRoom();
@@ -336,6 +338,7 @@ function Rooms() {
             ? updateRoom.mutateAsync({ id: roomModal.editing.id, payload })
             : createRoom.mutateAsync(payload)
         }
+        onSubmitMany={(payload) => createRooms.mutateAsync(payload)}
         onDelete={() => {
           const room = roomModal.editing;
           setRoomModal({ open: false, editing: null, defaultRoomTypeId: undefined });
