@@ -348,6 +348,70 @@ export class RoomsService {
   }
 
   /**
+   * Удаление «в архив» пачкой (28.10.2026). Правило то же, что у `archive`:
+   * номер с действующей бронью не трогаем. Отличий два:
+   * - результат частичный: удаляем, что можно, остальное называем с числом
+   *   броней — падать целиком из-за двух номеров значило бы заставить снимать
+   *   с них галочки и пробовать снова;
+   * - запись журнала одна на пачку: журнал гостиницы виден оператору в её
+   *   истории, и сорок строк «номер удалён» вытеснили бы из неё всё прочее.
+   *   Кто и когда удалил каждый номер, записано в нём самом.
+   * Удалённый раньше номер не правится и в журнал не идёт, но в ответе он
+   * среди удалённых: повтор безвреден, как у одного номера.
+   */
+  async archiveMany(ids: string[]) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    const actor = TenantContext.get()?.userId || null;
+    const unique = [...new Set(ids)];
+    const result = await this.prisma.forTenant(async (tx) => {
+      const rooms = await tx.room.findMany({
+        where: { id: { in: unique } },
+        select: { id: true, number: true, archivedAt: true },
+      });
+      const live = await tx.reservation.groupBy({
+        by: ['roomId'],
+        where: {
+          roomId: { in: rooms.map((r) => r.id) },
+          status: { in: LIVE_RESERVATION_STATUSES },
+        },
+        _count: { _all: true },
+      });
+      const liveByRoom = new Map(live.map((g) => [g.roomId, g._count._all]));
+      const fresh = rooms.filter((r) => !r.archivedAt && !liveByRoom.has(r.id));
+      if (fresh.length) {
+        await tx.room.updateMany({
+          where: { id: { in: fresh.map((r) => r.id) }, archivedAt: null },
+          data: { isActive: false, archivedAt: new Date(), archivedBy: actor },
+        });
+      }
+      const found = new Set(rooms.map((r) => r.id));
+      return {
+        fresh: fresh.map((r) => r.number),
+        archived: rooms
+          .filter((r) => r.archivedAt || !liveByRoom.has(r.id))
+          .map(({ id, number }) => ({ id, number })),
+        blocked: rooms
+          .filter((r) => !r.archivedAt && liveByRoom.has(r.id))
+          .map((r) => ({ id: r.id, number: r.number, liveReservations: liveByRoom.get(r.id) ?? 0 })),
+        notFound: unique.filter((id) => !found.has(id)),
+      };
+    });
+    if (result.fresh.length) {
+      await this.prisma.writeAuditLog({
+        tenantId,
+        entity: 'room',
+        action: 'archive_many',
+        diff: {
+          before: {},
+          after: { archived: result.fresh, blocked: result.blocked.map((r) => r.number) },
+        },
+      });
+    }
+    const { archived, blocked, notFound } = result;
+    return { archived, blocked, notFound };
+  }
+
+  /**
    * Восстановление номера из архива: пометка снимается, номер снова включён
    * и виден в фонде, шахматке и продаже. Повторный вызов — тот же ответ.
    */

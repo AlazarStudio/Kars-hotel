@@ -3,6 +3,9 @@ import classes from './Rooms.module.css';
 import RoomTypeFormModal from './RoomTypeFormModal';
 import RoomFormModal from './RoomFormModal';
 import ConfirmDialog from '../../shared/ConfirmDialog';
+import SelectionBar from './SelectionBar';
+import { useRoomSelection } from './useRoomSelection';
+import { archiveSummary, numberList, plural } from './room-range';
 import {
   ROOM_STATUS_CONFIG,
   bedsLabel,
@@ -21,6 +24,7 @@ import {
   useUpdateRoom,
   useUpdateRoomStatus,
   useArchiveRoom,
+  useArchiveRooms,
   useRestoreRoom,
 } from '../../../../hooks/api/useRooms';
 import { useRunDemoSeed } from '../../../../hooks/api/useDemoSeed';
@@ -45,6 +49,9 @@ function Rooms() {
   const updateRoomStatus = useUpdateRoomStatus();
   const archiveRoom = useArchiveRoom();
   const restoreRoom = useRestoreRoom();
+  const archiveRooms = useArchiveRooms();
+  const selection = useRoomSelection();
+  const [archiveResult, setArchiveResult] = useState(null);
   const runDemoSeed = useRunDemoSeed();
   const [showArchived, setShowArchived] = useState(false);
   const [restoreError, setRestoreError] = useState(null);
@@ -57,11 +64,28 @@ function Rooms() {
     editing: null,
     defaultRoomTypeId: undefined,
   });
-  const [confirm, setConfirm] = useState(null); // { type: 'room'|'roomType', target, name }
+  const [confirm, setConfirm] = useState(null); // { type: 'room'|'roomType'|'rooms', target, name }
   const [hkMenu, setHkMenu] = useState(null); // { roomId, x, y }
 
   const roomTypes = roomTypesQ.data ?? [];
   const rooms = roomsQ.data ?? [];
+  /* Считаем только номера, видимые в фонде: удалённый в другой вкладке из
+     выбора выпадает сам. */
+  const selectedRooms = rooms.filter((r) => selection.selected.has(r.id));
+  const stopSelection = () => {
+    selection.stop();
+    setArchiveResult(null);
+  };
+
+  /* Удаление пачкой: удалённые и пропавшие снимаются с выбора, номера с
+     бронями остаются отмеченными — их удаляют снова после переноса броней. */
+  const archiveSelected = async (targets) => {
+    const res = await archiveRooms.mutateAsync(targets.map((r) => r.id));
+    selection.setMany([...res.archived.map((r) => r.id), ...res.notFound], false);
+    const summary = archiveSummary(res);
+    if (summary) setArchiveResult(summary);
+    else stopSelection();
+  };
   const isLoading = roomTypesQ.isLoading || roomsQ.isLoading;
   /* Заставка «пусто» — только без удалённых номеров: иначе она прятала бы
      «Удалённые номера», а через их «Восстановить» возвращается и удалённая
@@ -159,40 +183,55 @@ function Rooms() {
       <div className={classes.pageHeader}>
         <div className={classes.pageTitle}>Номерной фонд</div>
         <div className={classes.headerActions}>
-          <button
-            type="button"
-            className={classes.btnGhost}
-            onClick={() => setRtModal({ open: true, editing: null })}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            Категория
-          </button>
-          <button
-            type="button"
-            className={classes.btnAdd}
-            onClick={() =>
-              setRoomModal({ open: true, editing: null, defaultRoomTypeId: undefined })
-            }
-            disabled={roomTypes.length === 0}
-            title={
-              roomTypes.length === 0
-                ? 'Сначала создайте категорию'
-                : undefined
-            }
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            Добавить номер
-          </button>
+          {selection.active ? (
+            <button type="button" className={classes.btnGhost} onClick={stopSelection}>
+              Отменить выбор
+            </button>
+          ) : (
+            <>
+              {rooms.length > 0 && (
+                <button type="button" className={classes.btnGhost} onClick={selection.start}>
+                  Выбрать
+                </button>
+              )}
+              <button
+                type="button"
+                className={classes.btnGhost}
+                onClick={() => setRtModal({ open: true, editing: null })}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                Категория
+              </button>
+              <button
+                type="button"
+                className={classes.btnAdd}
+                onClick={() =>
+                  setRoomModal({ open: true, editing: null, defaultRoomTypeId: undefined })
+                }
+                disabled={roomTypes.length === 0}
+                title={
+                  roomTypes.length === 0
+                    ? 'Сначала создайте категорию'
+                    : undefined
+                }
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                Добавить номер
+              </button>
+            </>
+          )}
         </div>
       </div>
 
       {roomTypes.map((cat) => {
         const catRooms = rooms.filter((r) => r.roomTypeId === cat.id);
         const readyCount = catRooms.filter((r) => r.status === 'READY').length;
+        const catIds = catRooms.map((r) => r.id);
+        const allCatSelected = catIds.length > 0 && catIds.every((id) => selection.selected.has(id));
         return (
           <div key={cat.id} className={classes.categorySection}>
             <div className={classes.catHeader}>
@@ -207,47 +246,85 @@ function Rooms() {
                 <div className={classes.catPrice}>
                   {Number(cat.basePrice ?? 0).toLocaleString('ru-RU')} ₽
                 </div>
-                <button
-                  type="button"
-                  className={classes.iconBtn}
-                  onClick={() => setRtModal({ open: true, editing: cat })}
-                  title="Изменить категорию"
-                >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  className={classes.iconBtn}
-                  onClick={() =>
-                    setConfirm({
-                      type: 'roomType',
-                      target: cat,
-                      name: cat.name,
-                    })
-                  }
-                  title="Удалить категорию"
-                >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="3 6 5 6 21 6" />
-                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                    <path d="M10 11v6" /><path d="M14 11v6" />
-                  </svg>
-                </button>
+                {selection.active ? (
+                  catIds.length > 0 && (
+                    <button
+                      type="button"
+                      className={classes.catSelect}
+                      onClick={() => selection.setMany(catIds, !allCatSelected)}
+                    >
+                      {allCatSelected ? 'Снять все' : 'Выбрать все в категории'}
+                    </button>
+                  )
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className={classes.iconBtn}
+                      onClick={() => setRtModal({ open: true, editing: cat })}
+                      title="Изменить категорию"
+                    >
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      className={classes.iconBtn}
+                      onClick={() =>
+                        setConfirm({
+                          type: 'roomType',
+                          target: cat,
+                          name: cat.name,
+                        })
+                      }
+                      title="Удалить категорию"
+                    >
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                        <path d="M10 11v6" /><path d="M14 11v6" />
+                      </svg>
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
             <div className={classes.roomsGrid}>
               {catRooms.map((room) => {
                 const cfg = ROOM_STATUS_CONFIG[room.status] || ROOM_STATUS_CONFIG.CLEAN;
+                const isSelected = selection.selected.has(room.id);
                 return (
                   <div
                     key={room.id}
-                    className={classes.roomCard}
-                    onClick={() => setRoomModal({ open: true, editing: room, defaultRoomTypeId: undefined })}
+                    className={[
+                      classes.roomCard,
+                      selection.active && classes.roomCardSelecting,
+                      isSelected && classes.roomCardSelected,
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    onClick={() =>
+                      selection.active
+                        ? selection.toggle(room.id)
+                        : setRoomModal({ open: true, editing: room, defaultRoomTypeId: undefined })
+                    }
                   >
+                    {/* Настоящая галочка, а не нарисованная: её состояние пишет
+                        журнал действий (lib/journal.js), а клавиатура до неё
+                        дотягивается. */}
+                    {selection.active && (
+                      <input
+                        type="checkbox"
+                        className={classes.roomCheck}
+                        checked={isSelected}
+                        onChange={() => selection.toggle(room.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`№${room.number}`}
+                      />
+                    )}
                     <div className={classes.roomNumber}>№{room.number}</div>
                     <div className={classes.roomMeta}>
                       {room.floor} этаж · {bedsLabel(room)}
@@ -269,8 +346,8 @@ function Rooms() {
                     <div
                       className={classes.hkBadge}
                       style={{ background: cfg.bg, color: cfg.color }}
-                      onClick={(e) => openHkMenu(e, room.id)}
-                      title="Изменить статус уборки"
+                      onClick={selection.active ? undefined : (e) => openHkMenu(e, room.id)}
+                      title={selection.active ? undefined : 'Изменить статус уборки'}
                     >
                       <div className={classes.hkDot} style={{ background: cfg.color }} />
                       {cfg.label}
@@ -278,22 +355,33 @@ function Rooms() {
                   </div>
                 );
               })}
-              <button
-                type="button"
-                className={classes.addRoomCard}
-                onClick={() =>
-                  setRoomModal({ open: true, editing: null, defaultRoomTypeId: cat.id })
-                }
-                title="Добавить номер в эту категорию"
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-              </button>
+              {!selection.active && (
+                <button
+                  type="button"
+                  className={classes.addRoomCard}
+                  onClick={() =>
+                    setRoomModal({ open: true, editing: null, defaultRoomTypeId: cat.id })
+                  }
+                  title="Добавить номер в эту категорию"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
+              )}
             </div>
           </div>
         );
       })}
+
+      {selection.active && (
+        <SelectionBar
+          count={selectedRooms.length}
+          result={archiveResult}
+          onCancel={stopSelection}
+          onDelete={() => setConfirm({ type: 'rooms', target: selectedRooms })}
+        />
+      )}
 
       {/* ── status dropdown ─────────────────────────────────────────────────── */}
       {hkMenu && (
@@ -348,18 +436,15 @@ function Rooms() {
 
       <ConfirmDialog
         open={!!confirm}
-        title={confirm?.type === 'roomType' ? 'Удалить категорию?' : 'Удалить номер?'}
-        message={
-          confirm?.type === 'roomType'
-            ? `Категория «${confirm?.name}» пропадёт из номерного фонда и продажи. Если в ней есть номера — удаление не пройдёт (удалённые номера не мешают). Восстановите любой её номер из «Удалённых номеров» — категория вернётся вместе с ним.`
-            : `Номер №${confirm?.name} пропадёт из номерного фонда, шахматки и продажи. Брони и история сохранятся — номер можно восстановить в разделе «Удалённые номера» внизу страницы. Номер с действующими бронями удалить нельзя: сначала перенесите их на другой номер.`
-        }
+        title={confirmTitle(confirm)}
+        message={confirmMessage(confirm)}
         confirmLabel="Удалить"
         danger
         onClose={() => setConfirm(null)}
         onConfirm={async () => {
           if (confirm?.type === 'roomType') await deleteRT.mutateAsync(confirm.target.id);
           else if (confirm?.type === 'room') await archiveRoom.mutateAsync(confirm.target.id);
+          else if (confirm?.type === 'rooms') await archiveSelected(confirm.target);
         }}
       />
 
@@ -420,6 +505,30 @@ function Rooms() {
       )}
     </div>
   );
+}
+
+/* Тексты подтверждения удаления: категория, один номер, пачка номеров. */
+function confirmTitle(confirm) {
+  if (confirm?.type === 'roomType') return 'Удалить категорию?';
+  if (confirm?.type === 'rooms') {
+    const n = confirm.target.length;
+    return `Удалить ${n} ${plural(n, 'номер', 'номера', 'номеров')}?`;
+  }
+  return 'Удалить номер?';
+}
+
+function confirmMessage(confirm) {
+  if (confirm?.type === 'roomType') {
+    return `Категория «${confirm?.name}» пропадёт из номерного фонда и продажи. Если в ней есть номера — удаление не пройдёт (удалённые номера не мешают). Восстановите любой её номер из «Удалённых номеров» — категория вернётся вместе с ним.`;
+  }
+  if (confirm?.type === 'rooms') {
+    const one = confirm.target.length === 1;
+    const list = numberList(confirm.target.map((r) => r.number));
+    return one
+      ? `${list} пропадёт из номерного фонда, шахматки и продажи. Брони и история сохранятся — номер можно восстановить в разделе «Удалённые номера» внизу страницы. Номер с действующими бронями не удалится — после удаления назовём его.`
+      : `${list} пропадут из номерного фонда, шахматки и продажи. Брони и история сохранятся — номера можно восстановить в разделе «Удалённые номера» внизу страницы. Номера с действующими бронями не удалятся — после удаления назовём их.`;
+  }
+  return `Номер №${confirm?.name} пропадёт из номерного фонда, шахматки и продажи. Брони и история сохранятся — номер можно восстановить в разделе «Удалённые номера» внизу страницы. Номер с действующими бронями удалить нельзя: сначала перенесите их на другой номер.`;
 }
 
 export default Rooms;

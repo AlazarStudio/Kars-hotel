@@ -16,6 +16,7 @@ import { RoomsService } from './rooms.service';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 import { CreateManyRoomsDto } from './dto/create-many-rooms.dto';
+import { ArchiveManyRoomsDto } from './dto/archive-many-rooms.dto';
 import { UpdateRoomStatusDto } from './dto/update-room-status.dto';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 
@@ -124,6 +125,16 @@ export class RoomsController {
   @ApiOperation({ summary: 'Восстановить номер из архива' })
   restore(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.service.restore(id);
+  }
+
+  /* Удаление «в архив» пачкой (28.10.2026): номера, отмеченные в «Номерном
+     фонде», одним запросом. Номера с действующими бронями не удаляются —
+     ответ называет их отдельно. Право — то же, что у одного номера. */
+  @Post('archive-many')
+  @RequirePermissions('room.update')
+  @ApiOperation({ summary: 'Удалить в архив несколько номеров (без стирания данных)' })
+  archiveMany(@Body() dto: ArchiveManyRoomsDto) {
+    return this.service.archiveMany(dto.ids);
   }
 
   /** Физическое удаление — выключено (`room-delete.switch.ts`), 403. */

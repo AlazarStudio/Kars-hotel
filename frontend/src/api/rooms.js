@@ -53,3 +53,10 @@ export async function createRooms(payload) {
   const { data } = await api.post('/rooms/bulk', payload);
   return data;
 }
+
+/* Удаление «в архив» пачкой (28.10.2026). Ответ по каждому номеру:
+   archived (удалены), blocked (есть действующие брони), notFound. */
+export async function archiveRooms(ids) {
+  const { data } = await api.post('/rooms/archive-many', { ids });
+  return data;
+}

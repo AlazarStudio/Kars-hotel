@@ -73,3 +73,27 @@ export function createSummary({ created, skipped = [], skippedArchived = [] }, r
   }
   return parts.join(' ');
 }
+
+/**
+ * Итог удаления пачкой; null — удалено всё, режим выбора можно закрыть.
+ * Номер с действующей бронью назван с числом броней: переносить их придётся
+ * руками, и человеку нужно знать, сколько.
+ */
+export function archiveSummary({ archived = [], blocked = [] }) {
+  if (!blocked.length) return null;
+  const total = archived.length + blocked.length;
+  const head = archived.length ? `Удалено ${archived.length} из ${total}.` : 'Ничего не удалено.';
+  const list = blocked
+    .map(
+      (r) =>
+        `№${r.number} — ${r.liveReservations} ${plural(
+          r.liveReservations,
+          'действующая бронь',
+          'действующие брони',
+          'действующих броней',
+        )}`,
+    )
+    .join(', ');
+  const one = blocked.length === 1;
+  return `${head} ${one ? 'Не удалён' : 'Не удалены'}: ${list}. Перенесите брони на другие номера и удалите ${one ? 'его' : 'их'}.`;
+}

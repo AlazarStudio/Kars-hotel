@@ -5,6 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  archiveSummary,
   createSummary,
   numberList,
   plural,
@@ -73,5 +74,23 @@ test('итог пачки: удалённые названы отдельно, �
   assert.equal(
     createSummary({ created: 0, skipped: [], skippedArchived: ['1', '2'] }, 2),
     'Ничего не создано. В удалённых: №1, №2 — восстановите их в блоке «Удалённые номера» внизу страницы.',
+  );
+});
+
+test('итог удаления: всё удалено — null; с бронями — номер и число броней', () => {
+  assert.equal(archiveSummary({ archived: [{ id: 'a', number: '101' }], blocked: [] }), null);
+  assert.equal(
+    archiveSummary({
+      archived: Array.from({ length: 38 }, (_, i) => ({ id: `r${i}`, number: String(i) })),
+      blocked: [
+        { id: 'x', number: '105', liveReservations: 2 },
+        { id: 'y', number: '112', liveReservations: 1 },
+      ],
+    }),
+    'Удалено 38 из 40. Не удалены: №105 — 2 действующие брони, №112 — 1 действующая бронь. Перенесите брони на другие номера и удалите их.',
+  );
+  assert.equal(
+    archiveSummary({ archived: [], blocked: [{ id: 'x', number: '105', liveReservations: 5 }] }),
+    'Ничего не удалено. Не удалён: №105 — 5 действующих броней. Перенесите брони на другие номера и удалите его.',
   );
 });

@@ -93,6 +93,17 @@ export function useArchiveRoom() {
   });
 }
 
+export function useArchiveRooms() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.archiveRooms,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: KEY });
+      qc.invalidateQueries({ queryKey: ['roomTypes'] });
+    },
+  });
+}
+
 export function useRestoreRoom() {
   const qc = useQueryClient();
   return useMutation({
