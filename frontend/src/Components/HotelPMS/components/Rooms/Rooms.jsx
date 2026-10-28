@@ -52,6 +52,8 @@ function Rooms() {
   const archiveRooms = useArchiveRooms();
   const selection = useRoomSelection();
   const [archiveResult, setArchiveResult] = useState(null);
+  // Страница прокручена — под прилипшей шапкой нужна черта (см. .pageHeaderStuck).
+  const [stuck, setStuck] = useState(false);
   const runDemoSeed = useRunDemoSeed();
   const [showArchived, setShowArchived] = useState(false);
   const [restoreError, setRestoreError] = useState(null);
@@ -179,15 +181,14 @@ function Rooms() {
 
   // ── Main grid ──────────────────────────────────────────────────────────────
   return (
-    <div className={classes.root} onClick={() => setHkMenu(null)}>
+    <div
+      className={classes.root}
+      onClick={() => setHkMenu(null)}
+      onScroll={(e) => setStuck(e.currentTarget.scrollTop > 0)}
+    >
       {/* В режиме выбора шапка становится панелью действий: счётчик и
-          «Удалить» там же, где нажали «Выбрать», и прилипают к верху при
-          прокрутке длинного фонда. */}
-      <div
-        className={
-          selection.active ? `${classes.pageHeader} ${classes.pageHeaderSelecting}` : classes.pageHeader
-        }
-      >
+          «Удалить» там же, где нажали «Выбрать». Шапка прилипает к верху. */}
+      <div className={stuck ? `${classes.pageHeader} ${classes.pageHeaderStuck}` : classes.pageHeader}>
         <div className={classes.pageTitle}>
           {selection.active
             ? `Выбрано: ${selectedRooms.length} из ${rooms.length}`

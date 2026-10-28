@@ -4,13 +4,28 @@
   padding: 24px 32px 40px;
 }
 
+/* Шапка прилипает к верху (28.10.2026): «Выбрать», «Добавить номер» и панель
+   выбора доступны и внизу длинного фонда. top и поля — минус отступ .root
+   (24px 32px): прилипшая шапка ложится вплотную к краю области прокрутки и
+   закрывает её целиком, иначе в зазоре над ней и по бокам видны карточки.
+   Отступ до содержимого прежний: 14 + 10 = 24. */
 .pageHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
   gap: 16px;
   flex-wrap: wrap;
+  position: sticky;
+  top: -24px;
+  z-index: 5;
+  margin: -24px -32px 10px;
+  padding: 24px 32px 14px;
+  background: #F5F7FA;
+}
+
+/* Черта и тень — только когда под шапкой уже есть прокрученное содержимое. */
+.pageHeaderStuck {
+  box-shadow: 0 1px 0 #E5E7EB, 0 6px 12px -8px rgba(15, 31, 63, 0.15);
 }
 
 .pageTitle {
@@ -354,19 +369,6 @@
   cursor: pointer;
   font-family: inherit;
   white-space: nowrap;
-}
-
-/* Шапка в режиме выбора прилипает к верху. top и поля — минус отступ .root
-   (24px 32px): прилипшая шапка ложится вплотную к краю области прокрутки и
-   закрывает её целиком, иначе в зазоре над ней и по бокам видны карточки. */
-.pageHeaderSelecting {
-  position: sticky;
-  top: -24px;
-  z-index: 5;
-  margin: -24px -32px 24px;
-  padding: 24px 32px 14px;
-  background: #F5F7FA;
-  box-shadow: 0 1px 0 #E5E7EB, 0 6px 12px -8px rgba(15, 31, 63, 0.15);
 }
 
 /* Итог удаления — под строкой шапки, во всю ширину. */
