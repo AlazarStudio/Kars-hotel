@@ -2,14 +2,15 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { differenceInDays, parseISO } from 'date-fns';
 import classes from './Timeline.module.css';
 import { BOOKING_STATUS, BOOKING_SOURCE } from '../../constants';
-import { anonymizeReservation, cancelReservation, markReservationViewed } from '../../../../api/reservations';
+import { anonymizeReservation, cancelReservation, checkOut, markReservationViewed } from '../../../../api/reservations';
 import { formStatuses } from '../../shared/booking-statuses';
+import { reservationErrorText } from '../../shared/reservation-errors';
 import { useAuth } from '../../../../auth/AuthContext';
 import { useFolio, useAddPayment } from '../../../../hooks/api/useFolio';
 import { useReservationMeals } from '../../../../hooks/api/useMeals';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
-import { stayLine } from './stayTimes';
+import { stayLine, stayFacts } from './stayTimes';
 
 /* Месяц словом без точки — так дата пишется у партнёра («21 сен»), и так её
    читает диспетчер, который звонит на кухню. date-fns даёт «сент.». */
@@ -167,32 +168,49 @@ function getConflict(bookings, roomId, checkIn, checkOut, excludeId, roomCapacit
   return overlapping[0] ?? null;
 }
 
-function BookingForm({ booking, rooms, categories, bookings = [], onSave, onCancelled, onClose, savingError }) {
+function bookingFormValues(booking) {
+  return {
+    guestName: booking.guestName || '', phone: booking.phone || '', email: booking.email || '',
+    roomId: booking.roomId || '', checkIn: booking.checkIn || '', checkOut: booking.checkOut || '',
+    adults: booking.adults || 1, children: booking.children || 0,
+    status: booking.status || 'confirmed', source: booking.source || 'direct', notes: booking.notes || '',
+  };
+}
+
+function BookingForm({ booking, rooms, categories, bookings = [], onSave, onCancelled, onChanged, onClose, savingError }) {
   const isNew = !booking.id;
   // Bookings owned by an external partner channel (Kars Avia) are managed there —
   // hotel staff can view them but cannot cancel them locally. The backend enforces
   // this too (403); we hide the action here so the user never hits that error.
   const isChannelManaged = !!booking?.channelManaged;
 
-  const [form, setForm] = useState({
-    guestName: booking.guestName || '',
-    phone:     booking.phone || '',
-    email:     booking.email || '',
-    roomId:    booking.roomId || '',
-    checkIn:   booking.checkIn || '',
-    checkOut:  booking.checkOut || '',
-    adults:    booking.adults || 1,
-    children:  booking.children || 0,
-    status:    booking.status || 'confirmed',
-    source:    booking.source || 'direct',
-    notes:     booking.notes || '',
-  });
+  const initialForm = bookingFormValues(booking);
+  const [form, setForm] = useState(initialForm);
+  const formChanged = Object.keys(initialForm).some(key => String(form[key]) !== String(initialForm[key]));
 
   const [saving, setSaving] = useState(false);
+  const [checkoutError, setCheckoutError] = useState(null);
   const [activeTab, setActiveTab] = useState('booking'); // 'booking' | 'folio' | 'meals'
 
   // Обезличить можно завершённую бронь (152-ФЗ, план 13.7).
   const { hasPermission } = useAuth();
+  const actualStay = stayFacts(booking);
+  const canRecordCheckout = !isNew && booking.status === 'checked_in' && hasPermission('reservation.checkout');
+  const handleRecordCheckout = async () => {
+    if (!canRecordCheckout || formChanged || saving) return;
+    setSaving(true);
+    setCheckoutError(null);
+    try {
+      // A fact operation sends only the id: unsaved booking dates and prices do not travel with it.
+      await checkOut(booking.id);
+      onClose?.();
+      await onChanged?.();
+    } catch (err) {
+      setCheckoutError(reservationErrorText(err, 'Не удалось отметить выезд'));
+    } finally {
+      setSaving(false);
+    }
+  };
   const canAnonymize =
     !isNew && hasPermission('guest.anonymize') && ['checked_out', 'cancelled', 'no_show'].includes(booking?.status);
   const handleAnonymize = async () => {
@@ -388,15 +406,37 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onCanc
               <input className={classes.formInput} value={form.email} onChange={set('email')} placeholder="email@domain.ru" type="email" />
             </div>
 
+            <div className={`${classes.formGroup} ${classes.formFull}`}>
+              <div className={classes.formLabel}>Период бронирования</div>
+              <p className={classes.stayHint}>По этим датам занят номер и рассчитывается стоимость. Фактический выезд отмечается отдельно.</p>
+            </div>
             <div className={classes.formGroup}>
-              <div className={classes.formLabel}>Дата заезда *</div>
+              <div className={classes.formLabel}>Заезд по брони *</div>
               <input className={classes.formInput} value={form.checkIn} onChange={set('checkIn')} type="date" />
             </div>
 
             <div className={classes.formGroup}>
-              <div className={classes.formLabel}>Дата выезда *</div>
+              <div className={classes.formLabel}>Выезд по брони *</div>
               <input className={classes.formInput} value={form.checkOut} onChange={set('checkOut')} type="date" />
             </div>
+
+            {!isNew && (
+              <div className={`${classes.formGroup} ${classes.formFull}`}>
+                <div className={classes.formLabel}>Фактическое проживание</div>
+                <div className={`${classes.stayInfo} ${classes.stayFacts}`}>
+                  <div>Заезд: <strong>{actualStay.checkIn ?? 'Не отмечен'}</strong></div>
+                  <div>Выезд: <strong>{actualStay.checkOut ?? 'Не отмечен'}</strong></div>
+                  <p className={classes.stayHint}>Заезд и выезд могут быть в один день. Отметка выезда сохраняет период бронирования.</p>
+                  {canRecordCheckout && (
+                    <button type="button" className={classes.btnPrimary} disabled={saving || formChanged} onClick={handleRecordCheckout}>
+                      {saving ? 'Сохранение...' : 'Отметить выезд'}
+                    </button>
+                  )}
+                  {canRecordCheckout && formChanged && <p className={classes.stayHint}>Сначала сохраните изменения брони или закройте и откройте карточку заново.</p>}
+                  {checkoutError && <div role="alert">{checkoutError}</div>}
+                </div>
+              </div>
+            )}
 
             {/* Прилёт, отъезд и рейс по заявке Kars Avia — здесь только видно:
                 ведёт их заявка Авии, и с её правкой они приходят сами (24.10.2026). */}

@@ -25,14 +25,21 @@ export function stayClock(value, day) {
   return `${m[1]}-${m[2]}-${m[3]}` === day ? m[4] : fmtStayTime(value);
 }
 
+/** Actual stay times only; planned arrival/departure are not hotel facts. */
+export function stayFacts(booking) {
+  return {
+    checkIn: fmtStayTime(booking?.checkedInAt),
+    checkOut: fmtStayTime(booking?.checkedOutAt),
+  };
+}
+
 /** Строки подсказки шахматки — [подпись, значение], только известное.
     Заселён и выселен — когда это было на самом деле (26.10.2026: «не пишет
     время заезда и время выезда в шахматке»). */
 export function stayRows(booking) {
   const arrival = fmtStayTime(booking?.arrivalAt);
   const departure = fmtStayTime(booking?.departureAt);
-  const checkedIn = fmtStayTime(booking?.checkedInAt);
-  const checkedOut = fmtStayTime(booking?.checkedOutAt);
+  const { checkIn: checkedIn, checkOut: checkedOut } = stayFacts(booking);
   return [
     arrival && ['Прибытие:', arrival],
     departure && ['Отъезд:', departure],

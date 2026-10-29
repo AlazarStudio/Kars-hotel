@@ -848,6 +848,7 @@ function Timeline({ multiPlaceEnabled = true }) {
           bookings={bookings}
           onSave={handleFormSave}
           onCancelled={reload}
+          onChanged={reload}
           onClose={() => { setShowForm(false); setFormData(null); setFormError(null); }}
           savingError={formError}
         />

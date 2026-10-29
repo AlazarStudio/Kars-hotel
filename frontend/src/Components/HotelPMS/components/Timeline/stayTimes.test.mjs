@@ -10,7 +10,19 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { byArrival, fmtStayTime, stayClock, stayLine, stayRows } from './stayTimes.js';
+import { byArrival, fmtStayTime, stayClock, stayLine, stayRows, stayFacts } from './stayTimes.js';
+
+test('фактический заезд и выезд одним днём не берутся из периода брони или прилёта', () => {
+  assert.deepEqual(stayFacts({
+    checkIn: '2026-10-28', checkOut: '2026-10-29',
+    arrivalAt: '2026-10-28T22:30', departureAt: '2026-10-29T09:00',
+    checkedInAt: '2026-10-29T01:10', checkedOutAt: '2026-10-29T08:30',
+  }), { checkIn: '29 окт, 01:10', checkOut: '29 окт, 08:30' });
+});
+
+test('плановое прибытие или отъезд не выдаются за отмеченный факт', () => {
+  assert.deepEqual(stayFacts({ arrivalAt: '2026-10-28T22:30', departureAt: '2026-10-29T09:00' }), { checkIn: null, checkOut: null });
+});
 
 test('время — как прислал партнёр: «22 окт, 02:00»', () => {
   assert.equal(fmtStayTime('2026-10-22T02:00'), '22 окт, 02:00');

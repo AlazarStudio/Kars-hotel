@@ -901,6 +901,23 @@
   padding: 7px 10px;
 }
 
+.stayFacts {
+  display: grid;
+  gap: 8px;
+}
+
+.stayFacts button {
+  justify-self: start;
+}
+
+.stayHint {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #7A8699;
+}
+
 .formRow {
   display: flex;
   gap: 10px;

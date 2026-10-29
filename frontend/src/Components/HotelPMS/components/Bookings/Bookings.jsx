@@ -433,6 +433,7 @@ function Bookings() {
           bookings={bookings}
           onSave={handleSave}
           onCancelled={reload}
+          onChanged={reload}
           onClose={() => { setShowForm(false); setFormData(null); setSavingError(null); }}
           savingError={savingError}
         />
