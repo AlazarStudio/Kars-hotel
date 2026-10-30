@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { OwnerInviteService } from '../auth/owner-invite.service';
 import { PartnerPlanQuery, pickPartnerPlans } from '../rate-plans/partner-tariff-match';
 import { Prisma } from '@prisma/client';
@@ -13,7 +14,11 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext, RequestContext } from '../../common/context/tenant-context';
 import { AuthService } from '../auth/auth.service';
 import { AvailabilityService } from '../inventory/availability.service';
-import { ReservationsService } from '../reservations/reservations.service';
+import {
+  ReservationsService,
+  RESERVATION_CREATE_REJECTED_CODE,
+  type ReservationChannelContext,
+} from '../reservations/reservations.service';
 import { roomFits, type PlaceHolder } from '../reservations/room-places';
 import { ConnectAvailabilityDto } from './dto/connect-availability.dto';
 import { ConnectCreateReservationDto } from './dto/connect-create-reservation.dto';
@@ -548,11 +553,42 @@ export class ConnectivityService {
 
   // ─── Reservations (tenant-scoped) ──────────────────────────────────────────
 
-  async createReservation(slug: string, dto: ConnectCreateReservationDto, partnerId: string) {
+  async createReservation(
+    slug: string,
+    dto: ConnectCreateReservationDto,
+    partnerId: string,
+    idempotencyKey?: string | string[],
+  ) {
+    const channel: ReservationChannelContext = { partnerId };
+    if (idempotencyKey !== undefined) {
+      if (
+        typeof idempotencyKey !== 'string' ||
+        !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(idempotencyKey)
+      ) {
+        throw new BadRequestException(
+          'X-Idempotency-Key must be a 1–200 character ASCII token (letters, digits, . _ : -)',
+        );
+      }
+      // DTO содержит только скалярные поля: порядок ключей JSON не меняет запрос.
+      const original = JSON.stringify(
+        Object.fromEntries(Object.entries(dto).sort(([a], [b]) => a.localeCompare(b))),
+      );
+      channel.idempotency = {
+        key: idempotencyKey,
+        payloadHash: createHash('sha256').update(original).digest('hex'),
+      };
+    }
     const tenant = await this.resolveTenant(slug);
-    const query = await this.partnerQuery(partnerId, dto);
+    let preflightStarted = false;
+    let createEntered = false;
 
     return this.runAsTenant(tenant.id, async () => {
+      if (channel.idempotency) {
+        const replay = await this.reservations.findChannelReservation(channel);
+        if (replay) return { hotelId: tenant.id, slug: tenant.slug, ...replay };
+      }
+      preflightStarted = true;
+      const query = await this.partnerQuery(partnerId, dto);
       // Validate the category belongs to this hotel.
       const category = await this.prisma.forTenantExplicit(tenant.id, (tx) =>
         tx.roomType.findUnique({ where: { id: dto.categoryId } }),
@@ -655,6 +691,7 @@ export class ConnectivityService {
         .filter(Boolean)
         .join(' ');
 
+      createEntered = true;
       const created = await this.reservations.create(
         {
           roomId,
@@ -677,17 +714,32 @@ export class ConnectivityService {
         },
         // Прилёт и отъезд по заявке и рейс — их ведёт партнёр (stay-times.ts).
         { arrivalAt: dto.arrivalAt, departureAt: dto.departureAt, flight: dto.flight },
-      );
-
-      // Бронь помнит партнёра: его API видит только свои брони (план 13.10).
-      await this.prisma.forTenantExplicit(tenant.id, (tx) =>
-        tx.reservation.update({ where: { id: created.id }, data: { partnerId } }),
+        channel,
       );
 
       this.logger.log(
         `Partner reservation created in hotel ${slug}: ${created.id} (ref=${dto.operatorRef ?? '-'})`,
       );
       return { hotelId: tenant.id, slug: tenant.slug, ...created };
+    }).catch(async (error: unknown) => {
+      // Первый запрос мог закоммититься между ранним lookup и availability.
+      // Его занятый номер не должен превращать параллельный повтор в отказ.
+      if (channel.idempotency) {
+        const replay = await this.runAsTenant(tenant.id, () =>
+          this.reservations.findChannelReservation(channel),
+        );
+        if (replay) return { hotelId: tenant.id, slug: tenant.slug, ...replay };
+      }
+      // Код доказывает отказ этого POST до INSERT. Lookup/auth/ошибки после
+      // COMMIT остаются неопределёнными: партнёр должен сохранить исходный ключ.
+      const failure = error as { getStatus?: () => number; getResponse?: () => unknown } | null;
+      if (channel.idempotency && preflightStarted && !createEntered
+        && typeof failure?.getStatus === 'function' && [400, 404, 409].includes(failure.getStatus())
+        && typeof failure.getResponse === 'function') {
+        const body = failure.getResponse();
+        if (body && typeof body === 'object') Object.assign(body, { code: RESERVATION_CREATE_REJECTED_CODE });
+      }
+      throw error;
     });
   }
 

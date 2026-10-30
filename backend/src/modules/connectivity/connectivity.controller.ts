@@ -15,7 +15,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ConnectOwnerInviteDto } from './dto/connect-owner-invite.dto';
-import { ApiOperation, ApiSecurity, ApiTags } from '@nestjs/swagger';
+import { ApiHeader, ApiOperation, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { Public } from '../auth/decorators/public.decorator';
 import { ConnectivityService } from './connectivity.service';
 import { PartnerApiKeyGuard } from './guards/partner-api-key.guard';
@@ -196,8 +196,21 @@ export class ConnectivityController {
   @HttpCode(HttpStatus.CREATED)
   @RequireScopes(PARTNER_SCOPES.ReservationsWrite)
   @ApiOperation({ summary: 'Create a reservation by room category' })
-  createReservation(@Param('slug') slug: string, @Body() dto: ConnectCreateReservationDto, @Req() req: PartnerRequest) {
-    return this.connectivity.createReservation(slug, dto, req.partner!.partnerId);
+  @ApiHeader({
+    name: 'X-Idempotency-Key',
+    required: false,
+    description:
+      'Stable per hotel and partner. Reuse with the same original body to replay; another body returns 409.',
+    schema: { type: 'string', maxLength: 200, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$' },
+  })
+  createReservation(
+    @Param('slug') slug: string,
+    @Body() dto: ConnectCreateReservationDto,
+    @Req() req: PartnerRequest,
+  ) {
+    return this.connectivity.createReservation(
+      slug, dto, req.partner!.partnerId, req.headers['x-idempotency-key'],
+    );
   }
 
   @Get('hotels/:slug/reservations/:id')
