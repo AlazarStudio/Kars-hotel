@@ -863,6 +863,10 @@ model Reservation {
   channelManaged Boolean        @default(false) @map("channel_managed")
   /// Партнёр, заведший бронь (152-ФЗ, Р-35; план 13.10): его API видит только свои.
   partnerId   String?           @map("partner_id") @db.Uuid
+  /// Ключ создания партнёра и SHA-256 исходного тела: повтор переживает потерю
+  /// ответа, перезапуск PMS и последующую правку самой брони.
+  partnerIdempotencyKey String? @map("partner_idempotency_key") @db.VarChar(200)
+  partnerPayloadHash    String? @map("partner_payload_hash") @db.Char(64)
   /// Фактические заезд и выезд (Р-41): ставятся при заселении и выселении.
   checkedInAt  DateTime?        @map("checked_in_at")
   checkedOutAt DateTime?        @map("checked_out_at")
@@ -886,6 +890,7 @@ model Reservation {
   @@index([tenantId, roomId, checkIn, checkOut])
   @@index([tenantId, checkIn, checkOut])
   @@index([tenantId, status])
+  @@unique([tenantId, partnerId, partnerIdempotencyKey], map: "reservation_partner_idempotency_key")
   @@map("reservation")
 }
 

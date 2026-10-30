@@ -23,6 +23,13 @@ import { parseISO, format } from 'date-fns';
 const VALID_SOURCES = ['DIRECT', 'PHONE', 'ONLINE', 'OTA', 'CORPORATE'];
 const VALID_STATUSES = ['NEW', 'CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT', 'CANCELLED', 'NO_SHOW'];
 
+export interface ReservationChannelContext {
+  partnerId: string;
+  idempotency?: { key: string; payloadHash: string };
+}
+
+type CreatedReservation = { id: string; status: string; version: number; placeNumber: number };
+
 /* Заезд, выезд и неявка — ФАКТЫ, а не поле формы: одно правило и для кнопки,
  * и для статуса в форме брони (25.10.2026). Из какого статуса можно, как
  * отказать и чем записать в журнал. */
@@ -97,7 +104,11 @@ export class ReservationsService {
 
   /* `stay` — прилёт и отъезд по заявке и рейс; присылает только партнёрский API
      (stay-times.ts), у кабинета гостиницы этих полей нет. */
-  async create(dto: CreateReservationDto, stay: PartnerStayInfo = {}) {
+  async create(
+    dto: CreateReservationDto,
+    stay: PartnerStayInfo = {},
+    channel?: ReservationChannelContext,
+  ) {
     const tenantId = TenantContext.getTenantIdOrThrow();
 
     const source = VALID_SOURCES.includes((dto.source ?? '').toUpperCase())
@@ -117,10 +128,25 @@ export class ReservationsService {
     }
 
     type CreateResult =
-      | { ok: true; id: string; status: string; version: number; placeNumber: number }
+      | ({ ok: true; replayed: boolean } & CreatedReservation)
       | { ok: false; reason: 'ROOM_NOT_FOUND' | 'NO_PLACE_AVAILABLE' };
 
     const result = await this.prisma.forTenant(async (tx): Promise<CreateResult> => {
+      if (channel?.idempotency) {
+        // Два запроса с одним ключом не должны одновременно пройти allocation.
+        // Замок живёт до COMMIT; проверка после него видит уже записанную бронь.
+        const lockKey = JSON.stringify([
+          'reservation-create', tenantId, channel.partnerId, channel.idempotency.key,
+        ]);
+        await tx.$executeRaw`
+          SELECT pg_advisory_xact_lock(
+            ('x' || substr(md5(${lockKey}), 1, 16))::bit(64)::bigint
+          )
+        `;
+        const replay = await this.channelReservation(tx, tenantId, channel);
+        if (replay) return { ok: true, replayed: true, ...replay };
+      }
+
       // 1. Verify room exists and get capacity
       const rooms = await tx.$queryRaw<
         { id: string; room_type_id: string; capacity: number; multi_place: boolean }[]
@@ -160,7 +186,8 @@ export class ReservationsService {
           tenant_id, room_id, room_type_id, guest_name, phone, email,
           check_in, check_out,
           status, source, adults, children,
-          notes, total_price, rate_plan_id, place_number, channel_managed, guest_kind, version,
+          notes, total_price, rate_plan_id, place_number, channel_managed,
+          partner_id, partner_idempotency_key, partner_payload_hash, guest_kind, version,
           arrival_at, departure_at, flight
         ) VALUES (
           ${tenantId}::uuid,
@@ -179,7 +206,10 @@ export class ReservationsService {
           ${dto.totalPrice != null ? dto.totalPrice : null},
           ${dto.ratePlanId ?? null}::uuid,
           ${placeNumber},
-          ${dto.channelManaged ?? false},
+          ${channel ? true : dto.channelManaged ?? false},
+          ${channel?.partnerId ?? null}::uuid,
+          ${channel?.idempotency?.key ?? null},
+          ${channel?.idempotency?.payloadHash ?? null},
           ${dto.guestKind ?? null}::"GuestKind",
           1,
           ${stay.arrivalAt ?? null},
@@ -192,6 +222,7 @@ export class ReservationsService {
       this.logger.log(`Reservation created: ${res.id} room ${dto.roomId} place ${placeNumber}`);
       return {
         ok: true,
+        replayed: false,
         id: res.id,
         status: res.status,
         version: res.version,
@@ -208,19 +239,21 @@ export class ReservationsService {
       }
     }
 
-    await this.timelineService.invalidate(tenantId);
-    this.timelineGateway.notifyUpdate(tenantId, { action: 'created' });
+    if (!result.replayed) {
+      await this.timelineService.invalidate(tenantId);
+      this.timelineGateway.notifyUpdate(tenantId, { action: 'created' });
 
-    await this.prisma.writeAuditLog({
-      tenantId,
-      entity: 'reservation',
-      entityId: result.id,
-      action: 'create',
-      diff: {
-        before: {},
-        after: { status: result.status, roomId: dto.roomId, guestName: dto.guestName },
-      },
-    });
+      await this.prisma.writeAuditLog({
+        tenantId,
+        entity: 'reservation',
+        entityId: result.id,
+        action: 'create',
+        diff: {
+          before: {},
+          after: { status: result.status, roomId: dto.roomId, guestName: dto.guestName },
+        },
+      });
+    }
 
     return {
       id: result.id,
@@ -228,6 +261,36 @@ export class ReservationsService {
       version: result.version,
       placeNumber: result.placeNumber,
     };
+  }
+
+  /** Ранний повтор партнёра — до проверки тарифа и уже занятого им номера. */
+  async findChannelReservation(channel: ReservationChannelContext): Promise<CreatedReservation | null> {
+    if (!channel.idempotency) return null;
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    return this.prisma.forTenant((tx) => this.channelReservation(tx, tenantId, channel));
+  }
+
+  private async channelReservation(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    channel: ReservationChannelContext,
+  ): Promise<CreatedReservation | null> {
+    if (!channel.idempotency) return null;
+    const row = await tx.reservation.findFirst({
+      where: {
+        tenantId,
+        partnerId: channel.partnerId,
+        channelManaged: true,
+        partnerIdempotencyKey: channel.idempotency.key,
+      },
+      select: { id: true, status: true, version: true, placeNumber: true, partnerPayloadHash: true },
+    });
+    if (!row) return null;
+    // Сравнивается исходное тело партнёра, а не изменяемая бронь или новая цена.
+    if (row.partnerPayloadHash !== channel.idempotency.payloadHash) {
+      throw new ConflictException('X-Idempotency-Key was already used with a different reservation payload');
+    }
+    return { id: row.id, status: row.status, version: row.version, placeNumber: row.placeNumber };
   }
 
   // ─── Update ───────────────────────────────────────────────────────────────
