@@ -688,7 +688,7 @@ function Timeline({ multiPlaceEnabled = true }) {
               <div key={cat.id} className={classes.categoryGroup}>
                 <div className={classes.categoryHeader} style={{ width: gridWidth }}>
                   <div className={classes.categoryLabel}>
-                    <span className={classes.categoryName} title={cat.name}>{cat.name}</span>
+                    <span className={classes.categoryName}>{cat.name}</span>
                     {/* Только число номеров: цена категории в шахматке не нужна (30.10.2026). */}
                     <span className={classes.categoryMeta}>{catRooms.length} ном.</span>
                   </div>
