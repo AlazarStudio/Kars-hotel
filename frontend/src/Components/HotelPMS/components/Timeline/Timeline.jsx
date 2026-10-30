@@ -12,6 +12,7 @@ import { PARTNER_HOLD_CONFIG } from '../../shared/status-config';
 import { reservationErrorText } from '../../shared/reservation-errors';
 import { useTimeline } from '../../../../hooks/useTimeline';
 import { createReservation, updateReservation, swapReservations } from '../../../../api/reservations';
+import { bookingMatches, matchRooms, roomsWithHits } from './timeline-search.js';
 
 const TODAY = new Date();
 TODAY.setHours(0, 0, 0, 0);
@@ -126,6 +127,13 @@ function Timeline({ multiPlaceEnabled = true }) {
     });
   }, [days, bookings, rooms, multiPlaceEnabled]);
 
+  // Поиск сужает шахматку, а не только брони — правило в timeline-search.js.
+  const query = search.trim().toLowerCase();
+  const matchedRoomIds = useMemo(
+    () => matchRooms(query, apiData?.rooms ?? [], apiData?.categories ?? []),
+    [query, apiData],
+  );
+
   const visibleBookings = useMemo(() => {
     const end = addDays(viewStart, daysCount);
     return bookings.filter(b => {
@@ -133,15 +141,15 @@ function Timeline({ multiPlaceEnabled = true }) {
       // they live only in the "Отменённые" list. Checked-out (archived) ones
       // stay visible but are rendered semi-transparent (see renderBooking).
       if (b.status === 'cancelled' || b.status === 'no_show') return false;
-      if (search) {
-        const q = search.toLowerCase();
-        if (!b.guestName.toLowerCase().includes(q)) return false;
-      }
+      if (query && !bookingMatches(query, b, matchedRoomIds)) return false;
       const ci = parseISO(b.checkIn);
       const co = parseISO(b.checkOut);
       return co > viewStart && ci < end;
     });
-  }, [bookings, viewStart, daysCount, search]);
+  }, [bookings, viewStart, daysCount, query, matchedRoomIds]);
+
+  // Строки при поиске: найденные номера и номера, где есть бронь найденного гостя.
+  const roomsWithHit = useMemo(() => roomsWithHits(matchedRoomIds, visibleBookings), [matchedRoomIds, visibleBookings]);
 
   // ── Geometry helpers ──────────────────────────────────────────
   const getBookingLeft = useCallback((checkIn) => {
@@ -601,7 +609,7 @@ function Timeline({ multiPlaceEnabled = true }) {
         </div>
         <input
           className={classes.searchInput}
-          placeholder="Поиск по гостю..."
+          placeholder="Поиск: гость, номер или адрес..."
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
@@ -671,10 +679,11 @@ function Timeline({ multiPlaceEnabled = true }) {
             const catRooms = rooms
               .filter(r => r.categoryId === cat.id)
               .filter(r => !holdOnly || (r.partnerHold && r.partnerHold !== 'NONE'))
+              .filter(r => !roomsWithHit || roomsWithHit.has(r.id))
               .slice().sort((a, b) => (a.capacity ?? 1) - (b.capacity ?? 1));
             // В режиме «Резерв» категории без договорных номеров не показываем:
             // пустой заголовок категории — это шум, а не информация.
-            if (holdOnly && catRooms.length === 0) return null;
+            if ((holdOnly || roomsWithHit) && catRooms.length === 0) return null;
             return (
               <div key={cat.id} className={classes.categoryGroup}>
                 <div className={classes.categoryHeader} style={{ width: gridWidth }}>
