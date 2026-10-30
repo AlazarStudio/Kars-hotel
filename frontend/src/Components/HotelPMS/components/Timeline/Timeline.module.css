@@ -351,17 +351,28 @@
 }
 
 .categoryName {
+  /* Как у номеров (30.10.2026): обычный регистр, до двух строк — длинное
+     «СТАНДАРТ С ОДНОСПАЛЬНОЙ КРОВАТЬЮ» заглавными не помещалось в полосу и
+     обрезалось сверху. Полное имя — в подсказке. */
+  flex: 1;
+  min-width: 0;
   font-size: 12px;
+  line-height: 1.25;
   font-weight: 700;
   color: #1B2A47;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
 .categoryMeta {
+  flex: none;
   font-size: 11px;
   color: #6B7FA3;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .categoryBgCells {
