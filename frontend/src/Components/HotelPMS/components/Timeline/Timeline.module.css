@@ -329,7 +329,9 @@
   align-items: center;
   background: #F0F4FA;
   border-bottom: 1px solid #E0E9F4;
-  height: 38px;
+  /* Высота — по названию категории: оно пишется полностью (30.10.2026). */
+  min-height: 38px;
+  align-items: stretch;
   position: sticky;
   left: 0;
   z-index: 8;
@@ -342,26 +344,32 @@
   left: 0;
   z-index: 9;
   background: #E8EDF7;
-  height: 100%;
   display: flex;
   align-items: center;
-  padding: 0 14px;
+  padding: 8px 14px;
   gap: 8px;
   border-right: 1px solid #D8E2F0;
 }
 
 .categoryName {
+  /* Как у номеров (30.10.2026): обычный регистр, название — целиком, в
+     столько строк, сколько нужно. Заглавными с разрядкой длинное «СТАНДАРТ
+     С ОДНОСПАЛЬНОЙ КРОВАТЬЮ» не помещалось в полосу и обрезалось сверху. */
+  flex: 1;
+  min-width: 0;
   font-size: 12px;
+  line-height: 1.25;
   font-weight: 700;
   color: #1B2A47;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  overflow-wrap: anywhere;
 }
 
 .categoryMeta {
+  flex: none;
   font-size: 11px;
   color: #6B7FA3;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .categoryBgCells {
@@ -371,7 +379,7 @@
 
 .categoryBgCell {
   width: 44px;
-  height: 38px;
+  min-height: 38px;
   flex-shrink: 0;
   border-right: 1px solid #E8EDF3;
 }
