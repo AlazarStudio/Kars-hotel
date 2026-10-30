@@ -16,6 +16,7 @@ import { AuthService } from '../auth/auth.service';
 import { AvailabilityService } from '../inventory/availability.service';
 import {
   ReservationsService,
+  RESERVATION_CREATE_REJECTED_CODE,
   type ReservationChannelContext,
 } from '../reservations/reservations.service';
 import { roomFits, type PlaceHolder } from '../reservations/room-places';
@@ -578,12 +579,15 @@ export class ConnectivityService {
       };
     }
     const tenant = await this.resolveTenant(slug);
+    let preflightStarted = false;
+    let createEntered = false;
 
     return this.runAsTenant(tenant.id, async () => {
       if (channel.idempotency) {
         const replay = await this.reservations.findChannelReservation(channel);
         if (replay) return { hotelId: tenant.id, slug: tenant.slug, ...replay };
       }
+      preflightStarted = true;
       const query = await this.partnerQuery(partnerId, dto);
       // Validate the category belongs to this hotel.
       const category = await this.prisma.forTenantExplicit(tenant.id, (tx) =>
@@ -687,6 +691,7 @@ export class ConnectivityService {
         .filter(Boolean)
         .join(' ');
 
+      createEntered = true;
       const created = await this.reservations.create(
         {
           roomId,
@@ -724,6 +729,15 @@ export class ConnectivityService {
           this.reservations.findChannelReservation(channel),
         );
         if (replay) return { hotelId: tenant.id, slug: tenant.slug, ...replay };
+      }
+      // Код доказывает отказ этого POST до INSERT. Lookup/auth/ошибки после
+      // COMMIT остаются неопределёнными: партнёр должен сохранить исходный ключ.
+      const failure = error as { getStatus?: () => number; getResponse?: () => unknown } | null;
+      if (channel.idempotency && preflightStarted && !createEntered
+        && typeof failure?.getStatus === 'function' && [400, 404, 409].includes(failure.getStatus())
+        && typeof failure.getResponse === 'function') {
+        const body = failure.getResponse();
+        if (body && typeof body === 'object') Object.assign(body, { code: RESERVATION_CREATE_REJECTED_CODE });
       }
       throw error;
     });

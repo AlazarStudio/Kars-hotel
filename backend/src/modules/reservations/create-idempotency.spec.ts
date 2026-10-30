@@ -117,6 +117,24 @@ const create = (
   );
 
 describe('durable partner reservation idempotency', () => {
+  it('marks an allocation refusal only when no reservation was inserted', async () => {
+    const { service, rows } = make();
+    await create(service(), CHANNEL);
+    await expect(create(service(), { ...CHANNEL, partnerId: 'p-other' })).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'RESERVATION_CREATE_REJECTED' }),
+    });
+    expect(rows).toHaveLength(1);
+  });
+
+  it('does not mark a post-commit audit failure as a rejected creation', async () => {
+    const { service, rows, audit } = make();
+    const error = new ConflictException('audit unavailable after commit');
+    audit.mockRejectedValueOnce(error);
+    await expect(create(service(), CHANNEL)).rejects.toBe(error);
+    expect(error.getResponse()).not.toHaveProperty('code');
+    expect(rows).toHaveLength(1);
+  });
+
   it('replays after a lost response and service restart before checking occupied places', async () => {
     const { service, rows, audit, invalidate, notifyUpdate, calls } = make();
     const first = await create(service(), CHANNEL);

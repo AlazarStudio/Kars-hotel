@@ -22,6 +22,7 @@ import { parseISO, format } from 'date-fns';
 
 const VALID_SOURCES = ['DIRECT', 'PHONE', 'ONLINE', 'OTA', 'CORPORATE'];
 const VALID_STATUSES = ['NEW', 'CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT', 'CANCELLED', 'NO_SHOW'];
+export const RESERVATION_CREATE_REJECTED_CODE = 'RESERVATION_CREATE_REJECTED';
 
 export interface ReservationChannelContext {
   partnerId: string;
@@ -122,9 +123,12 @@ export class ReservationsService {
 
     const checkIn = parseISO(dto.checkIn);
     const checkOut = parseISO(dto.checkOut);
+    const rejected = (message: string) => channel?.idempotency
+      ? { message, code: RESERVATION_CREATE_REJECTED_CODE }
+      : message;
 
     if (checkOut <= checkIn) {
-      throw new ConflictException('checkOut must be after checkIn');
+      throw new ConflictException(rejected('checkOut must be after checkIn'));
     }
 
     type CreateResult =
@@ -233,9 +237,9 @@ export class ReservationsService {
     if (!result.ok) {
       switch (result.reason) {
         case 'ROOM_NOT_FOUND':
-          throw new NotFoundException('Room not found or inactive');
+          throw new NotFoundException(rejected('Room not found or inactive'));
         case 'NO_PLACE_AVAILABLE':
-          throw new ConflictException('No available place in this room for the selected period');
+          throw new ConflictException(rejected('No available place in this room for the selected period'));
       }
     }
 

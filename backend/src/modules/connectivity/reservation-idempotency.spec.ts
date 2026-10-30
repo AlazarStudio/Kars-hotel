@@ -59,6 +59,25 @@ const create = (svc: ConnectivityService, dto = DTO, key: string | string[] | un
   svc.createReservation('h1', dto, 'p-avia', key);
 
 describe('partner creation HTTP boundary', () => {
+  it('marks a capacity rejection before creation as a definite rejected POST', async () => {
+    const { svc, createReservation } = make();
+    await expect(create(svc, { ...DTO, adults: 3 })).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'RESERVATION_CREATE_REJECTED' }),
+    });
+    expect(createReservation).not.toHaveBeenCalled();
+  });
+
+  it('does not mark lookup conflicts or errors after entering creation as definite rejections', async () => {
+    for (const phase of ['lookup', 'creation']) {
+      const { svc, replay, createReservation } = make();
+      const error = new ConflictException('uncertain outcome');
+      if (phase === 'lookup') replay.mockRejectedValue(error);
+      else createReservation.mockRejectedValue(error);
+      await expect(create(svc)).rejects.toBe(error);
+      expect(error.getResponse()).not.toHaveProperty('code');
+    }
+  });
+
   it('forwards X-Idempotency-Key with the authenticated partner', async () => {
     const call = jest.fn();
     const controller = new ConnectivityController(
