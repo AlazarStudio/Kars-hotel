@@ -101,20 +101,33 @@ export class TenantService {
     };
   }
 
+  /* Логотип и галерея в базе — ключи объектов, наружу — адреса этого стенда
+     (StorageService.toUrl). Все ответы с гостиницей идут через present(). */
+  private present<T extends { logoUrl: string | null; galleryPhotos: unknown }>(t: T) {
+    return {
+      ...t,
+      logoUrl: t.logoUrl ? this.storage.toUrl(t.logoUrl) : null,
+      galleryPhotos: this.storage.toUrls(t.galleryPhotos),
+    };
+  }
+
   async getSettings() {
     const tenantId = TenantContext.getTenantIdOrThrow();
     // Use admin client to bypass RLS — tenant table is not tenant-scoped by RLS,
     // but the app_user connection requires SET LOCAL app.tenant_id which forTenant provides.
-    return this.prisma.admin.tenant.findUniqueOrThrow({ where: { id: tenantId } });
+    return this.present(await this.prisma.admin.tenant.findUniqueOrThrow({ where: { id: tenantId } }));
   }
 
   async updateSettings(dto: UpdateTenantSettingsDto) {
     const tenantId = TenantContext.getTenantIdOrThrow();
     const data = Object.fromEntries(Object.entries(dto).filter(([, v]) => v !== undefined));
-    return this.prisma.admin.tenant.update({
-      where: { id: tenantId },
-      data,
-    });
+    if (typeof data.logoUrl === 'string') data.logoUrl = this.storage.toStored(data.logoUrl);
+    return this.present(
+      await this.prisma.admin.tenant.update({
+        where: { id: tenantId },
+        data,
+      }),
+    );
   }
 
   /**
@@ -136,7 +149,7 @@ export class TenantService {
     if (current.logoUrl && current.logoUrl !== logoUrl) {
       await this.storage.deleteByUrl(current.logoUrl); // ignores foreign URLs
     }
-    return updated;
+    return this.present(updated);
   }
 
   /** Clear the hotel logo and delete the stored object (best-effort). */
@@ -151,7 +164,7 @@ export class TenantService {
       data: { logoUrl: null },
     });
     if (current.logoUrl) await this.storage.deleteByUrl(current.logoUrl);
-    return updated;
+    return this.present(updated);
   }
 
   /**
@@ -162,12 +175,14 @@ export class TenantService {
    */
   async addGalleryPhoto(file: UploadedFile) {
     const tenantId = TenantContext.getTenantIdOrThrow();
-    const url = await this.storage.uploadTenantGalleryPhoto(tenantId, file);
+    const key = await this.storage.uploadTenantGalleryPhoto(tenantId, file);
     const current = await this.readGallery(tenantId);
-    return this.prisma.admin.tenant.update({
-      where: { id: tenantId },
-      data: { galleryPhotos: [...current, url] },
-    });
+    return this.present(
+      await this.prisma.admin.tenant.update({
+        where: { id: tenantId },
+        data: { galleryPhotos: [...current, key] },
+      }),
+    );
   }
 
   /**
@@ -179,7 +194,8 @@ export class TenantService {
    */
   async setGallery(photos: string[]) {
     const tenantId = TenantContext.getTenantIdOrThrow();
-    const next = photos.filter((p, i) => photos.indexOf(p) === i); // dedupe, keep order
+    const keys = photos.map((p) => this.storage.toStored(p));
+    const next = keys.filter((p, i) => keys.indexOf(p) === i); // dedupe, keep order
     const foreign = next.filter((p) => !this.storage.isOwnUrl(p));
     if (foreign.length) {
       throw new ConflictException(
@@ -193,8 +209,8 @@ export class TenantService {
     });
     // Delete objects dropped from the gallery (best-effort).
     const removed = current.filter((p) => !next.includes(p));
-    await Promise.all(removed.map((url) => this.storage.deleteByUrl(url)));
-    return updated;
+    await Promise.all(removed.map((key) => this.storage.deleteByUrl(key)));
+    return this.present(updated);
   }
 
   /** Read the current gallery as a clean string[] (tolerates legacy shapes). */

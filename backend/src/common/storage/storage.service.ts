@@ -32,6 +32,14 @@ export interface UploadedFile {
  * The public base is configurable (S3_PUBLIC_URL) so production can front the
  * bucket with a CDN or a public hostname without code changes.
  */
+/** Папки наших объектов в бакете. */
+const OWN_PREFIXES = ['room-type-photos', 'tenant-logos', 'tenant-gallery'];
+
+/** Внешняя ссылка, а не ключ нашего объекта. */
+function isExternal(v: string): boolean {
+  return /^https?:\/\//i.test(v);
+}
+
 @Injectable()
 export class StorageService implements OnModuleInit {
   private readonly logger = new Logger(StorageService.name);
@@ -66,7 +74,7 @@ export class StorageService implements OnModuleInit {
   }
 
   /**
-   * Upload a room-type photo and return its public URL.
+   * Upload a room-type photo and return its stored key (see toStored).
    * Key layout: room-type-photos/{tenantId}/{roomTypeId}/{uuid}.{ext}
    */
   async uploadRoomTypePhoto(
@@ -78,7 +86,7 @@ export class StorageService implements OnModuleInit {
   }
 
   /**
-   * Upload a hotel logo and return its public URL.
+   * Upload a hotel logo and return its stored key (see toStored).
    * Key layout: tenant-logos/{tenantId}/{uuid}.{ext}
    */
   async uploadTenantLogo(tenantId: string, file: UploadedFile): Promise<string> {
@@ -86,26 +94,67 @@ export class StorageService implements OnModuleInit {
   }
 
   /**
-   * Upload a hotel gallery photo and return its public URL.
+   * Upload a hotel gallery photo and return its stored key (see toStored).
    * Key layout: tenant-gallery/{tenantId}/{uuid}.{ext}
    */
   async uploadTenantGalleryPhoto(tenantId: string, file: UploadedFile): Promise<string> {
     return this.putImage(`tenant-gallery/${tenantId}`, file);
   }
 
-  /** True when a URL already points at an object in our own bucket. */
+  /** True when a URL (or a stored key) points at an object in our bucket. */
   isOwnUrl(url: string): boolean {
-    return this.keyFromUrl(url) != null;
+    return !isExternal(this.toStored(url));
+  }
+
+  /*
+   * В БАЗЕ — ПУТЬ К ФАЙЛУ, А НЕ АДРЕС (02.11.2026). Раньше хранился полный
+   * адрес `${S3_PUBLIC_URL}/kars-hotel/…`, и копия базы, перенесённая на
+   * другой стенд, ссылалась на чужой сервер: 02.11 лёг Beget, и на локальном
+   * стенде пропали все фото гостиниц, хотя файлы лежали в локальном MinIO.
+   * Теперь база хранит ключ объекта (`tenant-gallery/<id>/<uuid>.jpg`), а
+   * адрес собирается при выдаче из S3_PUBLIC_URL этого стенда. Внешние
+   * ссылки (Unsplash в старых сидах) хранятся как есть.
+   */
+
+  /** Хранимое значение → адрес для <img src>. */
+  toUrl(stored: string): string {
+    return isExternal(stored) ? stored : this.publicUrl(stored);
+  }
+
+  toUrls(value: unknown): string[] {
+    return Array.isArray(value)
+      ? value.filter((p): p is string => typeof p === 'string').map((p) => this.toUrl(p))
+      : [];
   }
 
   /**
-   * Download a remote image and store it in our bucket, returning the new
-   * public URL. Used to "internalise" external images (e.g. legacy Unsplash
+   * Адрес или ключ → хранимое значение. Адрес нашего хранилища с ЛЮБОГО
+   * стенда (боевой app.karsavia.ru, локальный localhost:9000) узнаётся по
+   * пути `/<bucket>/<наша папка>/…` — клиент мог получить его до переезда.
+   */
+  toStored(urlOrKey: string): string {
+    const v = urlOrKey.trim();
+    if (!isExternal(v)) return v.replace(/^\/+/, '');
+    const own = this.keyFromUrl(v);
+    if (own) return own;
+    try {
+      const path = decodeURIComponent(new URL(v).pathname);
+      const m = path.match(new RegExp(`^(?:.*/)?${this.bucket}/((?:${OWN_PREFIXES.join('|')})/.+)$`));
+      if (m) return m[1];
+    } catch {
+      /* не адрес — хранится как есть */
+    }
+    return v;
+  }
+
+  /**
+   * Download a remote image and store it in our bucket, returning the stored
+   * key. Used to "internalise" external images (e.g. legacy Unsplash
    * seed links) so every image we serve is hosted by us. Idempotent: a URL that
-   * already lives in our bucket is returned unchanged.
+   * already lives in our bucket is returned as its key, without a download.
    */
   async ingestFromUrl(keyPrefix: string, sourceUrl: string): Promise<string> {
-    if (this.isOwnUrl(sourceUrl)) return sourceUrl;
+    if (this.isOwnUrl(sourceUrl)) return this.toStored(sourceUrl);
 
     let res: globalThis.Response;
     try {
@@ -152,17 +201,17 @@ export class StorageService implements OnModuleInit {
       'Content-Type': file.mimetype,
       'Cache-Control': 'public, max-age=31536000, immutable',
     });
-    return this.publicUrl(key);
+    return key;
   }
 
   /**
-   * Best-effort delete of an object given its public URL. Only removes objects
+   * Best-effort delete of an object given its public URL or stored key. Only removes objects
    * that live in our bucket; foreign URLs (e.g. legacy Unsplash links) are
    * silently ignored so callers can mix-and-match safely.
    */
   async deleteByUrl(url: string): Promise<void> {
-    const key = this.keyFromUrl(url);
-    if (!key) return;
+    const key = this.toStored(url);
+    if (isExternal(key)) return;
     try {
       await this.client.removeObject(this.bucket, key);
     } catch (err) {
@@ -173,7 +222,7 @@ export class StorageService implements OnModuleInit {
   /** Все файлы гостиницы — при её уходе из PMS (152-ФЗ, план 13.8). */
   async deleteTenantFiles(tenantId: string): Promise<number> {
     let n = 0;
-    for (const prefix of [`room-type-photos/${tenantId}/`, `tenant-logos/${tenantId}/`, `tenant-gallery/${tenantId}/`]) {
+    for (const prefix of OWN_PREFIXES.map((p) => `${p}/${tenantId}/`)) {
       const keys: string[] = [];
       await new Promise<void>((resolve, reject) => {
         const stream = this.client.listObjectsV2(this.bucket, prefix, true);

@@ -72,6 +72,9 @@ describe('Открыто без входа — только по списку', 
 
   it('партнёрский API без сессии — только с ключом партнёра', () => {
     expect(keyGuarded.length).toBeGreaterThan(5);
-    expect(keyGuarded.every((id) => id.startsWith('ConnectivityController.'))).toBe(true);
+    // BackupsController — резервные копии PMS для админки Kars Avia (02.11.2026):
+    // тот же ключ, но своё право `backups:manage` на весь контроллер.
+    const KEY_CONTROLLERS = ['ConnectivityController.', 'BackupsController.'];
+    expect(keyGuarded.filter((id) => !KEY_CONTROLLERS.some((c) => id.startsWith(c)))).toEqual([]);
   });
 });

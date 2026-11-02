@@ -31,17 +31,28 @@ export class RoomTypesService {
     private readonly storage: StorageService,
   ) {}
 
+  /* Фото в базе — ключи объектов, наружу — адреса этого стенда
+     (StorageService.toUrl). Все ответы с категорией идут через present(). */
+  private present<T extends { photos: unknown }>(rt: T): T & { photos: string[] } {
+    return { ...rt, photos: this.storage.toUrls(rt.photos) };
+  }
+
   async list() {
-    return this.prisma.forTenant((tx) =>
+    const rows = await this.prisma.forTenant((tx) =>
       tx.roomType.findMany({
         where: { archivedAt: null },
         orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
         include: LIVE_ROOMS_COUNT,
       }),
     );
+    return rows.map((rt) => this.present(rt));
   }
 
   async get(id: string) {
+    return this.present(await this.getRaw(id));
+  }
+
+  private async getRaw(id: string) {
     const rt = await this.prisma.forTenant((tx) =>
       tx.roomType.findUnique({
         where: { id },
@@ -55,7 +66,7 @@ export class RoomTypesService {
   async create(dto: CreateRoomTypeDto) {
     this.assertOccupancyConsistent(dto.baseOccupancy, dto.maxOccupancy);
     try {
-      return await this.prisma.forTenant((tx) =>
+      const created = await this.prisma.forTenant((tx) =>
         tx.roomType.create({
           data: {
             tenantId: this.currentTenantId(),
@@ -71,6 +82,7 @@ export class RoomTypesService {
           },
         }),
       );
+      return this.present(created);
     } catch (e) {
       throw this.translatePrismaError(e, dto.code);
     }
@@ -85,7 +97,7 @@ export class RoomTypesService {
       );
     }
     try {
-      return await this.prisma.forTenant((tx) =>
+      const updated = await this.prisma.forTenant((tx) =>
         tx.roomType.update({
           where: { id },
           data: {
@@ -101,6 +113,7 @@ export class RoomTypesService {
           },
         }),
       );
+      return this.present(updated);
     } catch (e) {
       throw this.translatePrismaError(e, dto.code);
     }
@@ -150,24 +163,25 @@ export class RoomTypesService {
 
   /** Upload one image, append its public URL to the category's photo list. */
   async addPhoto(id: string, file: UploadedFile): Promise<{ photos: string[] }> {
-    const existing = await this.get(id);
-    const url = await this.storage.uploadRoomTypePhoto(this.currentTenantId(), id, file);
-    const photos = [...this.readPhotos(existing.photos), url];
+    const existing = await this.getRaw(id);
+    const key = await this.storage.uploadRoomTypePhoto(this.currentTenantId(), id, file);
+    const photos = [...this.readPhotos(existing.photos), key];
     await this.persistPhotos(id, photos);
-    return { photos };
+    return { photos: this.storage.toUrls(photos) };
   }
 
   /** Remove one photo by URL (also deletes the stored object, best-effort). */
   async removePhoto(id: string, url: string): Promise<{ photos: string[] }> {
-    const existing = await this.get(id);
+    const existing = await this.getRaw(id);
     const current = this.readPhotos(existing.photos);
-    if (!current.includes(url)) {
+    const key = this.storage.toStored(url);
+    if (!current.includes(key)) {
       throw new NotFoundException('Это фото не найдено у категории');
     }
-    const photos = current.filter((p) => p !== url);
+    const photos = current.filter((p) => p !== key);
     await this.persistPhotos(id, photos);
-    await this.storage.deleteByUrl(url);
-    return { photos };
+    await this.storage.deleteByUrl(key);
+    return { photos: this.storage.toUrls(photos) };
   }
 
   /**
@@ -175,13 +189,13 @@ export class RoomTypesService {
    * Objects dropped from the list are deleted from storage, best-effort.
    */
   async setPhotos(id: string, photos: string[]): Promise<{ photos: string[] }> {
-    const existing = await this.get(id);
+    const existing = await this.getRaw(id);
     const before = this.readPhotos(existing.photos);
-    const clean = photos.map((p) => String(p).trim()).filter(Boolean);
+    const clean = photos.map((p) => String(p).trim()).filter(Boolean).map((p) => this.storage.toStored(p));
     await this.persistPhotos(id, clean);
     const removed = before.filter((p) => !clean.includes(p));
-    await Promise.all(removed.map((url) => this.storage.deleteByUrl(url)));
-    return { photos: clean };
+    await Promise.all(removed.map((key) => this.storage.deleteByUrl(key)));
+    return { photos: this.storage.toUrls(clean) };
   }
 
   private readPhotos(value: unknown): string[] {

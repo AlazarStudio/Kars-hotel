@@ -30,6 +30,7 @@ import { ReviewCorporateTariffDto } from './dto/review-corporate-tariff.dto';
 import { RatePlansService } from '../rate-plans/rate-plans.service';
 import { slugifyHotelName } from '../auth/slug.util';
 import { PartnerWebhookService } from './partner-webhook.service';
+import { StorageService } from '../../common/storage/storage.service';
 
 /**
  * Cross-tenant connectivity service backing the partner API.
@@ -58,6 +59,7 @@ export class ConnectivityService {
     private readonly auth: AuthService,
     private readonly ratePlans: RatePlansService,
     private readonly partnerWebhooks: PartnerWebhookService,
+    private readonly storage: StorageService,
   ) {}
 
   // ─── Catalog (cross-tenant) ────────────────────────────────────────────────
@@ -1536,10 +1538,11 @@ export class ConnectivityService {
       currency: t.currency,
       checkInTime: t.checkInTime,
       checkOutTime: t.checkOutTime,
-      logoUrl: t.logoUrl,
+      // Фото в базе — ключи; партнёру — адреса этого стенда (StorageService).
+      logoUrl: t.logoUrl ? this.storage.toUrl(t.logoUrl) : null,
       // Hotel hero gallery shown as a slider on partner sites; first = cover.
       photos: Array.isArray(t.galleryPhotos)
-        ? (t.galleryPhotos as unknown[]).filter((p): p is string => typeof p === 'string')
+        ? this.storage.toUrls(t.galleryPhotos)
         : [],
       /* В2/В4 · профиль для каталога партнёра. Незаполненное отдаём как
        * отсутствующее (undefined), а не нулём: карточка опустит поле, а не
@@ -1584,7 +1587,7 @@ export class ConnectivityService {
       extraBeds: rt.extraBeds,
       basePrice: Number(rt.basePrice),
       roomCount: rt._count?.rooms ?? undefined,
-      photos: Array.isArray(rt.photos) ? rt.photos : [],
+      photos: this.storage.toUrls(rt.photos),
     };
   }
 
