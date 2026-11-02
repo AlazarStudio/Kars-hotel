@@ -23,6 +23,10 @@ export const PARTNER_SCOPES = {
   /* Справочник партнёра — его юрлица и заказчики (авиакомпании). Партнёр
      ведёт его сам; гостиница по нему выбирает, для кого её тариф. */
   DirectoryWrite: 'directory:write',
+  /* Резервные копии PMS (02.11.2026): Kars Avia показывает их в своей
+     админке и правит расписание. Отдельное право: ключ броней не должен
+     уметь запускать копии и менять адрес, куда уходит дамп базы. */
+  BackupsManage: 'backups:manage',
 } as const;
 
 export type PartnerScope = (typeof PARTNER_SCOPES)[keyof typeof PARTNER_SCOPES];

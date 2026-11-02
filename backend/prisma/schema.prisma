@@ -1245,3 +1245,45 @@ model OwnerInvite {
   @@index([tenantId])
   @@map("owner_invite")
 }
+
+/// Резервные копии (02.11.2026, после аварии Beget). Служба `backup`
+/// (backup/run.sh) читает настройки из backup_config, раз в минуту
+/// отмечается и пишет каждую копию в backup_runs; Kars Avia показывает и
+/// правит это в своей админке через /api/connect/v1/backups (право
+/// `backups:manage`). Таблицы служебные, без RLS: читает их только админский
+/// клиент. Секреты (ключ S3, SMTP) — в .env сервера, здесь их нет.
+model BackupConfig {
+  id             Int       @id @default(1)
+  atHour         Int       @default(3) @map("at_hour")
+  everyHours     Int       @default(24) @map("every_hours")
+  keepDays       Int       @default(14) @map("keep_days")
+  mailTo         String?   @map("mail_to")
+  ageRecipient   String?   @map("age_recipient")
+  runRequestedAt DateTime? @map("run_requested_at")
+  agentSeenAt    DateTime? @map("agent_seen_at")
+  agentInfo      Json?     @map("agent_info")
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@map("backup_config")
+}
+
+model BackupRun {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  startedAt  DateTime  @default(now()) @map("started_at")
+  finishedAt DateTime? @map("finished_at")
+  /// RUNNING | OK | FAILED
+  status     String
+  /// SCHEDULE | MANUAL
+  trigger    String
+  file       String?
+  sizeBytes  BigInt?   @map("size_bytes")
+  /// OFF | SENT | FAILED | NO_KEY | NO_SMTP
+  mail       String?
+  /// OFF | SENT | FAILED | NO_KEY
+  offsite    String?
+  /// DUMP_FAILED | NOT_READABLE | INTERRUPTED
+  error      String?
+
+  @@index([startedAt])
+  @@map("backup_runs")
+}

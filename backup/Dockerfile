@@ -2,6 +2,6 @@
 #
 # Postgres ТОЙ ЖЕ мажорной версии, что и база (pg_dump старше сервера
 # отказывается снимать дамп). Сверху — age (шифрование открытым ключом) и
-# rclone (выгрузка во внешнее хранилище).
+# rclone (выгрузка во внешнее хранилище), curl (копия базы письмом).
 FROM postgres:16-alpine
-RUN apk add --no-cache age rclone
+RUN apk add --no-cache age rclone curl

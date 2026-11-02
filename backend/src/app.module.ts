@@ -30,6 +30,7 @@ import { SuperAdminModule } from './modules/super-admin/super-admin.module';
 import { FolioModule } from './modules/folio/folio.module';
 import { HousekeepingModule } from './modules/housekeeping/housekeeping.module';
 import { ConnectivityModule } from './modules/connectivity/connectivity.module';
+import { BackupsModule } from './modules/backups/backups.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { ConnectivityModule } from './modules/connectivity/connectivity.module';
     FolioModule,
     HousekeepingModule,
     ConnectivityModule,
+    BackupsModule,
     JournalModule,
   ],
   providers: [

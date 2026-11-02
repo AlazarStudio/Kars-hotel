@@ -179,6 +179,16 @@ services:
       RCLONE_CONFIG_OFFSITE_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET:-}
       # Тревога о пропущенной копии — «пульс» во внешний монитор.
       BACKUP_PING_URL: ${BACKUP_PING_URL:-}
+      # Копия базы письмом (backup/run.sh, mail_db; адрес задаётся в админке
+      # Kars Avia). Вложение — шифр ключом age. Ящик — НЕ у того же
+      # провайдера, что сервер: при его падении письма должны остаться.
+      BACKUP_MAIL_TO: ${BACKUP_MAIL_TO:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
     volumes:
       - ./backup:/backup:ro
       - backups:/backups
