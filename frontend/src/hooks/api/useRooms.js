@@ -65,7 +65,11 @@ export function useUpdateRoomStatus() {
     onError: (_err, _vars, ctx) => {
       if (ctx?.snapshots) for (const [key, value] of ctx.snapshots) qc.setQueryData(key, value);
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: KEY }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: KEY });
+      // 5.8 · отметка «грязный» заводит задачу на сервере.
+      qc.invalidateQueries({ queryKey: ['hk-tasks'] });
+    },
   });
 }
 

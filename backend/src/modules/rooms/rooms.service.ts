@@ -275,9 +275,22 @@ export class RoomsService {
     const tenantId = TenantContext.getTenantIdOrThrow();
     let result: unknown;
     try {
-      result = await this.prisma.forTenant((tx) =>
-        tx.room.update({ where: { id }, data: { status } }),
-      );
+      result = await this.prisma.forTenant(async (tx) => {
+        const room = await tx.room.update({ where: { id }, data: { status } });
+        /* 5.8 · Грязный номер — это работа: задача появляется сама, без исполнителя.
+           Открытая уборка по номеру уже есть — вторую не заводим. */
+        if (status === 'DIRTY') {
+          const open = await tx.housekeepingTask.count({
+            where: { roomId: id, type: 'CLEANING', status: { in: ['PENDING', 'IN_PROGRESS'] } },
+          });
+          if (open === 0) {
+            await tx.housekeepingTask.create({
+              data: { tenantId, roomId: id, type: 'CLEANING', status: 'PENDING' },
+            });
+          }
+        }
+        return room;
+      });
     } catch (e) {
       throw this.translatePrismaError(e);
     }

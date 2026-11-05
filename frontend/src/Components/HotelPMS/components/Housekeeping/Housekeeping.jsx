@@ -10,6 +10,9 @@ import {
   useCreateTask,
 } from '../../../../hooks/api/useHousekeepingTasks';
 import { useTenantUsers } from '../../../../hooks/api/useTenantUsers';
+import { useAuth } from '../../../../auth/AuthContext';
+import Modal from '../../shared/Modal';
+import formClasses from '../../shared/Form.module.css';
 
 const STATUSES = Object.keys(ROOM_STATUS_CONFIG);
 
@@ -22,11 +25,83 @@ const TASK_STATUS_CONFIG = {
 
 const TASK_TYPE_LABEL = {
   CLEANING:    'Уборка',
-  TURNDOWN:    'Вечерняя',
+  TURNDOWN:    'Вечерняя подготовка',
   INSPECTION:  'Проверка',
   MAINTENANCE: 'Ремонт',
-  DEEP_CLEAN:  'Генеральная',
+  DEEP_CLEAN:  'Генеральная уборка',
 };
+
+/* 5.8 · Значок вместо эмодзи: в интерфейсе только монохромные значки. */
+function PersonIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true" style={{ verticalAlign: '-2px', marginRight: 4 }}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21c0-4 4-6 8-6s8 2 8 6" />
+    </svg>
+  );
+}
+
+/* 5.8 · Новая задача: тип, исполнитель и что сделать — задача без текста горничной
+   ни о чём не говорит. */
+function NewTaskModal({ room, users, busy, onSubmit, onClose }) {
+  const [type, setType] = useState('CLEANING');
+  const [assigneeId, setAssigneeId] = useState('');
+  const [notes, setNotes] = useState('');
+  return (
+    <Modal
+      open
+      title={`Новая задача · №${room.number}`}
+      width="sm"
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className={classes.actionBtn} onClick={onClose}>Отмена</button>
+          <button
+            type="button"
+            className={`${classes.actionBtn} ${classes.primary}`}
+            disabled={busy}
+            onClick={() => onSubmit({
+              roomId: room.id,
+              type,
+              ...(assigneeId ? { assigneeId } : {}),
+              ...(notes.trim() ? { notes: notes.trim() } : {}),
+            })}
+          >
+            Создать
+          </button>
+        </>
+      }
+    >
+      <div className={formClasses.field}>
+        <label className={formClasses.label}>Тип</label>
+        <select className={formClasses.select} value={type} onChange={(e) => setType(e.target.value)}>
+          {Object.entries(TASK_TYPE_LABEL).map(([k, v]) => (
+            <option key={k} value={k}>{v}</option>
+          ))}
+        </select>
+      </div>
+      <div className={formClasses.field}>
+        <label className={formClasses.label}>Исполнитель</label>
+        <select className={formClasses.select} value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
+          <option value="">Назначить позже</option>
+          {users.map((u) => (
+            <option key={u.id} value={u.id}>{u.fullName}</option>
+          ))}
+        </select>
+      </div>
+      <div className={formClasses.field}>
+        <label className={formClasses.label}>Что сделать</label>
+        <textarea
+          className={formClasses.textarea}
+          rows={3}
+          value={notes}
+          placeholder="Смена белья, влажная уборка"
+          onChange={(e) => setNotes(e.target.value)}
+        />
+      </div>
+    </Modal>
+  );
+}
 
 function AssignSelect({ task, users, onAssign }) {
   const [open, setOpen] = useState(false);
@@ -44,7 +119,7 @@ function AssignSelect({ task, users, onAssign }) {
         onClick={() => setOpen((v) => !v)}
         title="Назначить горничную"
       >
-        {task.assignee_name ? `👤 ${task.assignee_name}` : '+ Назначить'}
+        {task.assignee_name ? <><PersonIcon />{task.assignee_name}</> : '+ Назначить'}
       </button>
       {open && (
         <div style={{
@@ -91,11 +166,14 @@ function TasksTab() {
   const { data: users = [] } = useTenantUsers();
   const assignTask = useAssignTask();
   const completeTask = useCompleteTask();
+  const { user } = useAuth();
+  const [mine, setMine] = useState(false);
 
   const tasks = useMemo(() => {
-    if (statusFilter === 'active') return allTasks.filter((t) => t.status !== 'DONE' && t.status !== 'INSPECTED');
-    return allTasks.filter((t) => t.status === statusFilter);
-  }, [allTasks, statusFilter]);
+    const own = mine ? allTasks.filter((t) => t.assignee_id === user?.id) : allTasks;
+    if (statusFilter === 'active') return own.filter((t) => t.status !== 'DONE' && t.status !== 'INSPECTED');
+    return own.filter((t) => t.status === statusFilter);
+  }, [allTasks, statusFilter, mine, user?.id]);
 
   const counts = useMemo(() => ({
     active: allTasks.filter((t) => t.status !== 'DONE' && t.status !== 'INSPECTED').length,
@@ -128,6 +206,11 @@ function TasksTab() {
           </div>
         ))}
       </div>
+
+      <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontSize: 13, marginBottom: 10 }}>
+        <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} />
+        Мои задачи
+      </label>
 
       {tasks.length === 0 ? (
         <div className={classes.empty}>
@@ -166,12 +249,12 @@ function TasksTab() {
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: '#1B2A47' }}>
                     {TASK_TYPE_LABEL[task.type] || task.type}
-                    {task.notes && (
-                      <span style={{ fontWeight: 400, color: '#8896AB', marginLeft: 8 }}>
-                        — {task.notes}
-                      </span>
-                    )}
                   </div>
+                  {task.notes && (
+                    <div style={{ fontSize: 13, color: '#1B2A47', marginTop: 2, whiteSpace: 'pre-wrap' }}>
+                      {task.notes}
+                    </div>
+                  )}
                   <div style={{ fontSize: 11, color: '#8896AB', marginTop: 2 }}>
                     {new Date(task.created_at).toLocaleString('ru-RU', {
                       day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
@@ -224,6 +307,7 @@ function RoomsTab() {
   const roomTypesQ = useRoomTypes();
   const updateStatus = useUpdateRoomStatus();
   const createTask = useCreateTask();
+  const { data: users = [] } = useTenantUsers();
 
   const rooms = roomsQ.data ?? [];
   const roomTypes = roomTypesQ.data ?? [];
@@ -243,11 +327,8 @@ function RoomsTab() {
 
   const filtered = filter === 'all' ? rooms : rooms.filter((r) => r.status === filter);
 
-  const handleCreateTask = (roomId) => {
-    setCreatingFor(roomId);
-    createTask.mutate({ roomId, type: 'CLEANING' }, {
-      onSettled: () => setCreatingFor(null),
-    });
+  const handleCreateTask = (dto) => {
+    createTask.mutate(dto, { onSettled: () => setCreatingFor(null) });
   };
 
   if (roomsQ.isLoading) {
@@ -297,7 +378,6 @@ function RoomsTab() {
           const cfg = ROOM_STATUS_CONFIG[room.status] || ROOM_STATUS_CONFIG.CLEAN;
           const nextStatuses = ROOM_STATUS_FLOW[room.status] || [];
           const catName = catNameById.get(room.roomTypeId) || room.roomType?.name || '';
-          const isCreating = creatingFor === room.id && createTask.isPending;
           return (
             <div key={room.id} className={classes.card} style={{ borderColor: cfg.bg }}>
               <div className={classes.cardTop}>
@@ -324,21 +404,27 @@ function RoomsTab() {
                     → {ROOM_STATUS_CONFIG[next]?.label}
                   </button>
                 ))}
-                {room.status === 'DIRTY' && (
-                  <button
-                    type="button"
-                    className={classes.actionBtn}
-                    onClick={() => handleCreateTask(room.id)}
-                    disabled={isCreating}
-                  >
-                    {isCreating ? '…' : '+ Задача'}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className={classes.actionBtn}
+                  onClick={() => setCreatingFor(room)}
+                >
+                  + Задача
+                </button>
               </div>
             </div>
           );
         })}
       </div>
+      {creatingFor && (
+        <NewTaskModal
+          room={creatingFor}
+          users={users}
+          busy={createTask.isPending}
+          onSubmit={handleCreateTask}
+          onClose={() => setCreatingFor(null)}
+        />
+      )}
     </>
   );
 }
