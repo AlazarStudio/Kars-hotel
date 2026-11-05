@@ -6,6 +6,7 @@ import {
   uploadRoomTypePhoto,
   deleteRoomTypePhoto,
 } from '../../../../api/roomTypes';
+import NumberInput from '../../shared/NumberInput.jsx';
 
 const EMPTY = {
   code: '',
@@ -259,26 +260,24 @@ export default function RoomTypeFormModal({ open, editing, onClose, onSubmit }) 
         <div className={formClasses.row}>
           <div className={formClasses.field}>
             <label className={formClasses.label}>Базовое размещение</label>
-            <input
+            <NumberInput decimal={false}
               className={formClasses.input}
-              type="number"
               min={1}
               max={10}
               value={values.baseOccupancy}
-              onChange={(e) => set('baseOccupancy', Number(e.target.value))}
+              onChange={(v) => set('baseOccupancy', v)}
               aria-invalid={errors.baseOccupancy ? 'true' : 'false'}
             />
             {errors.baseOccupancy && <div className={formClasses.fieldError}>{errors.baseOccupancy}</div>}
           </div>
           <div className={formClasses.field}>
             <label className={formClasses.label}>Макс. размещение</label>
-            <input
+            <NumberInput decimal={false}
               className={formClasses.input}
-              type="number"
               min={1}
               max={10}
               value={values.maxOccupancy}
-              onChange={(e) => set('maxOccupancy', Number(e.target.value))}
+              onChange={(v) => set('maxOccupancy', v)}
               aria-invalid={errors.maxOccupancy ? 'true' : 'false'}
             />
             {errors.maxOccupancy && <div className={formClasses.fieldError}>{errors.maxOccupancy}</div>}
@@ -287,13 +286,12 @@ export default function RoomTypeFormModal({ open, editing, onClose, onSubmit }) 
 
         <div className={formClasses.field}>
           <label className={formClasses.label}>Базовая цена за ночь (₽)</label>
-          <input
+          <NumberInput
             className={formClasses.input}
-            type="number"
             min={0}
             step="0.01"
             value={values.basePrice}
-            onChange={(e) => set('basePrice', Number(e.target.value))}
+            onChange={(v) => set('basePrice', v)}
             aria-invalid={errors.basePrice ? 'true' : 'false'}
           />
           <div className={formClasses.hint}>

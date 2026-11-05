@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import Modal from '../../shared/Modal';
 import formClasses from '../../shared/Form.module.css';
+import NumberInput from '../../shared/NumberInput.jsx';
 
 /**
  * Form to set the SAME price for every date in [from, to] for one (roomType, occupancy).
@@ -48,6 +49,8 @@ export default function FillRatesModal({ open, ratePlan, roomTypes, defaultRoomT
     if (!values.toDate) e.toDate = 'Обязательно';
     if (values.toDate && values.fromDate && values.toDate < values.fromDate) e.toDate = 'Должно быть ≥ начала';
     if (values.price === '' || Number(values.price) < 0) e.price = 'Введите цену ≥ 0';
+    // 5.4 · поле можно очистить — пустое число гостей не отправляем нулём.
+    if (!(values.occupancy >= 1)) e.occupancy = 'Не меньше 1';
     setErrors(e);
     if (Object.keys(e).length > 0) return;
 
@@ -150,12 +153,11 @@ export default function FillRatesModal({ open, ratePlan, roomTypes, defaultRoomT
           <div className={formClasses.row}>
             <div className={formClasses.field}>
               <label className={formClasses.label}>Цена за ночь (₽)</label>
-              <input
+              <NumberInput
                 className={formClasses.input}
-                type="number"
                 step="0.01"
                 value={values.price}
-                onChange={(e) => set('price', e.target.value)}
+                onChange={(v) => set('price', (v == null ? '' : String(v)))}
                 placeholder="3800"
                 aria-invalid={errors.price ? 'true' : 'false'}
                 autoFocus
@@ -164,15 +166,17 @@ export default function FillRatesModal({ open, ratePlan, roomTypes, defaultRoomT
             </div>
             <div className={formClasses.field}>
               <label className={formClasses.label}>Размещение</label>
-              <input
+              <NumberInput decimal={false}
                 className={formClasses.input}
-                type="number"
                 min={1}
                 max={10}
                 value={values.occupancy}
-                onChange={(e) => set('occupancy', Number(e.target.value))}
+                onChange={(v) => set('occupancy', v)}
+                aria-invalid={errors.occupancy ? 'true' : 'false'}
               />
-              <div className={formClasses.hint}>Обычно 2 для двухместного</div>
+              {errors.occupancy
+                ? <div className={formClasses.fieldError}>{errors.occupancy}</div>
+                : <div className={formClasses.hint}>Обычно 2 для двухместного</div>}
             </div>
           </div>
         </form>

@@ -22,6 +22,7 @@ import {
   MEAL_PLAN_SHORT, planDocs, planSlice, sliceCells, contractPeriods, contractSlices,
   sliceName, planForSlice, rowLabel,
 } from './corporateTariff';
+import NumberInput from '../../shared/NumberInput.jsx';
 
 const MEAL_PLAN_LABELS = {
   NONE: 'Без питания',
@@ -327,12 +328,11 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
                 <label>
                   Значение {form.priceModifierType === 'PERCENT' ? '(−10 = скидка 10%)' : '(₽, −500 = скидка 500 ₽)'}
                 </label>
-                <input
+                <NumberInput allowNegative
                   className={classes.input}
-                  type="number"
                   step="0.01"
                   value={form.priceModifierValue}
-                  onChange={e => set('priceModifierValue', +e.target.value)}
+                  onChange={(v) => set('priceModifierValue', v)}
                 />
               </div>
             </>
@@ -406,14 +406,13 @@ function OccupancyGrid({ roomTypes, occs, values, onChange }) {
                 return (
                   <td key={o}>
                     <div className={classes.priceInputWrap}>
-                      <input
+                      <NumberInput
                         className={classes.input}
-                        type="number"
                         min="0"
                         step="0.01"
                         value={values[k] ?? ''}
                         placeholder="—"
-                        onChange={(e) => onChange(k, e.target.value)}
+                        onChange={(v) => onChange(k, (v == null ? '' : String(v)))}
                       />
                       <span className={classes.priceCurrency}>₽</span>
                     </div>
@@ -530,14 +529,13 @@ function StandardPrices({ plan, roomTypes, contractSheets, partners }) {
                 </div>
               </div>
               <div className={classes.priceInputWrap}>
-                <input
+                <NumberInput
                   className={classes.input}
-                  type="number"
                   min="0"
                   step="0.01"
                   value={draft[priceKey(rt.id, 0)] ?? ''}
                   placeholder="—"
-                  onChange={(e) => setDraft((d) => ({ ...d, [priceKey(rt.id, 0)]: e.target.value }))}
+                  onChange={(v) => setDraft((d) => ({ ...d, [priceKey(rt.id, 0)]: (v == null ? '' : String(v)) }))}
                 />
                 <span className={classes.priceCurrency}>₽</span>
               </div>
@@ -755,14 +753,13 @@ function Seasons({ plan, roomTypes, contractSheets, partners }) {
                   <div key={rt.id} className={classes.seasonPriceRow}>
                     <label>{rt.name}</label>
                     <div className={classes.priceInputWrap}>
-                      <input
+                      <NumberInput
                         className={classes.input}
-                        type="number"
                         min="0"
                         step="0.01"
                         value={s.prices[priceKey(rt.id, 0)] ?? ''}
                         placeholder="—"
-                        onChange={(e) => updatePrice(idx, priceKey(rt.id, 0), e.target.value)}
+                        onChange={(v) => updatePrice(idx, priceKey(rt.id, 0), (v == null ? '' : String(v)))}
                       />
                       <span className={classes.priceCurrency}>₽</span>
                     </div>
@@ -835,14 +832,13 @@ function FillModal({ roomTypes, defaultFrom, defaultTo, onFill, onClose, saving,
           </div>
           <div className={classes.formGroup}>
             <label>Цена за ночь, ₽&nbsp;&nbsp;<span style={{ color: '#6B7280', fontWeight: 400 }}>(0 — удалить цены)</span></label>
-            <input
+            <NumberInput
               className={classes.input}
-              type="number"
               min="0"
               step="0.01"
               value={form.price}
               placeholder="3800"
-              onChange={e => set('price', e.target.value)}
+              onChange={(v) => set('price', (v == null ? '' : String(v)))}
             />
           </div>
         </div>
@@ -1643,7 +1639,7 @@ function Tariffs() {
       isActive:           form.isActive,
       parentRatePlanId:   form.forOperator ? null : (form.parentRatePlanId || undefined),
       priceModifierType:  form.parentRatePlanId ? form.priceModifierType  : undefined,
-      priceModifierValue: form.parentRatePlanId ? form.priceModifierValue : undefined,
+      priceModifierValue: form.parentRatePlanId ? (form.priceModifierValue ?? 0) : undefined,
       forOperator:        form.forOperator,
       operatorContract:   form.forOperator ? (form.operatorContract || null) : null,
       /* Условия тарифа партнёра. Пустое — «для любого»; без партнёра всё

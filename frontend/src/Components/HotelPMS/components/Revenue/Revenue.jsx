@@ -8,6 +8,7 @@ import classes from './Revenue.module.css';
 import { useRoomTypes } from '../../../../hooks/api/useRoomTypes';
 import { useInventory, useBulkUpdateInventory } from '../../../../hooks/api/useInventory';
 import { useRestrictions, useUpsertRestriction, useDeleteRestriction } from '../../../../hooks/api/useRestrictions';
+import NumberInput from '../../shared/NumberInput.jsx';
 
 const DOW_SHORT = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 const TODAY_STR = format(new Date(), 'yyyy-MM-dd');
@@ -58,12 +59,11 @@ function InventoryModal({ date, roomType, row, onSave, onClose, saving, error })
 
           <div className={classes.formGroup}>
             <label>Заблокировано вручную (ремонт, OOO)</label>
-            <input
+            <NumberInput decimal={false}
               className={classes.input}
-              type="number"
               min="0"
               value={blocked}
-              onChange={e => setBlocked(e.target.value)}
+              onChange={(v) => setBlocked((v == null ? '' : String(v)))}
             />
           </div>
 
@@ -174,13 +174,12 @@ function RestrictionsModal({ date, roomType, restriction, onSave, onDelete, onCl
             {numFields.map(f => (
               <div key={f.key} className={classes.formGroup}>
                 <label>{f.label}</label>
-                <input
+                <NumberInput
                   className={classes.input}
-                  type="number"
                   min="0"
                   placeholder="—"
                   value={form[f.key]}
-                  onChange={e => set(f.key, e.target.value)}
+                  onChange={(v) => set(f.key, (v == null ? '' : String(v)))}
                 />
               </div>
             ))}

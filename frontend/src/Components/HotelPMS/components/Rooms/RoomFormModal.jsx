@@ -7,6 +7,7 @@ import {
   ROOM_VIEW_LABELS,
 } from '../../shared/status-config';
 import { MAX_ROOMS, createSummary, rangeNumbers, rangePreview, validateRange } from './room-range';
+import NumberInput from '../../shared/NumberInput.jsx';
 
 /* Поля кроватей номера — в порядке формы; первые три — спальные места. */
 const BEDS = [
@@ -268,25 +269,23 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
             <div className={formClasses.row4}>
               <div className={formClasses.field}>
                 <label className={formClasses.label}>С номера</label>
-                <input
+                <NumberInput decimal={false}
                   className={formClasses.input}
-                  type="number"
                   min={0}
                   value={values.start}
-                  onChange={(e) => set('start', e.target.value)}
+                  onChange={(v) => set('start', (v == null ? '' : String(v)))}
                   aria-invalid={errors.start ? 'true' : 'false'}
                   placeholder="101"
                 />
               </div>
               <div className={formClasses.field}>
                 <label className={formClasses.label}>Сколько</label>
-                <input
+                <NumberInput decimal={false}
                   className={formClasses.input}
-                  type="number"
                   min={1}
                   max={MAX_ROOMS}
                   value={values.count}
-                  onChange={(e) => set('count', e.target.value)}
+                  onChange={(v) => set('count', (v == null ? '' : String(v)))}
                   aria-invalid={errors.count ? 'true' : 'false'}
                   placeholder="40"
                 />
@@ -328,22 +327,20 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
         <div className={formClasses.row3}>
           <div className={formClasses.field}>
             <label className={formClasses.label}>Этаж</label>
-            <input
+            <NumberInput decimal={false} allowNegative
               className={formClasses.input}
-              type="number"
               value={values.floor}
-              onChange={(e) => set('floor', e.target.value)}
+              onChange={(v) => set('floor', (v == null ? '' : String(v)))}
             />
           </div>
           <div className={formClasses.field}>
             <label className={formClasses.label}>Мест</label>
-            <input
+            <NumberInput decimal={false}
               className={formClasses.input}
-              type="number"
               min={1}
               max={10}
               value={values.capacity}
-              onChange={(e) => set('capacity', e.target.value)}
+              onChange={(v) => set('capacity', (v == null ? '' : String(v)))}
             />
           </div>
           <div className={formClasses.field}>
@@ -367,13 +364,12 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
           {BEDS.map(([k, label]) => (
             <div key={k} className={formClasses.field}>
               <label className={formClasses.label}>{label}</label>
-              <input
+              <NumberInput decimal={false}
                 className={formClasses.input}
-                type="number"
                 min={0}
                 max={20}
                 value={values[k]}
-                onChange={(e) => set(k, e.target.value)}
+                onChange={(v) => set(k, (v == null ? '' : String(v)))}
                 aria-invalid={errors.beds ? 'true' : 'false'}
               />
             </div>

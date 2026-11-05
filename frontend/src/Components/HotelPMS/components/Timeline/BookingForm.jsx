@@ -11,6 +11,7 @@ import { useReservationMeals } from '../../../../hooks/api/useMeals';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { stayLine, stayFacts } from './stayTimes';
+import NumberInput from '../../shared/NumberInput.jsx';
 
 /* Месяц словом без точки — так дата пишется у партнёра («21 сен»), и так её
    читает диспетчер, который звонит на кухню. date-fns даёт «сент.». */
@@ -498,12 +499,12 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onCanc
                   только видно (сервер правку тоже не примет, 23.10.2026). */}
               <div className={classes.formGroup}>
                 <div className={classes.formLabel}>Взрослых</div>
-                <input className={classes.formInput} value={form.adults} onChange={set('adults')} type="number" min="1" max="10"
+                <NumberInput decimal={false} className={classes.formInput} value={form.adults} onChange={(v) => set('adults')({ target: { value: v == null ? '' : String(v) } })} min="1" max="10"
                   readOnly={isChannelManaged} title={isChannelManaged ? 'Меняется в заявке Kars Avia' : undefined} />
               </div>
               <div className={classes.formGroup}>
                 <div className={classes.formLabel}>Детей</div>
-                <input className={classes.formInput} value={form.children} onChange={set('children')} type="number" min="0" max="5"
+                <NumberInput decimal={false} className={classes.formInput} value={form.children} onChange={(v) => set('children')({ target: { value: v == null ? '' : String(v) } })} min="0" max="5"
                   readOnly={isChannelManaged} title={isChannelManaged ? 'Меняется в заявке Kars Avia' : undefined} />
               </div>
               {isChannelManaged && (

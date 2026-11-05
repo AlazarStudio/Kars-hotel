@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import classes from './Tariffs.module.css';
 import { useRates, useBulkUpsertRates } from '../../../../hooks/api/useRates';
+import NumberInput from '../../shared/NumberInput.jsx';
 
 function ymd(d) {
   return d.toISOString().slice(0, 10);
@@ -191,15 +192,14 @@ function RateRow({ rt, dates, ratesByKey, editing, setEditing, startEdit, commit
           .filter(Boolean)
           .join(' ');
         return isEditing ? (
-          <input
+          <NumberInput
             key={dateISO}
             className={`${cellClass} ${classes.calInput}`}
-            type="number"
             min="0"
             step="0.01"
             autoFocus
             value={editing.value}
-            onChange={(e) => setEditing({ ...editing, value: e.target.value })}
+            onChange={(v) => setEditing({ ...editing, value: (v == null ? '' : String(v)) })}
             onBlur={commitEdit}
             onKeyDown={(e) => {
               if (e.key === 'Enter') commitEdit();

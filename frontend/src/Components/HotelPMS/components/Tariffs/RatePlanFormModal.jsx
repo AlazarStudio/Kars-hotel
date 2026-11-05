@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import Modal from '../../shared/Modal';
 import formClasses from '../../shared/Form.module.css';
+import NumberInput from '../../shared/NumberInput.jsx';
 
 const MEAL_PLANS = [
   { value: 'NONE', label: 'Без питания' },
@@ -215,12 +216,11 @@ export default function RatePlanFormModal({ open, editing, ratePlans, onClose, o
               <label className={formClasses.label}>
                 Значение {values.priceModifierType === 'PERCENT' ? '(например -20 = скидка 20%)' : '(₽)'}
               </label>
-              <input
+              <NumberInput allowNegative
                 className={formClasses.input}
-                type="number"
                 step="0.01"
                 value={values.priceModifierValue}
-                onChange={(e) => set('priceModifierValue', e.target.value)}
+                onChange={(v) => set('priceModifierValue', (v == null ? '' : String(v)))}
               />
             </div>
           </div>

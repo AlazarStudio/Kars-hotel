@@ -13,6 +13,7 @@ import {
   infrastructureTags,
   parseHotelAbout,
 } from './hotelAbout';
+import NumberInput from '../../shared/NumberInput.jsx';
 
 // ─── Nav sections ─────────────────────────────────────────────────────────────
 
@@ -537,26 +538,24 @@ export default function Settings() {
                 <div className={f.row}>
                   <div className={f.field}>
                     <label className={f.label}>Рейтинг гостей (0–5)</label>
-                    <input
+                    <NumberInput
                       className={f.input}
-                      type="number"
                       min="0"
                       max="5"
                       step="0.1"
                       value={form.guestRating}
-                      onChange={e => set('guestRating', e.target.value)}
+                      onChange={(v) => set('guestRating', (v == null ? '' : String(v)))}
                       placeholder="4.5"
                     />
                   </div>
                   <div className={f.field}>
                     <label className={f.label}>Вместимость, мест</label>
-                    <input
+                    <NumberInput decimal={false}
                       className={f.input}
-                      type="number"
                       min="0"
                       step="1"
                       value={form.capacity}
-                      onChange={e => set('capacity', e.target.value)}
+                      onChange={(v) => set('capacity', (v == null ? '' : String(v)))}
                       placeholder="37"
                     />
                   </div>
@@ -575,13 +574,12 @@ export default function Settings() {
                   </div>
                   <div className={f.field}>
                     <label className={f.label}>До аэропорта, минут</label>
-                    <input
+                    <NumberInput decimal={false}
                       className={f.input}
-                      type="number"
                       min="0"
                       step="1"
                       value={form.airportMinutes}
-                      onChange={e => set('airportMinutes', e.target.value)}
+                      onChange={(v) => set('airportMinutes', (v == null ? '' : String(v)))}
                       placeholder="28"
                     />
                   </div>
@@ -865,14 +863,13 @@ export default function Settings() {
                 <div className={s.subField}>
                   <div className={f.field} style={{ marginBottom: 0 }}>
                     <label className={f.label}>Ставка НДС (%)</label>
-                    <input
+                    <NumberInput
                       className={f.input}
-                      type="number"
                       min="0"
                       max="100"
                       step="0.1"
                       value={form.vatRate}
-                      onChange={e => set('vatRate', e.target.value)}
+                      onChange={(v) => set('vatRate', (v == null ? '' : String(v)))}
                     />
                   </div>
                 </div>
@@ -889,13 +886,12 @@ export default function Settings() {
                 <div className={s.subField}>
                   <div className={f.field} style={{ marginBottom: 0 }}>
                     <label className={f.label}>Сумма сбора с гостя (₽/ночь)</label>
-                    <input
+                    <NumberInput
                       className={f.input}
-                      type="number"
                       min="0"
                       step="0.01"
                       value={form.touristTaxAmount}
-                      onChange={e => set('touristTaxAmount', e.target.value)}
+                      onChange={(v) => set('touristTaxAmount', (v == null ? '' : String(v)))}
                       placeholder="0.00"
                     />
                   </div>
@@ -935,37 +931,34 @@ export default function Settings() {
               </div>
               <div className={f.field}>
                 <label className={f.label}>Бесплатная отмена до (часов)</label>
-                <input
+                <NumberInput decimal={false}
                   className={f.input}
-                  type="number"
                   min="0"
                   value={form.cancellationHours}
-                  onChange={e => set('cancellationHours', e.target.value)}
+                  onChange={(v) => set('cancellationHours', (v == null ? '' : String(v)))}
                 />
                 <div className={f.hint}>0 = невозвратная бронь</div>
               </div>
               <div className={f.row}>
                 <div className={f.field}>
                   <label className={f.label}>Хранить отменённые и неявки, дней (1–30)</label>
-                  <input
+                  <NumberInput decimal={false}
                     className={f.input}
-                    type="number"
                     min="1"
                     max="30"
                     value={form.retentionCancelledDays}
-                    onChange={e => set('retentionCancelledDays', e.target.value)}
+                    onChange={(v) => set('retentionCancelledDays', (v == null ? '' : String(v)))}
                     placeholder="30"
                   />
                 </div>
                 <div className={f.field}>
                   <label className={f.label}>Хранить телефон и почту гостя, дней (1–92)</label>
-                  <input
+                  <NumberInput decimal={false}
                     className={f.input}
-                    type="number"
                     min="1"
                     max="92"
                     value={form.retentionContactsDays}
-                    onChange={e => set('retentionContactsDays', e.target.value)}
+                    onChange={(v) => set('retentionContactsDays', (v == null ? '' : String(v)))}
                     placeholder="92"
                   />
                 </div>
