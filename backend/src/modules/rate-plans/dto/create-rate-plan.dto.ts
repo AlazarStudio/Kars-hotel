@@ -41,6 +41,43 @@ export class CreateRatePlanDto {
   @IsEnum(MealPlan)
   mealPlan?: MealPlan;
 
+  /* 5.3 · цена питания: в цене номера или на гостя (рубли) — по приёмам
+     пищи варианта или одной суммой за сутки; «что входит» во «всё включено». */
+  @ApiPropertyOptional({ default: true, description: 'Meals are included in the room price' })
+  @IsOptional()
+  @IsBoolean()
+  mealIncluded?: boolean;
+
+  @ApiPropertyOptional({ description: 'Breakfast price per guest, RUB' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  mealPriceBreakfast?: number | null;
+
+  @ApiPropertyOptional({ description: 'Lunch price per guest, RUB' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  mealPriceLunch?: number | null;
+
+  @ApiPropertyOptional({ description: 'Dinner price per guest, RUB' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  mealPriceDinner?: number | null;
+
+  @ApiPropertyOptional({ description: 'All meals of the plan per guest per day, RUB' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  mealPricePerDay?: number | null;
+
+  @ApiPropertyOptional({ description: 'What "all inclusive" includes' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  allInclusiveNote?: string | null;
+
   @ApiPropertyOptional({ default: false, description: 'If true, prices vary by occupancy' })
   @IsOptional()
   @IsBoolean()

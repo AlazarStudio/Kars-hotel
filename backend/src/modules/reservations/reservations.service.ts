@@ -19,6 +19,7 @@ import { allocatePlace, placesOf, type PlaceHolder } from './room-places';
 import type { PartnerStayInfo } from './stay-times';
 import { SwapReservationsDto } from './dto/swap-reservations.dto';
 import { parseISO, format } from 'date-fns';
+import { mealCostOf, mealTermsOf } from '../rate-plans/meal-terms';
 
 const VALID_SOURCES = ['DIRECT', 'PHONE', 'ONLINE', 'OTA', 'CORPORATE'];
 const VALID_STATUSES = ['NEW', 'CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT', 'CANCELLED', 'NO_SHOW'];
@@ -1038,13 +1039,36 @@ export class ReservationsService {
     return this.prisma.forTenant(async (tx) => {
       const reservation = await tx.reservation.findFirst({
         where: { id, tenantId },
-        select: { id: true },
+        select: { id: true, ratePlanId: true },
       });
       if (!reservation) throw new NotFoundException('Reservation not found');
+      const plan = reservation.ratePlanId
+        ? await tx.ratePlan.findFirst({
+            where: { id: reservation.ratePlanId, tenantId },
+            select: {
+              mealPlan: true,
+              mealIncluded: true,
+              mealPriceBreakfast: true,
+              mealPriceLunch: true,
+              mealPriceDinner: true,
+              mealPricePerDay: true,
+              allInclusiveNote: true,
+            },
+          })
+        : null;
       const rows = await tx.reservationMealDay.findMany({
         where: { reservationId: id },
         orderBy: { date: 'asc' },
       });
+      const totals = {
+        breakfast: rows.reduce((n, r) => n + r.breakfast, 0),
+        lunch: rows.reduce((n, r) => n + r.lunch, 0),
+        dinner: rows.reduce((n, r) => n + r.dinner, 0),
+      };
+      /* 5.3 · питание НЕ в цене номера — порции считаются по ценам тарифа.
+         Гостей-суток для «одной суммой за сутки» — сколько ели в каждый день
+         (больший из приёмов). null — питание в цене или цены не заведены. */
+      const guestDays = rows.reduce((n, r) => n + Math.max(r.breakfast, r.lunch, r.dinner), 0);
       return {
         reservationId: id,
         days: rows.map((r) => ({
@@ -1053,11 +1077,9 @@ export class ReservationsService {
           lunch: r.lunch,
           dinner: r.dinner,
         })),
-        totals: {
-          breakfast: rows.reduce((n, r) => n + r.breakfast, 0),
-          lunch: rows.reduce((n, r) => n + r.lunch, 0),
-          dinner: rows.reduce((n, r) => n + r.dinner, 0),
-        },
+        totals,
+        terms: plan ? mealTermsOf(plan) : null,
+        cost: plan ? mealCostOf(plan, totals, guestDays) : null,
       };
     });
   }

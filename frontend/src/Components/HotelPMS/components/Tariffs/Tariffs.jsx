@@ -24,13 +24,44 @@ import {
 } from './corporateTariff';
 import NumberInput from '../../shared/NumberInput.jsx';
 
+/* 5.3 · подписи — без латинских аббревиатур: гостиница читает «что
+   входит», а не код канала продаж. */
 const MEAL_PLAN_LABELS = {
   NONE: 'Без питания',
-  BB: 'Завтрак (BB)',
-  HB: 'Полупансион (HB)',
-  FB: 'Полный пансион (FB)',
-  AI: 'Всё включено (AI)',
+  BB: 'Завтрак',
+  HB: 'Полупансион: завтрак и ужин',
+  FB: 'Полный пансион: завтрак, обед и ужин',
+  AI: 'Всё включено',
 };
+
+/* Какие приёмы пищи входят в вариант — то же правило, что у сервера
+   (`rate-plans/meal-terms.ts`). */
+const MEAL_PLAN_MEALS = {
+  NONE: [],
+  BB: ['breakfast'],
+  HB: ['breakfast', 'dinner'],
+  FB: ['breakfast', 'lunch', 'dinner'],
+  AI: ['breakfast', 'lunch', 'dinner'],
+};
+const MEAL_NAMES = { breakfast: 'Завтрак', lunch: 'Обед', dinner: 'Ужин' };
+const MEAL_PRICE_KEY = { breakfast: 'mealPriceBreakfast', lunch: 'mealPriceLunch', dinner: 'mealPriceDinner' };
+
+/* 5.3 · что уходит на сервер о питании: в цене номера — цен нет; за сутки —
+   только сумма за сутки; по приёмам — только входящие в вариант. */
+function mealPayload(form) {
+  const meals = MEAL_PLAN_MEALS[form.mealPlan] ?? [];
+  const included = meals.length === 0 || form.mealIncluded;
+  const perDay = !included && form.mealPerDayMode;
+  const per = (m) => (!included && !perDay && meals.includes(m) ? form[MEAL_PRICE_KEY[m]] ?? null : null);
+  return {
+    mealIncluded: included,
+    mealPriceBreakfast: per('breakfast'),
+    mealPriceLunch: per('lunch'),
+    mealPriceDinner: per('dinner'),
+    mealPricePerDay: perDay ? form.mealPricePerDay ?? null : null,
+    allInclusiveNote: form.mealPlan === 'AI' ? (form.allInclusiveNote || null) : null,
+  };
+}
 
 const DOW_SHORT = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 const SEASON_COLORS = ['#F59E0B', '#10B981', '#3B82F6', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'];
@@ -122,6 +153,14 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
     name:               plan?.name               ?? '',
     description:        plan?.description        ?? '',
     mealPlan:           plan?.mealPlan            ?? 'NONE',
+    // 5.3 · цена питания: в цене номера или на гостя — по приёмам или за сутки.
+    mealIncluded:       plan?.mealIncluded        ?? true,
+    mealPerDayMode:     plan?.mealPricePerDay != null,
+    mealPriceBreakfast: plan?.mealPriceBreakfast  ?? null,
+    mealPriceLunch:     plan?.mealPriceLunch      ?? null,
+    mealPriceDinner:    plan?.mealPriceDinner     ?? null,
+    mealPricePerDay:    plan?.mealPricePerDay     ?? null,
+    allInclusiveNote:   plan?.allInclusiveNote    ?? '',
     isActive:           plan?.isActive            ?? true,
     parentRatePlanId:   plan?.parentRatePlanId    ?? '',
     priceModifierType:  plan?.priceModifierType   ?? 'PERCENT',
@@ -199,6 +238,70 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
               ))}
             </select>
           </div>
+          {/* 5.3 · у варианта с питанием — как оно оплачивается. */}
+          {form.mealPlan !== 'NONE' && (
+            <div className={classes.formGroup} style={{ gridColumn: '1/-1' }}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={form.mealIncluded}
+                  onChange={e => set('mealIncluded', e.target.checked)}
+                />{' '}
+                Питание включено в цену номера
+              </label>
+              {!form.mealIncluded && (
+                <>
+                  <label style={{ marginTop: 8 }}>
+                    <input
+                      type="checkbox"
+                      checked={form.mealPerDayMode}
+                      onChange={e => set('mealPerDayMode', e.target.checked)}
+                    />{' '}
+                    Одной суммой за сутки
+                  </label>
+                  {form.mealPerDayMode ? (
+                    <div style={{ marginTop: 8 }}>
+                      <label>За сутки на гостя, ₽</label>
+                      <NumberInput
+                        className={classes.input}
+                        decimal={false}
+                        min="0"
+                        value={form.mealPricePerDay}
+                        onChange={(v) => set('mealPricePerDay', v)}
+                      />
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
+                      {(MEAL_PLAN_MEALS[form.mealPlan] ?? []).map((m) => (
+                        <div key={m}>
+                          <label>{MEAL_NAMES[m]} на гостя, ₽</label>
+                          <NumberInput
+                            className={classes.input}
+                            decimal={false}
+                            min="0"
+                            value={form[MEAL_PRICE_KEY[m]]}
+                            onChange={(v) => set(MEAL_PRICE_KEY[m], v)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+              {form.mealPlan === 'AI' && (
+                <div style={{ marginTop: 8 }}>
+                  <label>Что входит во «всё включено»</label>
+                  <input
+                    className={classes.input}
+                    value={form.allInclusiveNote}
+                    maxLength={500}
+                    onChange={e => set('allInclusiveNote', e.target.value)}
+                    placeholder="Например: трёхразовое питание, напитки в баре до 23:00"
+                  />
+                </div>
+              )}
+            </div>
+          )}
           <div className={classes.formGroup}>
             <label>Статус</label>
             <select className={classes.input} value={form.isActive ? 'active' : 'inactive'} onChange={e => set('isActive', e.target.value === 'active')}>
@@ -1639,6 +1742,7 @@ function Tariffs() {
       name:               form.name,
       description:        form.description || undefined,
       mealPlan:           form.mealPlan,
+      ...mealPayload(form),
       isActive:           form.isActive,
       parentRatePlanId:   form.forOperator ? null : (form.parentRatePlanId || undefined),
       priceModifierType:  form.parentRatePlanId ? form.priceModifierType  : undefined,

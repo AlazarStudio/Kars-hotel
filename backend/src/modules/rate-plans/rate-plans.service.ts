@@ -21,6 +21,27 @@ import {
   operatorTariffStatus,
   tariffFingerprint,
 } from './operator-tariff-status';
+import { mealTermsOf } from './meal-terms';
+
+/* 5.3 · поля цены питания из формы: не пришло — не трогаем, пришло пустым —
+   снимаем. Пустая строка «что входит» — тоже «не задано». */
+function mealData(dto: {
+  mealIncluded?: boolean;
+  mealPriceBreakfast?: number | null;
+  mealPriceLunch?: number | null;
+  mealPriceDinner?: number | null;
+  mealPricePerDay?: number | null;
+  allInclusiveNote?: string | null;
+}) {
+  return {
+    ...(dto.mealIncluded !== undefined ? { mealIncluded: dto.mealIncluded } : {}),
+    ...(dto.mealPriceBreakfast !== undefined ? { mealPriceBreakfast: dto.mealPriceBreakfast } : {}),
+    ...(dto.mealPriceLunch !== undefined ? { mealPriceLunch: dto.mealPriceLunch } : {}),
+    ...(dto.mealPriceDinner !== undefined ? { mealPriceDinner: dto.mealPriceDinner } : {}),
+    ...(dto.mealPricePerDay !== undefined ? { mealPricePerDay: dto.mealPricePerDay } : {}),
+    ...(dto.allInclusiveNote !== undefined ? { allInclusiveNote: dto.allInclusiveNote?.trim() || null } : {}),
+  };
+}
 
 @Injectable()
 export class RatePlansService {
@@ -76,6 +97,7 @@ export class RatePlansService {
             name: dto.name,
             description: dto.description ?? null,
             mealPlan: dto.mealPlan ?? 'NONE',
+            ...mealData(dto),
             occupancyPricing: dto.occupancyPricing ?? false,
             parentRatePlanId: dto.parentRatePlanId ?? null,
             priceModifierType: dto.priceModifierType ?? 'PERCENT',
@@ -139,6 +161,7 @@ export class RatePlansService {
             name: dto.name ?? undefined,
             description: dto.description === undefined ? undefined : dto.description,
             mealPlan: dto.mealPlan ?? undefined,
+            ...mealData(dto),
             occupancyPricing: dto.occupancyPricing ?? undefined,
             parentRatePlanId: dto.parentRatePlanId === undefined ? undefined : dto.parentRatePlanId,
             priceModifierType: dto.priceModifierType ?? undefined,
@@ -245,6 +268,8 @@ export class RatePlansService {
         code: plan.code,
         name: plan.name,
         mealPlan: plan.mealPlan,
+        // 5.3 · условия питания — партнёр видит, в цене ли оно и почём.
+        meal: mealTermsOf(plan),
         operatorContract: plan.operatorContract,
         conditions: {
           account: plan.partnerAccount,

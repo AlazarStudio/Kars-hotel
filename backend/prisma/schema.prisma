@@ -633,6 +633,16 @@ model RatePlan {
   name                 String
   description          String?
   mealPlan             MealPlan           @default(NONE) @map("meal_plan")
+  /// 5.3 (тестирование 04.11.2026) · ЦЕНА ПИТАНИЯ. `mealIncluded` — питание в
+  /// цене номера; нет — цена на гостя по приёмам пищи варианта или одной
+  /// суммой за сутки (`mealPricePerDay`). Рубли. `allInclusiveNote` — что
+  /// входит во «всё включено». Правило — `rate-plans/meal-terms.ts`.
+  mealIncluded         Boolean            @default(true) @map("meal_included")
+  mealPriceBreakfast   Int?               @map("meal_price_breakfast")
+  mealPriceLunch       Int?               @map("meal_price_lunch")
+  mealPriceDinner      Int?               @map("meal_price_dinner")
+  mealPricePerDay      Int?               @map("meal_price_per_day")
+  allInclusiveNote     String?            @map("all_inclusive_note")
   occupancyPricing     Boolean            @default(false) @map("occupancy_pricing")
   parentRatePlanId     String?            @map("parent_rate_plan_id") @db.Uuid
   parentRatePlan       RatePlan?          @relation("RatePlanInheritance", fields: [parentRatePlanId], references: [id], onDelete: SetNull)
