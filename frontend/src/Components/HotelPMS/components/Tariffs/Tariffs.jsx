@@ -146,8 +146,38 @@ function buildResolver(standardRates, seasons) {
 // ─────────────────────────────────────────────────────────────────────────────
 // RatePlanForm modal
 // ─────────────────────────────────────────────────────────────────────────────
+/* 5.2 · Новый тариф — мастером. Первые два шага — эта форма: без них тарифа ещё нет.
+   Цены и сезоны сохраняются по готовому тарифу, поэтому после создания мастер
+   продолжается в `PlanWizard` теми же экранами, что и вкладки тарифа. */
+const WIZARD_STEPS = ['Для кого', 'Питание', 'Цены', 'Сезоны', 'Проверка'];
+const WIZARD_HINTS = [
+  'Назовите тариф и скажите, для кого он: для всех гостей или для партнёра по договору.',
+  'Что входит в тариф и платит ли гость за питание отдельно.',
+  'Одна цена за номер или своя цена на каждое число гостей.',
+  'Необязательно: другие цены на отдельные даты. Можно пропустить.',
+  'Проверьте и закройте окно: всё уже сохранено.',
+];
+
+function WizardSteps({ step }) {
+  return (
+    <div style={{ padding: '0 24px 8px' }}>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12.5 }}>
+        {WIZARD_STEPS.map((s, i) => (
+          <span key={s} style={{ fontWeight: i === step ? 700 : 400, color: i === step ? '#1B2A47' : '#8896AB' }}>
+            {i + 1}. {s}
+          </span>
+        ))}
+      </div>
+      <div className={classes.fieldHint} style={{ marginTop: 6 }}>{WIZARD_HINTS[step]}</div>
+    </div>
+  );
+}
+
 function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error, contracts, partners }) {
   const isNew = !plan?.id;
+  const [step, setStep] = useState(0);
+  const showWho = !isNew || step === 0;
+  const showMeal = !isNew || step === 1;
   const [form, setForm] = useState({
     code:               plan?.code               ?? '',
     name:               plan?.name               ?? '',
@@ -201,16 +231,23 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
   const setPartner = (id) =>
     setForm(f => ({ ...f, partnerId: id, partnerAccountId: '', partnerCustomerId: '' }));
   const partner = partners.find(p => p.id === form.partnerId) ?? null;
+  const whoInvalid =
+    !form.name || !form.code ||
+    // Договоров ещё нет — тариф можно завести заранее; сверят его, когда договор появится.
+    (form.forOperator && contracts.length > 0 && !form.operatorContract) ||
+    (form.forOperator && partners.length > 0 && !form.partnerId);
 
   return (
     <div className={classes.overlay} onClick={onClose}>
       <div className={classes.modal} onClick={e => e.stopPropagation()}>
         <div className={classes.modalHeader}>
-          <div className={classes.modalTitle}>{isNew ? 'Новый тарифный план' : 'Редактировать план'}</div>
+          <div className={classes.modalTitle}>{isNew ? 'Новый тариф' : 'Редактировать план'}</div>
           <button className={classes.closeBtn} onClick={onClose}>✕</button>
         </div>
+        {isNew && <WizardSteps step={step} />}
 
         <div className={classes.formGrid}>
+          {showWho && (<>
           <div className={classes.formGroup}>
             <label>Название *</label>
             <input
@@ -230,6 +267,8 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
               style={{ fontFamily: 'monospace', letterSpacing: 0.5 }}
             />
           </div>
+          </>)}
+          {showMeal && (<>
           <div className={classes.formGroup}>
             <label>Питание</label>
             <select className={classes.input} value={form.mealPlan} onChange={e => set('mealPlan', e.target.value)}>
@@ -302,6 +341,8 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
               )}
             </div>
           )}
+          </>)}
+          {showWho && (<>
           <div className={classes.formGroup}>
             <label>Статус</label>
             <select className={classes.input} value={form.isActive ? 'active' : 'inactive'} onChange={e => set('isActive', e.target.value === 'active')}>
@@ -453,6 +494,7 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
               onChange={e => set('description', e.target.value)}
             />
           </div>
+          </>)}
         </div>
 
         {error && (
@@ -465,6 +507,12 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
           )}
           <div style={{ flex: 1 }} />
           <button className={classes.btnCancel} onClick={onClose}>Отмена</button>
+          {isNew && step === 1 && (
+            <button className={classes.btnCancel} onClick={() => setStep(0)}>Назад</button>
+          )}
+          {isNew && step === 0 ? (
+            <button className={classes.btnSave} disabled={whoInvalid} onClick={() => setStep(1)}>Далее</button>
+          ) : (
           <button
             className={classes.btnSave}
             disabled={
@@ -475,8 +523,9 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
             }
             onClick={() => onSave(form)}
           >
-            {saving ? 'Сохранение...' : 'Сохранить'}
+            {saving ? 'Сохранение...' : isNew ? 'Создать и перейти к ценам' : 'Сохранить'}
           </button>
+          )}
         </div>
       </div>
     </div>
@@ -536,6 +585,14 @@ function OccupancyGrid({ roomTypes, occs, values, onChange }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // StandardPrices — baseline price per category (the "everyday" price)
 // ─────────────────────────────────────────────────────────────────────────────
+function SavedMark({ at }) {
+  return (
+    <span style={{ fontSize: 12.5, color: '#2E7D32' }}>
+      Сохранено в {at.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+    </span>
+  );
+}
+
 function StandardPrices({ plan, roomTypes, contractSheets, partners }) {
   const { data: standard = [], isLoading } = useStandardRates(plan.id);
   const save = useSetStandardRates();
@@ -550,6 +607,8 @@ function StandardPrices({ plan, roomTypes, contractSheets, partners }) {
   const [draft, setDraft] = useState(stdMap);
   const [error, setError] = useState(null);
   const [filled, setFilled] = useState(null);
+  /* 5.2 · на записи было непонятно, сохранилось ли: отметка — прямо у кнопки. */
+  const [savedAt, setSavedAt] = useState(null);
   useEffect(() => { setDraft(stdMap); setError(null); setFilled(null); }, [stdMap, plan.id]);
 
   /* «Заполнить по договору» — только раскладка цен по полям, без сохранения.
@@ -597,6 +656,7 @@ function StandardPrices({ plan, roomTypes, contractSheets, partners }) {
     }));
     try {
       await save.mutateAsync({ ratePlanId: plan.id, items });
+      setSavedAt(new Date());
     } catch (err) {
       const msg = err?.response?.data?.message;
       setError(Array.isArray(msg) ? msg.join(', ') : (msg ?? err.message ?? 'Ошибка'));
@@ -683,6 +743,7 @@ function StandardPrices({ plan, roomTypes, contractSheets, partners }) {
             {save.isPending ? 'Сохранение...' : 'Сохранить базовые цены'}
           </button>
           {dirty && <button className={classes.btnGhost} onClick={() => setDraft(stdMap)}>Сбросить</button>}
+          {!dirty && savedAt && <SavedMark at={savedAt} />}
           {plan.forOperator && (
             <button
               className={classes.btnGhost}
@@ -708,6 +769,7 @@ function StandardPrices({ plan, roomTypes, contractSheets, partners }) {
 function Seasons({ plan, roomTypes, contractSheets, partners }) {
   const { data: seasonRows = [], isLoading } = useSeasons(plan.id);
   const save = useReplaceSeasons();
+  const [savedAt, setSavedAt] = useState(null);
   const docs = useMemo(() => planDocs(contractSheets, plan), [contractSheets, plan]);
   const contractSeasons = useMemo(
     () => (plan.partnerId ? contractPeriods(docs, format(new Date(), 'yyyy-MM-dd')).seasons : []),
@@ -804,6 +866,7 @@ function Seasons({ plan, roomTypes, contractSheets, partners }) {
     };
     try {
       await save.mutateAsync(payload);
+      setSavedAt(new Date());
     } catch (err) {
       const msg = err?.response?.data?.message;
       setError(Array.isArray(msg) ? msg.join(', ') : (msg ?? err.message ?? 'Ошибка'));
@@ -892,6 +955,7 @@ function Seasons({ plan, roomTypes, contractSheets, partners }) {
           <button className={classes.btnPrimary} onClick={handleSave} disabled={!dirty || save.isPending || isLoading}>
             {save.isPending ? 'Сохранение...' : 'Сохранить сезоны'}
           </button>
+          {!dirty && savedAt && <SavedMark at={savedAt} />}
         </div>
       )}
     </div>
@@ -901,6 +965,51 @@ function Seasons({ plan, roomTypes, contractSheets, partners }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // FillModal — apply one price to a date range (per-day overrides)
 // ─────────────────────────────────────────────────────────────────────────────
+/* 5.2 · Продолжение мастера: цены и сезоны — те же экраны, что вкладки тарифа.
+   Правило одно, и что заполнено в мастере, то и видно на вкладке. */
+function PlanWizard({ plan, roomTypes, contractSheets, partners, onClose }) {
+  const [step, setStep] = useState(2);
+  const { data: standard = [] } = useStandardRates(plan.id);
+  const priced = standard.filter((s) => Number(s.price) > 0).length;
+  return (
+    <div className={classes.overlay}>
+      <div className={classes.modal} style={{ maxWidth: 860 }} onClick={e => e.stopPropagation()}>
+        <div className={classes.modalHeader}>
+          <div className={classes.modalTitle}>Новый тариф · {plan.name}</div>
+          <button className={classes.closeBtn} onClick={onClose}>✕</button>
+        </div>
+        <WizardSteps step={step} />
+        <div style={{ padding: '0 24px 16px' }}>
+          {step === 2 && (
+            <StandardPrices plan={plan} roomTypes={roomTypes} contractSheets={contractSheets} partners={partners} />
+          )}
+          {step === 3 && (
+            <Seasons plan={plan} roomTypes={roomTypes} contractSheets={contractSheets} partners={partners} />
+          )}
+          {step === 4 && (
+            <div className={classes.formGroup}>
+              <div><b>{plan.name}</b> · {plan.code}</div>
+              <div>Для кого: {plan.forOperator ? `партнёр ${partners.find((p) => p.id === plan.partnerId)?.name ?? ''}` : 'все гости'}</div>
+              {plan.operatorContract && <div>Договор: {plan.operatorContract}</div>}
+              <div>Питание: {MEAL_PLAN_LABELS[plan.mealPlan] ?? plan.mealPlan}</div>
+              <div>{priced > 0 ? `Цен задано: ${priced}` : 'Цены не заданы — тариф не продаётся, пока их нет'}</div>
+            </div>
+          )}
+        </div>
+        <div className={classes.modalFooter}>
+          {step > 2 && <button className={classes.btnCancel} onClick={() => setStep(step - 1)}>Назад</button>}
+          <div style={{ flex: 1 }} />
+          {step < 4 ? (
+            <button className={classes.btnSave} onClick={() => setStep(step + 1)}>Далее</button>
+          ) : (
+            <button className={classes.btnSave} onClick={onClose}>Готово</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FillModal({ roomTypes, defaultFrom, defaultTo, onFill, onClose, saving, error }) {
   const [form, setForm] = useState({
     roomTypeId: roomTypes[0]?.id ?? '',
@@ -1729,6 +1838,8 @@ function Tariffs() {
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState(null);
   const [formError, setFormError] = useState(null);
+  const [wizardPlanId, setWizardPlanId] = useState(null);
+  const wizardPlan = plans.find((p) => p.id === wizardPlanId) ?? null;
 
   const selectedPlan = plans.find(p => p.id === selectedPlanId) ?? plans[0] ?? null;
 
@@ -1768,6 +1879,7 @@ function Tariffs() {
       } else {
         const created = await createPlan.mutateAsync(payload);
         setSelectedPlanId(created.id);
+        setWizardPlanId(created.id);
       }
       setShowForm(false);
     } catch (err) {
@@ -1919,6 +2031,16 @@ function Tariffs() {
         creating={creatingSlices}
         error={sliceError}
       />
+
+      {wizardPlan && (
+        <PlanWizard
+          plan={wizardPlan}
+          roomTypes={roomTypes}
+          contractSheets={contractSheets}
+          partners={partners}
+          onClose={() => setWizardPlanId(null)}
+        />
+      )}
 
       {showForm && (
         <RatePlanForm
