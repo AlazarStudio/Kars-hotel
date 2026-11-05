@@ -33,7 +33,7 @@ function InventoryModal({ date, roomType, row, onSave, onClose, saving, error })
       <div className={classes.modal} onClick={e => e.stopPropagation()}>
         <div className={classes.modalHeader}>
           <div className={classes.modalTitle}>
-            Инвентарь · {format(parseISO(date), 'd MMMM yyyy', { locale: ru })}
+            Сколько номеров продаём · {format(parseISO(date), 'd MMMM yyyy', { locale: ru })}
           </div>
           <button className={classes.closeBtn} onClick={onClose}>✕</button>
         </div>
@@ -127,19 +127,19 @@ function RestrictionsModal({ date, roomType, restriction, onSave, onDelete, onCl
   });
 
   const checkRows = [
-    { key: 'closed',   name: 'Закрыто',         hint: 'Дата полностью закрыта для бронирования' },
-    { key: 'cta',      name: 'CTA (нет заезда)', hint: 'Нельзя заехать в эту дату (можно выехать)' },
-    { key: 'ctd',      name: 'CTD (нет выезда)', hint: 'Нельзя выехать в эту дату (можно заехать)' },
-    { key: 'stopSell', name: 'Стоп-продажа',    hint: 'Остановить продажи (игнорирует лимит номеров)' },
+    { key: 'closed',   name: 'Закрыто',         hint: 'На эту дату бронировать нельзя' },
+    { key: 'cta',      name: 'Закрыто для заезда', hint: 'В эту дату нельзя заехать, выехать можно' },
+    { key: 'ctd',      name: 'Закрыто для выезда', hint: 'В эту дату нельзя выехать, заехать можно' },
+    { key: 'stopSell', name: 'Стоп-продажа',    hint: 'Закрыть продажу на дату, даже если номера есть' },
   ];
 
   const numFields = [
-    { key: 'minLos',        label: 'Мин. ночей (LOS)' },
-    { key: 'maxLos',        label: 'Макс. ночей (LOS)' },
-    { key: 'minLosArrival', label: 'Мин. ночей при заезде' },
-    { key: 'maxLosArrival', label: 'Макс. ночей при заезде' },
-    { key: 'minAdvance',    label: 'Мин. аванс (дней)' },
-    { key: 'maxAdvance',    label: 'Макс. аванс (дней)' },
+    { key: 'minLos',        label: 'Мин. ночей — бронь короче не принимается' },
+    { key: 'maxLos',        label: 'Макс. ночей — бронь длиннее не принимается' },
+    { key: 'minLosArrival', label: 'Мин. ночей при заезде в эту дату' },
+    { key: 'maxLosArrival', label: 'Макс. ночей при заезде в эту дату' },
+    { key: 'minAdvance',    label: 'Бронировать не позже чем за, дней' },
+    { key: 'maxAdvance',    label: 'Бронировать не раньше чем за, дней' },
   ];
 
   return (
@@ -147,7 +147,7 @@ function RestrictionsModal({ date, roomType, restriction, onSave, onDelete, onCl
       <div className={classes.modal} style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
         <div className={classes.modalHeader}>
           <div className={classes.modalTitle}>
-            Ограничения · {format(parseISO(date), 'd MMMM yyyy', { locale: ru })}
+            Условия бронирования · {format(parseISO(date), 'd MMMM yyyy', { locale: ru })}
           </div>
           <button className={classes.closeBtn} onClick={onClose}>✕</button>
         </div>
@@ -397,11 +397,11 @@ function RestrictionsCalendar({ roomType, viewMonth }) {
                 {hasAny ? (
                   <div className={classes.flagsRow}>
                     {r.closed   && <span className={`${classes.flag} ${classes.flagClosed}`}>Закр.</span>}
-                    {r.cta      && <span className={`${classes.flag} ${classes.flagCTA}`}>CTA</span>}
-                    {r.ctd      && <span className={`${classes.flag} ${classes.flagCTD}`}>CTD</span>}
+                    {r.cta      && <span className={`${classes.flag} ${classes.flagCTA}`}>нет заезда</span>}
+                    {r.ctd      && <span className={`${classes.flag} ${classes.flagCTD}`}>нет выезда</span>}
                     {r.stopSell && <span className={`${classes.flag} ${classes.flagStop}`}>Стоп</span>}
                     {r.minLos   && <span className={`${classes.flag} ${classes.flagLos}`}>мин {r.minLos}н</span>}
-                    {r.minAdvance && <span className={`${classes.flag} ${classes.flagLos}`}>авн {r.minAdvance}д</span>}
+                    {r.minAdvance && <span className={`${classes.flag} ${classes.flagLos}`}>за {r.minAdvance}д</span>}
                   </div>
                 ) : (
                   <span className={classes.flagNone}>—</span>
@@ -440,7 +440,7 @@ function Revenue() {
   if (isLoading) {
     return (
       <div className={classes.root}>
-        <div className={classes.pageHeader}><div className={classes.pageTitle}>Revenue Management</div></div>
+        <div className={classes.pageHeader}><div className={classes.pageTitle}>Продажи и ограничения</div></div>
         <div className={classes.empty}>Загрузка...</div>
       </div>
     );
@@ -449,7 +449,7 @@ function Revenue() {
   if (roomTypes.length === 0) {
     return (
       <div className={classes.root}>
-        <div className={classes.pageHeader}><div className={classes.pageTitle}>Revenue Management</div></div>
+        <div className={classes.pageHeader}><div className={classes.pageTitle}>Продажи и ограничения</div></div>
         <div className={classes.empty}>Нет категорий номеров. Создайте их в разделе «Номера».</div>
       </div>
     );
@@ -458,7 +458,10 @@ function Revenue() {
   return (
     <div className={classes.root}>
       <div className={classes.pageHeader}>
-        <div className={classes.pageTitle}>Revenue Management</div>
+        <div>
+          <div className={classes.pageTitle}>Продажи и ограничения</div>
+          <div style={{ fontSize: 13, color: '#6B7280', marginTop: 2 }}>Сколько номеров открыто на дату и на каких условиях их можно забронировать.</div>
+        </div>
       </div>
 
       {/* Room type selector */}
@@ -480,13 +483,13 @@ function Revenue() {
           className={`${classes.subTab} ${tab === 'inventory' ? classes.subTabActive : ''}`}
           onClick={() => setTab('inventory')}
         >
-          Инвентарь
+          Сколько номеров продаём
         </button>
         <button
           className={`${classes.subTab} ${tab === 'restrictions' ? classes.subTabActive : ''}`}
           onClick={() => setTab('restrictions')}
         >
-          Ограничения
+          Условия бронирования
         </button>
       </div>
 
@@ -496,7 +499,7 @@ function Revenue() {
           <div className={classes.panelHeader}>
             <div>
               <div className={classes.panelTitle}>
-                {tab === 'inventory' ? 'Управление инвентарём' : 'Ограничения бронирования'}
+                {tab === 'inventory' ? 'Сколько номеров продаём' : 'Условия бронирования'}
               </div>
             </div>
             <div className={classes.panelActions}>
@@ -524,8 +527,8 @@ function Revenue() {
           {tab === 'restrictions' && (
             <div style={{ padding: '8px 16px', background: '#F8FAFC', borderBottom: '1px solid #E5E7EB', fontSize: 11.5, color: '#6B7280', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
               <span style={{ color: '#EF4444', fontWeight: 700 }}>Закр.</span><span>— дата закрыта</span>
-              <span style={{ color: '#F59E0B', fontWeight: 700 }}>CTA</span><span>— нет заезда</span>
-              <span style={{ color: '#8B5CF6', fontWeight: 700 }}>CTD</span><span>— нет выезда</span>
+              <span style={{ color: '#F59E0B', fontWeight: 700 }}>нет заезда</span><span>— заехать нельзя</span>
+              <span style={{ color: '#8B5CF6', fontWeight: 700 }}>нет выезда</span><span>— выехать нельзя</span>
               <span style={{ color: '#EF4444', fontWeight: 700 }}>Стоп</span><span>— стоп-продажа</span>
               <span>мин Xн — минимум ночей</span>
             </div>
