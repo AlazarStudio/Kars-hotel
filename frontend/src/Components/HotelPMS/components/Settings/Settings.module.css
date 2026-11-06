@@ -333,3 +333,15 @@
   max-height: 320px;
   overflow: auto;
 }
+
+/* Телефон */
+@media (max-width: 768px) {
+  /* Левое меню разделов становится лентой вкладок над содержимым. */
+  .root { flex-direction: column; }
+  .nav { width: 100%; display: flex; padding: 0; overflow-x: auto; overflow-y: hidden; border-right: none; border-bottom: 1px solid #E5E7EB; }
+  .navHeader { display: none; }
+  .navItem { flex: none; white-space: nowrap; padding: 12px 14px; }
+  .content { flex: 1; min-width: 0; min-height: 0; padding: 16px; }
+  .sectionHeader { padding: 16px; }
+  .sectionBody { padding: 16px; }
+}

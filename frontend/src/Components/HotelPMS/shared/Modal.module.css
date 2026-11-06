@@ -84,3 +84,9 @@
   background: #F9FAFB;
   flex-shrink: 0;
 }
+
+/* Телефон */
+@media (max-width: 768px) {
+  .backdrop { padding: 8px; }
+  .dialog { max-height: calc(100dvh - 16px); }
+}

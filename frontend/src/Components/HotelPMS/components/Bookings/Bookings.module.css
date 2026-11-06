@@ -204,3 +204,16 @@
   font-size: 12px;
   font-weight: 600;
 }
+
+/* Телефон */
+@media (max-width: 768px) {
+  .root { padding: 16px; height: auto; min-height: 100%; }
+  .pageHeader { flex-wrap: wrap; gap: 10px; }
+  .headerRight { width: 100%; flex-wrap: wrap; }
+  .searchInput { width: 100%; }
+  /* Семь колонок на телефон не лезут: строка становится карточкой. */
+  .tableHead { display: none; }
+  .tableRow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 12px 14px; }
+  .tableRow > :first-child { flex: 0 0 100%; min-width: 0; }
+  .guestName { white-space: normal; }
+}

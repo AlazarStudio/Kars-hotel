@@ -480,3 +480,13 @@
   color: #B91C1C;
   font-size: 13px;
 }
+
+/* Телефон */
+@media (max-width: 768px) {
+  .root { padding: 16px 16px 32px; }
+  .pageHeader { flex-wrap: wrap; gap: 10px; margin: -16px -16px 10px; padding: 16px 16px 12px; }
+  .headerActions { flex-wrap: wrap; }
+  .btnPrimary { padding: 10px 14px; }
+  .catHeader { flex-wrap: wrap; padding: 12px 14px; }
+  .roomsGrid { padding: 12px 14px 14px; }
+}

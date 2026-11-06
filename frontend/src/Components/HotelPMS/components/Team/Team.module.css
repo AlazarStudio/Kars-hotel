@@ -137,3 +137,11 @@
   color: #78350F;
   word-break: break-all;
 }
+
+/* Телефон */
+@media (max-width: 768px) {
+  .root { padding: 16px 16px 32px; }
+  .pageHeader { flex-wrap: wrap; gap: 10px; }
+  .card { overflow-x: auto; }
+  .table { min-width: 620px; }
+}

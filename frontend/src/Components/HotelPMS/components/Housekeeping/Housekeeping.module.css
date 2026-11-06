@@ -101,3 +101,10 @@
 .actionBtn:hover { background: #F0F4F9; }
 .actionBtn.primary { background: #1E88E5; color: #fff; border-color: #1E88E5; }
 .actionBtn.primary:hover { background: #1565C0; }
+
+/* Телефон */
+@media (max-width: 768px) {
+  .root { padding: 16px; }
+  .statsRow { flex-wrap: wrap; }
+  .grid { grid-template-columns: minmax(0, 1fr); }
+}

@@ -191,3 +191,8 @@
   font-size: 13px;
   line-height: 1.5;
 }
+
+/* Телефон */
+@media (max-width: 768px) {
+  .row, .row3, .row4 { grid-template-columns: minmax(0, 1fr); }
+}

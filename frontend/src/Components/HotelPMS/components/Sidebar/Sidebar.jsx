@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import classes from './Sidebar.module.css';
 import { NAV_ITEMS } from '../../constants';
@@ -85,6 +85,9 @@ function Sidebar({ hotel }) {
   const location = useLocation();
   const activeSection = location.pathname.slice(1) || 'dashboard';
 
+  const [open, setOpen] = useState(false);
+  useEffect(() => setOpen(false), [location.pathname]);
+
   const handleLogout = async () => {
     try {
       await logout();
@@ -94,7 +97,18 @@ function Sidebar({ hotel }) {
   };
 
   return (
-    <div className={classes.sidebar}>
+    <>
+      {/* Телефон: меню выезжает по кнопке, иначе оно съедает больше половины экрана. */}
+      <div className={classes.mobileBar}>
+        <button type="button" className={classes.burger} aria-label="Меню" onClick={() => setOpen(true)}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
+        <span className={classes.mobileTitle}>{NAV_ITEMS.find((i) => i.id === activeSection)?.label || hotel?.name}</span>
+      </div>
+      {open && <div className={classes.backdrop} onClick={() => setOpen(false)} />}
+    <div className={`${classes.sidebar} ${open ? classes.sidebarOpen : ''}`}>
       <div className={classes.logo}>
         <div className={classes.logoTitle}>{hotel?.name || 'Управление отелем'}</div>
         <div className={classes.logoSubtitle}>{hotel?.city} · {hotel?.address}</div>
@@ -136,6 +150,7 @@ function Sidebar({ hotel }) {
         <div className={classes.version}>PMS v1.0 · Beta</div>
       </div>
     </div>
+    </>
   );
 }
 

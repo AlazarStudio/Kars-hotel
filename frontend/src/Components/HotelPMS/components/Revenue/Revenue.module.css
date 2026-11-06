@@ -538,3 +538,10 @@
   font-size: 13px;
   margin-bottom: 12px;
 }
+
+/* Телефон */
+@media (max-width: 768px) {
+  .root { padding: 16px 16px 32px; }
+  .panelHeader { flex-wrap: wrap; padding: 12px; }
+  .calNav { flex-wrap: wrap; gap: 8px; padding: 10px 12px 8px; }
+}

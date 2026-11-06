@@ -18,3 +18,8 @@
   display: flex;
   flex-direction: column;
 }
+
+@media (max-width: 768px) {
+  .root { flex-direction: column; height: 100dvh; }
+  .body { min-height: 0; }
+}
