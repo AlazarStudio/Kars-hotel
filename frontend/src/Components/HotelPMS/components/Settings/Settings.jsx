@@ -973,7 +973,7 @@ export default function Settings() {
           <div className={s.section}>
             <div className={s.sectionHeader}>
               <div className={s.sectionTitle}>Функции системы</div>
-              <div className={s.sectionDesc}>Дополнительные возможности PMS</div>
+              <div className={s.sectionDesc}>Дополнительные возможности</div>
             </div>
             <div className={s.sectionBody}>
               <div className={s.toggleRow}>

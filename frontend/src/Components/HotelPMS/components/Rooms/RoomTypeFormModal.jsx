@@ -351,7 +351,7 @@ export default function RoomTypeFormModal({ open, editing, onClose, onSubmit }) 
             style={{ display: 'none' }}
           />
           <div className={formClasses.hint}>
-            JPEG, PNG, WebP или GIF, до 5 МБ. Эти фото уходят партнёрам по API.
+            JPEG, PNG, WebP или GIF, до 5 МБ. Эти фото увидят партнёры.
             {!editing && ' Загрузятся сразу после сохранения категории.'}
           </div>
           {photoError && <div className={formClasses.fieldError}>{photoError}</div>}
