@@ -56,6 +56,8 @@ function transformTimeline(data) {
           id: res.id,
           roomId: room.id,
           guestName: res.guestName,
+          upgradeWish: res.upgradeWish,
+          upgradeOffer: res.upgradeOffer,
           phone: res.phone ?? '',
           email: res.email ?? '',
           checkIn: res.checkIn,
