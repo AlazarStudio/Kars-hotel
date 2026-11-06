@@ -1,4 +1,5 @@
-import { BadGatewayException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadGatewayException,
+  BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
 /**
@@ -70,6 +71,55 @@ export class AviaReportsService {
     if (res.status === 404) throw new NotFoundException('Отчёт не найден');
     if (!res.ok) throw new BadGatewayException(`Kars Avia ответила ${res.status}`);
     return res;
+  }
+
+  /* 4.2 · Отчёт по заявке ФАП: путь `/fap`, тот же ключ гостиницы. Текст отказа Авиа
+     передаётся как есть: «счёт после утверждения» гостинице нужен дословно. */
+  private async send(path: string, tenantId: string, init: RequestInit): Promise<unknown> {
+    if (!this.base) throw new ServiceUnavailableException('Связь с Kars Avia не настроена');
+    const slug = await this.slugOf(tenantId);
+    const key = await this.keyOf(tenantId);
+    let res: Response;
+    try {
+      res = await fetch(`${this.base}/fap${path}?hotelId=${encodeURIComponent(slug)}`, {
+        ...init,
+        headers: { ...(init.headers as Record<string, string> | undefined), 'X-Hotel-Key': key },
+        signal: AbortSignal.timeout(AviaReportsService.TIMEOUT_MS),
+      });
+    } catch {
+      throw new BadGatewayException('Kars Avia не отвечает');
+    }
+    if (res.status === 404) throw new NotFoundException('Заявка не найдена');
+    if (res.status === 400) {
+      const body = (await res.json().catch(() => null)) as { message?: string } | null;
+      throw new BadRequestException(body?.message ?? 'Kars Avia не приняла данные');
+    }
+    if (!res.ok) throw new BadGatewayException(`Kars Avia ответила ${res.status}`);
+    return res.json();
+  }
+
+  fapList(tenantId: string) {
+    return this.send('', tenantId, { method: 'GET' });
+  }
+
+  fapReport(tenantId: string, fapHotelId: string) {
+    return this.send(`/${encodeURIComponent(fapHotelId)}`, tenantId, { method: 'GET' });
+  }
+
+  fapSave(tenantId: string, fapHotelId: string, rows: unknown[]) {
+    return this.send(`/${encodeURIComponent(fapHotelId)}`, tenantId, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows }),
+    });
+  }
+
+  fapInvoice(tenantId: string, fapHotelId: string, file: { buffer: Buffer; originalname: string }, amount: string, number?: string) {
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(file.buffer)], { type: 'application/pdf' }), file.originalname);
+    form.append('amount', amount);
+    if (number) form.append('number', number);
+    return this.send(`/${encodeURIComponent(fapHotelId)}/invoice`, tenantId, { method: 'POST', body: form });
   }
 
   async list(tenantId: string): Promise<AviaReport[]> {

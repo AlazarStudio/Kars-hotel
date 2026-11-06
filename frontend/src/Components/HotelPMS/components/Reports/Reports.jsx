@@ -5,6 +5,7 @@ import classes from './Reports.module.css';
 import { BOOKING_STATUS, BOOKING_SOURCE } from '../../constants';
 import { useTimeline } from '../../../../hooks/useTimeline';
 import AviaReportsTab from './AviaReportsTab';
+import FapReportsTab from './FapReportsTab';
 import { useAuth } from '../../../../auth/AuthContext';
 
 // ─── CSV export helper ───────────────────────────────────────────────────────
@@ -276,6 +277,7 @@ function Reports() {
       )}
 
       {/* ── Отчёты, выпущенные Kars Avia для гостиницы ── */}
+      {tab === 'avia' && canAvia && <FapReportsTab />}
       {tab === 'avia' && canAvia && <AviaReportsTab />}
 
       {/* ── Bookings list ── */}
