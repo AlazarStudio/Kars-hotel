@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import Modal from '../../shared/Modal';
 import formClasses from '../../shared/Form.module.css';
 import NumberInput from '../../shared/NumberInput.jsx';
+import Select from '../../shared/Select';
 
 const MEAL_PLANS = [
   { value: 'NONE', label: 'Без питания' },
@@ -154,7 +155,7 @@ export default function RatePlanFormModal({ open, editing, ratePlans, onClose, o
         <div className={formClasses.row}>
           <div className={formClasses.field}>
             <label className={formClasses.label}>Питание</label>
-            <select
+            <Select
               className={formClasses.select}
               value={values.mealPlan}
               onChange={(e) => set('mealPlan', e.target.value)}
@@ -162,7 +163,7 @@ export default function RatePlanFormModal({ open, editing, ratePlans, onClose, o
               {MEAL_PLANS.map((m) => (
                 <option key={m.value} value={m.value}>{m.label}</option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className={formClasses.field}>
             <label className={formClasses.label}>Цены по occupancy</label>
@@ -182,7 +183,7 @@ export default function RatePlanFormModal({ open, editing, ratePlans, onClose, o
 
         <div className={formClasses.field}>
           <label className={formClasses.label}>Родительский тариф (наследование)</label>
-          <select
+          <Select
             className={formClasses.select}
             value={values.parentRatePlanId}
             onChange={(e) => set('parentRatePlanId', e.target.value)}
@@ -192,7 +193,7 @@ export default function RatePlanFormModal({ open, editing, ratePlans, onClose, o
             {parentCandidates.map((rp) => (
               <option key={rp.id} value={rp.id}>{rp.name} ({rp.code})</option>
             ))}
-          </select>
+          </Select>
           <div className={formClasses.hint}>
             Если выбран — цены наследуются от родителя, с модификатором ниже.
           </div>
@@ -203,14 +204,14 @@ export default function RatePlanFormModal({ open, editing, ratePlans, onClose, o
           <div className={formClasses.row}>
             <div className={formClasses.field}>
               <label className={formClasses.label}>Тип модификатора</label>
-              <select
+              <Select
                 className={formClasses.select}
                 value={values.priceModifierType}
                 onChange={(e) => set('priceModifierType', e.target.value)}
               >
                 <option value="PERCENT">Процент (%)</option>
                 <option value="ABSOLUTE">Сумма (₽)</option>
-              </select>
+              </Select>
             </div>
             <div className={formClasses.field}>
               <label className={formClasses.label}>

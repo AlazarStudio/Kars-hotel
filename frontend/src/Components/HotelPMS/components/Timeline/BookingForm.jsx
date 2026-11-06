@@ -12,6 +12,8 @@ import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { stayLine, stayFacts } from './stayTimes';
 import NumberInput from '../../shared/NumberInput.jsx';
+import Select from '../../shared/Select';
+import DateInput from '../../shared/DateInput';
 
 /* Месяц словом без точки — так дата пишется у партнёра («21 сен»), и так её
    читает диспетчер, который звонит на кухню. date-fns даёт «сент.». */
@@ -413,12 +415,12 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onCanc
             </div>
             <div className={classes.formGroup}>
               <div className={classes.formLabel}>Заезд по брони *</div>
-              <input className={classes.formInput} value={form.checkIn} onChange={set('checkIn')} type="date" />
+              <DateInput className={classes.formInput} value={form.checkIn} onChange={set('checkIn')} />
             </div>
 
             <div className={classes.formGroup}>
               <div className={classes.formLabel}>Выезд по брони *</div>
-              <input className={classes.formInput} value={form.checkOut} onChange={set('checkOut')} type="date" />
+              <DateInput className={classes.formInput} value={form.checkOut} onChange={set('checkOut')} />
             </div>
 
             {!isNew && (
@@ -450,7 +452,7 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onCanc
 
             <div className={`${classes.formGroup} ${classes.formFull}`}>
               <div className={classes.formLabel}>Номер *</div>
-              <select
+              <Select
                 className={classes.formSelect}
                 value={form.roomId}
                 onChange={set('roomId')}
@@ -473,7 +475,7 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onCanc
                     })}
                   </optgroup>
                 ))}
-              </select>
+              </Select>
               {conflict && form.roomId && (
                 <div style={{ fontSize: 12, color: '#EF4444', marginTop: 4 }}>
                   Номер занят: {conflict.guestName} ({conflict.checkIn} — {conflict.checkOut})
@@ -489,11 +491,11 @@ function BookingForm({ booking, rooms, categories, bookings = [], onSave, onCanc
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, gridColumn: '1 / -1' }}>
               <div className={classes.formGroup}>
                 <div className={classes.formLabel}>Источник</div>
-                <select className={classes.formSelect} value={form.source} onChange={set('source')}>
+                <Select className={classes.formSelect} value={form.source} onChange={set('source')}>
                   {Object.entries(BOOKING_SOURCE).map(([k, v]) => (
                     <option key={k} value={k}>{v}</option>
                   ))}
-                </select>
+                </Select>
               </div>
               {/* Число гостей брони из Kars Avia ведёт заявка Авии — здесь
                   только видно (сервер правку тоже не примет, 23.10.2026). */}

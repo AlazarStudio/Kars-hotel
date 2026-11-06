@@ -7,6 +7,7 @@ import { useTimeline } from '../../../../hooks/useTimeline';
 import AviaReportsTab from './AviaReportsTab';
 import FapReportsTab from './FapReportsTab';
 import { useAuth } from '../../../../auth/AuthContext';
+import DateInput from '../../shared/DateInput';
 
 // ─── CSV export helper ───────────────────────────────────────────────────────
 function exportCSV(rows, filename) {
@@ -163,9 +164,9 @@ function Reports() {
       <div className={classes.pageHeader}>
         <div className={classes.pageTitle}>Отчёты</div>
         <div className={classes.dateRange}>
-          <input type="date" className={classes.dateInput} value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+          <DateInput className={classes.dateInput} value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
           <span className={classes.dateSep}>—</span>
-          <input type="date" className={classes.dateInput} value={dateTo}   onChange={e => setDateTo(e.target.value)} />
+          <DateInput className={classes.dateInput} value={dateTo}   onChange={e => setDateTo(e.target.value)} />
         </div>
       </div>
 

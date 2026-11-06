@@ -8,6 +8,7 @@ import {
 } from '../../shared/status-config';
 import { MAX_ROOMS, createSummary, rangeNumbers, rangePreview, validateRange } from './room-range';
 import NumberInput from '../../shared/NumberInput.jsx';
+import Select from '../../shared/Select';
 
 /* Поля кроватей номера — в порядке формы; первые три — спальные места. */
 const BEDS = [
@@ -232,7 +233,7 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
         <div className={many ? undefined : formClasses.row}>
           <div className={formClasses.field}>
             <label className={formClasses.label}>Категория</label>
-            <select
+            <Select
               className={formClasses.select}
               value={values.roomTypeId}
               onChange={(e) => set('roomTypeId', e.target.value)}
@@ -242,7 +243,7 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
               {roomTypes?.map((rt) => (
                 <option key={rt.id} value={rt.id}>{rt.name}</option>
               ))}
-            </select>
+            </Select>
             {errors.roomTypeId && <div className={formClasses.fieldError}>{errors.roomTypeId}</div>}
           </div>
           {!many && (
@@ -345,7 +346,7 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
           </div>
           <div className={formClasses.field}>
             <label className={formClasses.label}>Вид</label>
-            <select
+            <Select
               className={formClasses.select}
               value={values.view}
               onChange={(e) => set('view', e.target.value)}
@@ -353,7 +354,7 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
               {Object.entries(ROOM_VIEW_LABELS).map(([k, label]) => (
                 <option key={k} value={k}>{label}</option>
               ))}
-            </select>
+            </Select>
           </div>
         </div>
 
@@ -379,7 +380,7 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
 
         <div className={formClasses.field}>
           <label className={formClasses.label}>Статус уборки</label>
-          <select
+          <Select
             className={formClasses.select}
             value={values.status}
             onChange={(e) => set('status', e.target.value)}
@@ -387,7 +388,7 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
             {Object.entries(ROOM_STATUS_CONFIG).map(([k, cfg]) => (
               <option key={k} value={k}>{cfg.label}</option>
             ))}
-          </select>
+          </Select>
         </div>
 
         {/* А3 · договорный блок. Стоит рядом со статусом уборки, а не в
@@ -396,7 +397,7 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
             квотой и резервом прямо здесь — иначе выбор делается наугад. */}
         <div className={formClasses.field}>
           <label className={formClasses.label}>Договорный блок</label>
-          <select
+          <Select
             className={formClasses.select}
             value={values.partnerHold}
             onChange={(e) => set('partnerHold', e.target.value)}
@@ -404,7 +405,7 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
             {Object.entries(PARTNER_HOLD_CONFIG).map(([k, cfg]) => (
               <option key={k} value={k}>{cfg.label}</option>
             ))}
-          </select>
+          </Select>
           <div className={formClasses.hint}>
             {PARTNER_HOLD_CONFIG[values.partnerHold]?.hint ??
               'Номер не держится ни за кем по договору'}

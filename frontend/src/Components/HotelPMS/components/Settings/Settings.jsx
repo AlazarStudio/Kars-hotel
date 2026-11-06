@@ -14,6 +14,8 @@ import {
   parseHotelAbout,
 } from './hotelAbout';
 import NumberInput from '../../shared/NumberInput.jsx';
+import Select from '../../shared/Select';
+import TimeInput from '../../shared/TimeInput';
 
 // ─── Nav sections ─────────────────────────────────────────────────────────────
 
@@ -503,7 +505,7 @@ export default function Settings() {
                   </div>
                   <div className={f.field}>
                     <label className={f.label}>Страна</label>
-                    <select
+                    <Select
                       className={f.select}
                       value={form.country}
                       onChange={e => set('country', e.target.value)}
@@ -511,7 +513,7 @@ export default function Settings() {
                       {COUNTRIES.map(c => (
                         <option key={c.value} value={c.value}>{c.label}</option>
                       ))}
-                    </select>
+                    </Select>
                   </div>
                 </div>
                 <div className={f.field}>
@@ -592,18 +594,16 @@ export default function Settings() {
                   <div className={f.row} key={key}>
                     <div className={f.field}>
                       <label className={f.label}>{label} — с</label>
-                      <input
+                      <TimeInput
                         className={f.input}
-                        type="time"
                         value={form[key].start}
                         onChange={e => set(key, { ...form[key], start: e.target.value })}
                       />
                     </div>
                     <div className={f.field}>
                       <label className={f.label}>{label} — до</label>
-                      <input
+                      <TimeInput
                         className={f.input}
-                        type="time"
                         value={form[key].end}
                         onChange={e => set(key, { ...form[key], end: e.target.value })}
                       />
@@ -818,7 +818,7 @@ export default function Settings() {
             <div className={s.sectionBody}>
               <div className={f.field}>
                 <label className={f.label}>Часовой пояс</label>
-                <select
+                <Select
                   className={f.select}
                   value={form.timezone}
                   onChange={e => set('timezone', e.target.value)}
@@ -826,11 +826,11 @@ export default function Settings() {
                   {TIMEZONES.map(tz => (
                     <option key={tz.value} value={tz.value}>{tz.label}</option>
                   ))}
-                </select>
+                </Select>
               </div>
               <div className={f.field}>
                 <label className={f.label}>Валюта</label>
-                <select
+                <Select
                   className={f.select}
                   value={form.currency}
                   onChange={e => set('currency', e.target.value)}
@@ -838,7 +838,7 @@ export default function Settings() {
                   {CURRENCIES.map(c => (
                     <option key={c.value} value={c.value}>{c.label}</option>
                   ))}
-                </select>
+                </Select>
               </div>
             </div>
           </div>
@@ -912,18 +912,16 @@ export default function Settings() {
               <div className={f.row}>
                 <div className={f.field}>
                   <label className={f.label}>Время заезда (check-in)</label>
-                  <input
+                  <TimeInput
                     className={f.input}
-                    type="time"
                     value={form.checkInTime}
                     onChange={e => set('checkInTime', e.target.value)}
                   />
                 </div>
                 <div className={f.field}>
                   <label className={f.label}>Время выезда (check-out)</label>
-                  <input
+                  <TimeInput
                     className={f.input}
-                    type="time"
                     value={form.checkOutTime}
                     onChange={e => set('checkOutTime', e.target.value)}
                   />

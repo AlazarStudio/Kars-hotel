@@ -23,6 +23,8 @@ import {
   sliceName, planForSlice, rowLabel,
 } from './corporateTariff';
 import NumberInput from '../../shared/NumberInput.jsx';
+import Select from '../../shared/Select';
+import DateInput from '../../shared/DateInput';
 
 /* 5.3 · подписи — без латинских аббревиатур: гостиница читает «что
    входит», а не код канала продаж. */
@@ -271,11 +273,11 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
           {showMeal && (<>
           <div className={classes.formGroup}>
             <label>Питание</label>
-            <select className={classes.input} value={form.mealPlan} onChange={e => set('mealPlan', e.target.value)}>
+            <Select className={classes.input} value={form.mealPlan} onChange={e => set('mealPlan', e.target.value)}>
               {Object.entries(MEAL_PLAN_LABELS).map(([k, v]) => (
                 <option key={k} value={k}>{v}</option>
               ))}
-            </select>
+            </Select>
           </div>
           {/* 5.3 · у варианта с питанием — как оно оплачивается. */}
           {form.mealPlan !== 'NONE' && (
@@ -345,10 +347,10 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
           {showWho && (<>
           <div className={classes.formGroup}>
             <label>Статус</label>
-            <select className={classes.input} value={form.isActive ? 'active' : 'inactive'} onChange={e => set('isActive', e.target.value === 'active')}>
+            <Select className={classes.input} value={form.isActive ? 'active' : 'inactive'} onChange={e => set('isActive', e.target.value === 'active')}>
               <option value="active">Активен</option>
               <option value="inactive">Неактивен</option>
-            </select>
+            </Select>
           </div>
 
           <div className={classes.formGroup} style={{ gridColumn: '1/-1' }}>
@@ -369,21 +371,21 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
             <>
               <div className={classes.formGroup}>
                 <label>Партнёр *</label>
-                <select className={classes.input} value={form.partnerId} onChange={e => setPartner(e.target.value)}>
+                <Select className={classes.input} value={form.partnerId} onChange={e => setPartner(e.target.value)}>
                   {partners.length !== 1 && <option value="">— выберите партнёра —</option>}
                   {partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+                </Select>
               </div>
               <div className={classes.formGroup}>
                 <label>НДС</label>
-                <select className={classes.input} value={form.vatRate} onChange={e => set('vatRate', e.target.value)}>
+                <Select className={classes.input} value={form.vatRate} onChange={e => set('vatRate', e.target.value)}>
                   <option value="">Без НДС</option>
                   {VAT_RATES.map(r => <option key={r} value={String(r)}>{r}%</option>)}
-                </select>
+                </Select>
               </div>
               <div className={classes.formGroup}>
                 <label>Юрлицо партнёра</label>
-                <select
+                <Select
                   className={classes.input}
                   value={form.partnerAccountId}
                   onChange={e => set('partnerAccountId', e.target.value)}
@@ -393,11 +395,11 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
                   {(partner?.accounts ?? []).map(a => (
                     <option key={a.id} value={a.id}>{a.name}{a.inn ? ` (ИНН ${a.inn})` : ''}</option>
                   ))}
-                </select>
+                </Select>
               </div>
               <div className={classes.formGroup}>
                 <label>Авиакомпания</label>
-                <select
+                <Select
                   className={classes.input}
                   value={form.partnerCustomerId}
                   onChange={e => set('partnerCustomerId', e.target.value)}
@@ -405,14 +407,14 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
                 >
                   <option value="">Любая</option>
                   {(partner?.customers ?? []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                </Select>
               </div>
               <div className={classes.formGroup} style={{ gridColumn: '1/-1' }}>
                 <label>Вид брони</label>
-                <select className={classes.input} value={form.guestKind} onChange={e => set('guestKind', e.target.value)}>
+                <Select className={classes.input} value={form.guestKind} onChange={e => set('guestKind', e.target.value)}>
                   <option value="">Любой</option>
                   {Object.entries(GUEST_KIND_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
+                </Select>
                 {/* Правило выбора — словами, как его исполняет сервер
                     (partner-tariff-match): иначе гостиница заведёт общий и
                     частный тарифы и не поймёт, почему бронь ушла по частному. */}
@@ -426,7 +428,7 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
           {form.forOperator && (
             <div className={classes.formGroup} style={{ gridColumn: '1/-1' }}>
               <label>Договор с партнёром{contracts.length > 0 ? ' *' : ''}</label>
-              <select
+              <Select
                 className={classes.input}
                 value={form.operatorContract}
                 onChange={e => set('operatorContract', e.target.value)}
@@ -435,7 +437,7 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
                 {contracts.map(c => (
                   <option key={c} value={c}>Договор {c}</option>
                 ))}
-              </select>
+              </Select>
               <div className={classes.fieldHint}>
                 {/* 5.1 · пусто — не «сверять не с чем», а что делать: договоры
                     приходят из Kars Avia, и пустой список значит, что копия
@@ -450,12 +452,12 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
           {!form.forOperator && parentOptions.length > 0 && (
             <div className={classes.formGroup} style={{ gridColumn: '1/-1' }}>
               <label>Базовый план (наследование цен)</label>
-              <select className={classes.input} value={form.parentRatePlanId} onChange={e => set('parentRatePlanId', e.target.value)}>
+              <Select className={classes.input} value={form.parentRatePlanId} onChange={e => set('parentRatePlanId', e.target.value)}>
                 <option value="">— Нет (независимый план) —</option>
                 {parentOptions.map(p => (
                   <option key={p.id} value={p.id}>{p.name} ({p.code})</option>
                 ))}
-              </select>
+              </Select>
             </div>
           )}
 
@@ -463,10 +465,10 @@ function RatePlanForm({ plan, allPlans, onSave, onDelete, onClose, saving, error
             <>
               <div className={classes.formGroup}>
                 <label>Тип модификатора</label>
-                <select className={classes.input} value={form.priceModifierType} onChange={e => set('priceModifierType', e.target.value)}>
+                <Select className={classes.input} value={form.priceModifierType} onChange={e => set('priceModifierType', e.target.value)}>
                   <option value="PERCENT">Процент (%)</option>
                   <option value="ABSOLUTE">Фиксированная сумма (₽)</option>
-                </select>
+                </Select>
               </div>
               <div className={classes.formGroup}>
                 <label>
@@ -898,9 +900,9 @@ function Seasons({ plan, roomTypes, contractSheets, partners }) {
                   onChange={(e) => update(idx, { name: e.target.value })}
                 />
                 <div className={classes.seasonDates}>
-                  <input className={classes.input} type="date" value={s.dateFrom} onChange={(e) => update(idx, { dateFrom: e.target.value })} style={{ width: 150 }} />
+                  <DateInput className={classes.input} value={s.dateFrom} onChange={(e) => update(idx, { dateFrom: e.target.value })} style={{ width: 150 }} />
                   <span>—</span>
-                  <input className={classes.input} type="date" value={s.dateTo} onChange={(e) => update(idx, { dateTo: e.target.value })} style={{ width: 150 }} />
+                  <DateInput className={classes.input} value={s.dateTo} onChange={(e) => update(idx, { dateTo: e.target.value })} style={{ width: 150 }} />
                 </div>
                 <button className={classes.seasonRemove} onClick={() => removeSeason(idx)}>Удалить</button>
               </div>
@@ -1024,20 +1026,20 @@ function FillModal({ roomTypes, defaultFrom, defaultTo, onFill, onClose, saving,
         <div className={classes.formGrid} style={{ gridTemplateColumns: '1fr' }}>
           <div className={classes.formGroup}>
             <label>Категория номеров</label>
-            <select className={classes.input} value={form.roomTypeId} onChange={e => set('roomTypeId', e.target.value)}>
+            <Select className={classes.input} value={form.roomTypeId} onChange={e => set('roomTypeId', e.target.value)}>
               {roomTypes.map(rt => (
                 <option key={rt.id} value={rt.id}>{rt.name}</option>
               ))}
-            </select>
+            </Select>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div className={classes.formGroup}>
               <label>С даты</label>
-              <input className={classes.input} type="date" value={form.from} onChange={e => set('from', e.target.value)} />
+              <DateInput className={classes.input} value={form.from} onChange={e => set('from', e.target.value)} />
             </div>
             <div className={classes.formGroup}>
               <label>По дату</label>
-              <input className={classes.input} type="date" value={form.to} onChange={e => set('to', e.target.value)} />
+              <DateInput className={classes.input} value={form.to} onChange={e => set('to', e.target.value)} />
             </div>
           </div>
           <div className={classes.formGroup}>
@@ -1288,14 +1290,14 @@ function RateCalendar({ plan, roomTypes }) {
             <button className={classes.calNavBtn} onClick={nextPeriod}>›</button>
             <button className={classes.calTodayBtn} onClick={goToday}>Сегодня</button>
             {partnerOccs.length > 0 && (
-              <select
+              <Select
                 className={`${classes.input} ${classes.calOccSelect}`}
                 value={occ}
                 onChange={(e) => setOcc(Number(e.target.value))}
                 title="Цены тарифа партнёра — по числу гостей в номере"
               >
                 {partnerOccs.map((o) => <option key={o} value={o}>Цены на {occupancyLabel(o)}</option>)}
-              </select>
+              </Select>
             )}
             <div className={classes.calDaysToggle}>
               {[14, 30].map(n => (

@@ -14,6 +14,7 @@ import {
   liveBookings,
   withCurrent,
 } from './tenant-options';
+import Select from '../HotelPMS/shared/Select';
 
 /* Гостиницы из панели платформы (решение владельца 25.10.2026): правка
    карточки и удаление — суперадмину и диспетчеру Kars Avia. Ограничения
@@ -127,12 +128,12 @@ export function TenantEditModal({ tenant, open, onClose, onSaved }) {
           </div>
           <div className={formClasses.field}>
             <label className={formClasses.label}>Звёзды</label>
-            <select className={formClasses.select} value={form.stars} onChange={(e) => set('stars', e.target.value)}>
+            <Select className={formClasses.select} value={form.stars} onChange={(e) => set('stars', e.target.value)}>
               <option value="">— без звёзд —</option>
               {[1, 2, 3, 4, 5].map((n) => (
                 <option key={n} value={n}>{n}</option>
               ))}
-            </select>
+            </Select>
           </div>
         </div>
 
@@ -155,15 +156,15 @@ export function TenantEditModal({ tenant, open, onClose, onSaved }) {
         <div className={formClasses.row3}>
           <div className={formClasses.field}>
             <label className={formClasses.label}>Часовой пояс</label>
-            <select className={formClasses.select} value={form.timezone} onChange={(e) => set('timezone', e.target.value)}>
+            <Select className={formClasses.select} value={form.timezone} onChange={(e) => set('timezone', e.target.value)}>
               {withCurrent(TIMEZONES, initial.timezone).map(([v, l]) => (
                 <option key={v} value={v}>{l}</option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className={formClasses.field}>
             <label className={formClasses.label}>Валюта</label>
-            <select
+            <Select
               className={formClasses.select}
               value={form.currency}
               onChange={(e) => set('currency', e.target.value)}
@@ -173,15 +174,15 @@ export function TenantEditModal({ tenant, open, onClose, onSaved }) {
               {withCurrent(CURRENCIES, initial.currency).map(([v, l]) => (
                 <option key={v} value={v}>{l}</option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className={formClasses.field}>
             <label className={formClasses.label}>Тариф</label>
-            <select className={formClasses.select} value={form.plan} onChange={(e) => set('plan', e.target.value)}>
+            <Select className={formClasses.select} value={form.plan} onChange={(e) => set('plan', e.target.value)}>
               {PLANS.map(([v, l]) => (
                 <option key={v} value={v}>{l}</option>
               ))}
-            </select>
+            </Select>
           </div>
         </div>
 

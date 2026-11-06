@@ -8,6 +8,7 @@ import JournalSection from './JournalSection';
 import ConfirmDialog from '../HotelPMS/shared/ConfirmDialog';
 import { TenantArchiveModal, TenantDeleteModal, TenantEditModal } from './TenantDialogs';
 import { CURRENCIES, PLANS, TIMEZONES, errorText } from './tenant-options';
+import Select from '../HotelPMS/shared/Select';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -680,19 +681,19 @@ function CreateSection() {
               <input className={classes.formInput} name="email" type="email" value={form.email} onChange={handleChange} placeholder="info@hotel.ru" />
             </label>
             <label className={classes.formLabel}>Тарифный план
-              <select className={classes.formSelect} name="plan" value={form.plan} onChange={handleChange}>
+              <Select className={classes.formSelect} name="plan" value={form.plan} onChange={handleChange}>
                 {PLANS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
+              </Select>
             </label>
             <label className={classes.formLabel}>Часовой пояс
-              <select className={classes.formSelect} name="timezone" value={form.timezone} onChange={handleChange}>
+              <Select className={classes.formSelect} name="timezone" value={form.timezone} onChange={handleChange}>
                 {TIMEZONES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
+              </Select>
             </label>
             <label className={classes.formLabel}>Валюта
-              <select className={classes.formSelect} name="currency" value={form.currency} onChange={handleChange}>
+              <Select className={classes.formSelect} name="currency" value={form.currency} onChange={handleChange}>
                 {CURRENCIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
+              </Select>
             </label>
           </div>
 

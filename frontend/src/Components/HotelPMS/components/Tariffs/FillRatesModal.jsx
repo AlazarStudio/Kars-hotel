@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import Modal from '../../shared/Modal';
 import formClasses from '../../shared/Form.module.css';
 import NumberInput from '../../shared/NumberInput.jsx';
+import Select from '../../shared/Select';
+import DateInput from '../../shared/DateInput';
 
 /**
  * Form to set the SAME price for every date in [from, to] for one (roomType, occupancy).
@@ -111,7 +113,7 @@ export default function FillRatesModal({ open, ratePlan, roomTypes, defaultRoomT
 
           <div className={formClasses.field}>
             <label className={formClasses.label}>Категория номера</label>
-            <select
+            <Select
               className={formClasses.select}
               value={values.roomTypeId}
               onChange={(e) => set('roomTypeId', e.target.value)}
@@ -121,16 +123,15 @@ export default function FillRatesModal({ open, ratePlan, roomTypes, defaultRoomT
               {roomTypes?.map((rt) => (
                 <option key={rt.id} value={rt.id}>{rt.name}</option>
               ))}
-            </select>
+            </Select>
             {errors.roomTypeId && <div className={formClasses.fieldError}>{errors.roomTypeId}</div>}
           </div>
 
           <div className={formClasses.row}>
             <div className={formClasses.field}>
               <label className={formClasses.label}>С даты</label>
-              <input
+              <DateInput
                 className={formClasses.input}
-                type="date"
                 value={values.fromDate}
                 onChange={(e) => set('fromDate', e.target.value)}
                 aria-invalid={errors.fromDate ? 'true' : 'false'}
@@ -139,9 +140,8 @@ export default function FillRatesModal({ open, ratePlan, roomTypes, defaultRoomT
             </div>
             <div className={formClasses.field}>
               <label className={formClasses.label}>По дату (включительно)</label>
-              <input
+              <DateInput
                 className={formClasses.input}
-                type="date"
                 value={values.toDate}
                 onChange={(e) => set('toDate', e.target.value)}
                 aria-invalid={errors.toDate ? 'true' : 'false'}

@@ -3,6 +3,7 @@ import Modal from '../../shared/Modal';
 import formClasses from '../../shared/Form.module.css';
 import classes from './Team.module.css';
 import { useCreateUser, useTenantRoles } from '../../../../hooks/api/useTenantUsers';
+import Select from '../../shared/Select';
 
 /* Окно и поля — общие компоненты кабинета (Modal, Form.module.css). Раньше
    здесь стояли классы Tailwind, которого в кабинете нет: окно не всплывало
@@ -93,7 +94,7 @@ export default function InviteUserModal({ onClose }) {
         </div>
         <div className={formClasses.field}>
           <label className={formClasses.label}>Роль *</label>
-          <select
+          <Select
             required
             value={form.roleId}
             onChange={(e) => setForm({ ...form, roleId: e.target.value })}
@@ -103,7 +104,7 @@ export default function InviteUserModal({ onClose }) {
             {roles.filter((r) => r.code !== 'OWNER').map((r) => (
               <option key={r.id} value={r.id}>{r.name}</option>
             ))}
-          </select>
+          </Select>
         </div>
       </form>
     </Modal>

@@ -13,6 +13,7 @@ import { useTenantUsers } from '../../../../hooks/api/useTenantUsers';
 import { useAuth } from '../../../../auth/AuthContext';
 import Modal from '../../shared/Modal';
 import formClasses from '../../shared/Form.module.css';
+import Select from '../../shared/Select';
 
 const STATUSES = Object.keys(ROOM_STATUS_CONFIG);
 
@@ -74,20 +75,20 @@ function NewTaskModal({ room, users, busy, onSubmit, onClose }) {
     >
       <div className={formClasses.field}>
         <label className={formClasses.label}>Тип</label>
-        <select className={formClasses.select} value={type} onChange={(e) => setType(e.target.value)}>
+        <Select className={formClasses.select} value={type} onChange={(e) => setType(e.target.value)}>
           {Object.entries(TASK_TYPE_LABEL).map(([k, v]) => (
             <option key={k} value={k}>{v}</option>
           ))}
-        </select>
+        </Select>
       </div>
       <div className={formClasses.field}>
         <label className={formClasses.label}>Исполнитель</label>
-        <select className={formClasses.select} value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
+        <Select className={formClasses.select} value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
           <option value="">Назначить позже</option>
           {users.map((u) => (
             <option key={u.id} value={u.id}>{u.fullName}</option>
           ))}
-        </select>
+        </Select>
       </div>
       <div className={formClasses.field}>
         <label className={formClasses.label}>Что сделать</label>

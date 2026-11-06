@@ -3,6 +3,7 @@ import * as superAdminApi from '../../api/superadmin';
 import Modal from '../HotelPMS/shared/Modal';
 import classes from './AdminPanel.module.css';
 import jr from './JournalSection.module.css';
+import DateInput from '../HotelPMS/shared/DateInput';
 
 /* «Журнал действий» (23.10.2026): каждое нажатие в кабинетах гостиниц и
  * каждый запрос, меняющий данные, — кто, когда, что нажал и чем кончилось.
@@ -136,11 +137,11 @@ export default function JournalSection() {
           </div>
           <label className={jr.field}>
             С
-            <input type="date" className={classes.searchInput} value={from} onChange={(e) => setFrom(e.target.value)} />
+            <DateInput className={classes.searchInput} value={from} onChange={(e) => setFrom(e.target.value)} />
           </label>
           <label className={jr.field}>
             по
-            <input type="date" className={classes.searchInput} value={to} onChange={(e) => setTo(e.target.value)} />
+            <DateInput className={classes.searchInput} value={to} onChange={(e) => setTo(e.target.value)} />
           </label>
           <label className={jr.check}>
             <input type="checkbox" checked={onlyFailed} onChange={(e) => setOnlyFailed(e.target.checked)} />
