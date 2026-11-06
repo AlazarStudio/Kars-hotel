@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { createHash, randomBytes } from 'node:crypto';
+import { seedDefaultRoles } from './tenant-roles';
 import { RoleCode } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
@@ -115,11 +116,6 @@ export class OwnerInviteService {
      одна ссылка не завела двух владельцев при двойном нажатии. */
   async accept(token: string, password: string): Promise<{ userId: string; tenantId: string; email: string }> {
     const invite = await this.valid(token);
-    const role = await this.prisma.admin.role.findFirst({
-      where: { tenantId: invite.tenantId, code: RoleCode.OWNER },
-      select: { id: true },
-    });
-    if (!role) throw new ConflictException('У гостиницы нет роли «Владелец» — обратитесь в поддержку');
     const passwordHash = await bcrypt.hash(password, 10);
     return this.prisma.admin.$transaction(async (tx) => {
       const used = await tx.ownerInvite.updateMany({
@@ -130,13 +126,21 @@ export class OwnerInviteService {
       if (await tx.user.findUnique({ where: { email: invite.email }, select: { id: true } })) {
         throw new ConflictException('Этот адрес уже зарегистрирован в системе');
       }
+      /* Гостиницу, заведённую партнёром через connect, создают без ролей: они нужны
+         только с появлением первого человека, то есть здесь. */
+      const role = await tx.role.findFirst({
+        where: { tenantId: invite.tenantId, code: RoleCode.OWNER },
+        select: { id: true },
+      });
+      const roleId = role?.id ?? (await seedDefaultRoles(tx, invite.tenantId))[RoleCode.OWNER];
+      if (!roleId) throw new ConflictException('У гостиницы нет роли «Владелец» — обратитесь в поддержку');
       const user = await tx.user.create({
         data: {
           tenantId: invite.tenantId,
           email: invite.email,
           fullName: invite.fullName,
           passwordHash,
-          roleId: role.id,
+          roleId,
         },
         select: { id: true },
       });
