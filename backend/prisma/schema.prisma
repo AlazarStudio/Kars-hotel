@@ -873,6 +873,10 @@ model Reservation {
   channelManaged Boolean        @default(false) @map("channel_managed")
   /// Партнёр, заведший бронь (152-ФЗ, Р-35; план 13.10): его API видит только свои.
   partnerId   String?           @map("partner_id") @db.Uuid
+  /// 5.10 · Пассажир партнёра просит номер выше.
+  upgradeWish  Boolean          @default(false) @map("upgrade_wish")
+  /// 5.10 · Что предложила гостиница: { category, surcharge } в копейках.
+  upgradeOffer Json?            @map("upgrade_offer")
   /// Ключ создания партнёра и SHA-256 исходного тела: повтор переживает потерю
   /// ответа, перезапуск PMS и последующую правку самой брони.
   partnerIdempotencyKey String? @map("partner_idempotency_key") @db.VarChar(200)

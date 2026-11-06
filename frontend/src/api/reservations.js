@@ -110,3 +110,9 @@ export async function exportGuestData(params) {
   const resp = await api.get('/reservations/guest-export', { params });
   return resp.data;
 }
+
+/** 5.10 · Предложить пассажиру номер выше. Доплата в копейках. */
+export async function offerUpgrade(id, category, surcharge) {
+  const resp = await api.post(`/reservations/${id}/upgrade-offer`, { category, surcharge });
+  return resp.data;
+}

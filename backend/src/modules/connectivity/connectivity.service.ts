@@ -1249,6 +1249,13 @@ export class ConnectivityService {
 
   /** Ключ гостиницы к «Отчётам Kars Avia» (план 11.3). Приходит повторно —
    *  перезаписывается: ключ выводит партнёр, у него и правда. */
+  /* 5.10 · Отметка пассажира. Бронь проверяется на принадлежность партнёру и гостинице. */
+  async setUpgradeWish(slug: string, id: string, want: boolean, partnerId: string) {
+    const tenant = await this.resolveTenant(slug);
+    await this.getReservation(slug, id, partnerId);
+    await this.prisma.forTenantExplicit(tenant.id, (tx) => tx.reservation.update({ where: { id }, data: { upgradeWish: want } }));
+  }
+
   async setReportsKey(slug: string, key: string, partnerId: string) {
     const tenant = await this.resolveTenant(slug);
     await this.prisma.admin.aviaReportsKey.upsert({

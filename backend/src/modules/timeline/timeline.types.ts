@@ -25,6 +25,8 @@ export interface TimelineReservation {
   id: string;
   roomId: string;
   guestName: string;
+  upgradeWish: boolean;
+  upgradeOffer: { category: string; surcharge: number } | null;
   phone: string | null;
   email: string | null;
   checkIn: string; // ISO date 'YYYY-MM-DD'

@@ -1,3 +1,4 @@
+import UpgradeWish from './UpgradeWish';
 import React, { useState, useMemo } from 'react';
 import { parseISO, format, differenceInDays, subDays, addDays } from 'date-fns';
 import { ru } from 'date-fns/locale';
@@ -200,6 +201,7 @@ function Bookings() {
             <div key={b.id} className={classes.tableRow} onClick={() => openEdit(b)}>
               <div className={classes.td}>
                 <div className={classes.guestName}>{b.guestName}</div>
+                {b.upgradeWish && <UpgradeWish booking={b} />}
                 <div className={classes.guestPhone}>{b.phone || '—'} · {b.adults} взр{b.children ? `, ${b.children} дет` : ''}</div>
               </div>
               <div className={classes.td}>

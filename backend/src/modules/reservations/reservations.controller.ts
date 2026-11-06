@@ -85,6 +85,14 @@ export class ReservationsController {
   /* Открыли карточку брони — в журнал гостиницы (152-ФЗ, Г-25; план 13.5).
      Брони шахматка получает пачкой, карточку открывает интерфейс — он и
      сообщает об открытии. Чужая бронь под RLS не видна — 404. */
+  /* 5.10 · Гостиница предлагает номер выше. Доплата в копейках, ответ пассажира придёт в Авиа. */
+  @Post(':id/upgrade-offer')
+  @RequirePermissions('reservation.update')
+  @ApiOperation({ summary: 'Offer the passenger a better room' })
+  offerUpgrade(@Param('id') id: string, @Body() dto: { category: string; surcharge: number }) {
+    return this.reservationsService.offerUpgrade(id, dto);
+  }
+
   @Post(':id/view')
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequirePermissions('reservation.read')

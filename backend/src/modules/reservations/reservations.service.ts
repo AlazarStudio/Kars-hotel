@@ -1,5 +1,6 @@
 import {
   Injectable,
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
@@ -303,6 +304,18 @@ export class ReservationsService {
   /* `fromChannel` — правку прислал партнёр (Kars Avia) через свой API.
      `stay` — его же прилёт, отъезд и рейс (stay-times.ts): кабинет гостиницы
      их не присылает и не меняет. */
+  async offerUpgrade(id: string, dto: { category: string; surcharge: number }) {
+    const tenantId = TenantContext.getTenantIdOrThrow();
+    const category = String(dto.category ?? '').trim();
+    const surcharge = Number(dto.surcharge);
+    if (!category || !Number.isInteger(surcharge) || surcharge < 0) throw new BadRequestException('Укажите категорию и доплату');
+    const row = await this.prisma.forTenantExplicit(tenantId, (tx) => tx.reservation.findUnique({ where: { id }, select: { upgradeWish: true } }));
+    if (!row?.upgradeWish) throw new BadRequestException('Пассажир не просил номер выше');
+    await this.prisma.forTenantExplicit(tenantId, (tx) => tx.reservation.update({ where: { id }, data: { upgradeOffer: { category, surcharge } } }));
+    await this.partnerWebhooks.emitForReservation('upgrade.offered', id, { reservationId: id, category, surcharge });
+    return { ok: true };
+  }
+
   async update(
     id: string,
     dto: UpdateReservationDto,

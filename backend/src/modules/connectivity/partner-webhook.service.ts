@@ -26,6 +26,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 export type PartnerWebhookType =
   | 'reservation.confirmed'
   | 'reservation.changed'
+  | 'upgrade.offered'
   | 'reservation.cancelled'
   | 'guest.checked_in'
   | 'guest.checked_out'

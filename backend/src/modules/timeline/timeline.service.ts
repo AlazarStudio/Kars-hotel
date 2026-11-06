@@ -35,6 +35,8 @@ interface RawReservationRow {
   id: string;
   room_id: string;
   guest_name: string;
+  upgrade_wish: boolean;
+  upgrade_offer: { category: string; surcharge: number } | null;
   phone: string | null;
   email: string | null;
   check_in: Date;
@@ -147,6 +149,8 @@ export class TimelineService {
           id,
           room_id,
           guest_name,
+          upgrade_wish,
+          upgrade_offer,
           phone,
           email,
           check_in,
@@ -185,6 +189,8 @@ export class TimelineService {
           id: r.id,
           roomId: r.room_id,
           guestName: r.guest_name,
+          upgradeWish: r.upgrade_wish,
+          upgradeOffer: r.upgrade_offer,
           phone: r.phone,
           email: r.email,
           checkIn: format(r.check_in, 'yyyy-MM-dd'),

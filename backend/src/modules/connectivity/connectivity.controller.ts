@@ -385,6 +385,14 @@ export class ConnectivityController {
 
   /* Ключ гостиницы к «Отчётам Kars Avia» (152-ФЗ, план 11.3): с ним её
      кабинет забирает отчёты, выпущенные для неё, и только их. */
+  @Put('hotels/:slug/reservations/:id/upgrade-wish')
+  @RequireScopes(PARTNER_SCOPES.ReservationsWrite)
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Passenger asks for a better room' })
+  async setUpgradeWish(@Param('slug') slug: string, @Param('id') id: string, @Body() dto: { want?: boolean }, @Req() req: PartnerRequest) {
+    await this.connectivity.setUpgradeWish(slug, id, dto.want === true, req.partner!.partnerId);
+  }
+
   @Put('hotels/:slug/reports-key')
   @RequireScopes(PARTNER_SCOPES.HotelsWrite)
   @HttpCode(204)

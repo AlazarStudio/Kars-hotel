@@ -522,7 +522,7 @@ function Timeline({ multiPlaceEnabled = true }) {
         {!hideText && (
           <div className={classes.bookingInner}>
             <div className={classes.bookingText}>
-              <div className={classes.bookingGuestName}>{b.guestName.split(' ')[0]} {b.guestName.split(' ')[1]?.[0]}.</div>
+              {b.upgradeWish && <div title="Хочет номер выше" style={{ fontSize: 9, fontWeight: 700 }}>выше</div>}<div className={classes.bookingGuestName}>{b.guestName.split(' ')[0]} {b.guestName.split(' ')[1]?.[0]}.</div>
               <div className={classes.bookingNights}>{nights} н.</div>
             </div>
           </div>
