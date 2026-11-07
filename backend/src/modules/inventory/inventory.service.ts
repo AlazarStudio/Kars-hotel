@@ -290,7 +290,8 @@ export class InventoryService {
 
   /**
    * Bulk-update inventory rows (totalRooms, blockedRooms, stopSell).
-   * Upserts rows; does NOT touch bookedRooms (managed by reservations only).
+   * Omitted fields preserve existing values. A new day defaults to the active
+   * physical room count; bookedRooms is managed by reservations only.
    */
   async bulkUpdate(roomTypeId: string, rows: BulkUpdateRow[]): Promise<{ updated: number }> {
     return this.prisma.forTenant(async (tx) => {
@@ -302,27 +303,29 @@ export class InventoryService {
       });
       if (!rt) throw new NotFoundException('Категория номеров не найдена');
 
+      const roomCount = await tx.room.count({
+        where: { roomTypeId, isActive: true },
+      });
+
       let updated = 0;
       for (const row of rows) {
         const date = parseISO(row.date);
-        await tx.$executeRaw`
-          INSERT INTO inventory (id, tenant_id, room_type_id, date, total_rooms, booked_rooms, blocked_rooms, stop_sell)
-          VALUES (
-            gen_random_uuid(),
-            ${tenantId}::uuid,
-            ${roomTypeId}::uuid,
-            ${date}::date,
-            ${row.totalRooms ?? 0},
-            0,
-            ${row.blockedRooms ?? 0},
-            ${row.stopSell ?? false}
-          )
-          ON CONFLICT (tenant_id, room_type_id, date) DO UPDATE
-            SET total_rooms   = EXCLUDED.total_rooms,
-                blocked_rooms = EXCLUDED.blocked_rooms,
-                stop_sell     = EXCLUDED.stop_sell,
-                "updatedAt"   = now()
-        `;
+        await tx.inventory.upsert({
+          where: { tenantId_roomTypeId_date: { tenantId, roomTypeId, date } },
+          create: {
+            tenantId,
+            roomTypeId,
+            date,
+            totalRooms: row.totalRooms ?? roomCount,
+            blockedRooms: row.blockedRooms ?? 0,
+            stopSell: row.stopSell ?? false,
+          },
+          update: {
+            totalRooms: row.totalRooms ?? undefined,
+            blockedRooms: row.blockedRooms ?? undefined,
+            stopSell: row.stopSell ?? undefined,
+          },
+        });
         updated++;
       }
 
