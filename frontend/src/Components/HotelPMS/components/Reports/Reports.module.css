@@ -133,6 +133,25 @@
   font-weight: 700;
 }
 
+/* 4.2 · Детализация для Kars Avia: поля и кнопки — общие формы PMS. */
+.fapItem { border-top: 1px solid #E8EDF3; }
+.fapHead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 20px; font-size: 13.5px; color: #1B2A47; }
+.fapState { margin-left: auto; font-size: 13px; color: #4A5568; }
+.fapMuted { font-size: 13px; color: #8896AB; }
+.fapEmpty { padding: 16px 20px; font-size: 13px; color: #8896AB; }
+.fapComment { padding: 0 20px 12px; font-size: 13px; color: #4A5568; }
+.fapBody { padding: 4px 20px 16px; }
+.fapTableWrap { overflow-x: auto; }
+.fapTable { width: 100%; border-collapse: collapse; table-layout: fixed; min-width: 640px; }
+.fapTable th { text-align: left; padding: 8px 6px; font-size: 11px; font-weight: 700; color: #8896AB; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #E8EDF3; }
+.fapTable th:first-child { width: 32%; }
+.fapTable td { padding: 6px; font-size: 13px; color: #1B2A47; border-bottom: 1px solid #F0F4F9; }
+.fapGuest { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fapActions { display: flex; justify-content: flex-end; margin-top: 12px; }
+.fapInvoice { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 4px 20px 16px; }
+.fapInvoice > div { margin-bottom: 0; flex: 1 1 180px; }
+.fapFile { display: flex; align-items: center; gap: 10px; min-height: 38px; }
+
 /* Телефон */
 @media (max-width: 768px) {
   .root { padding: 16px; }

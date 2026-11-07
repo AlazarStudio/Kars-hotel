@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import classes from './Reports.module.css';
+import form from '../../shared/Form.module.css';
+import NumberInput from '../../shared/NumberInput.jsx';
 import { getFapReport, listFapReports, sendFapInvoice, sendFapReport } from '../../../../api/aviaReports';
 
 /**
@@ -30,7 +32,7 @@ function Report({ item, onDone }) {
   }, [item.fapHotelId]);
 
   const change = (i, key, type, value) =>
-    setRows((list) => list.map((r, n) => (n === i ? { ...r, [key]: type === 'number' ? Number(value) : value } : r)));
+    setRows((list) => list.map((r, n) => (n === i ? { ...r, [key]: type === 'number' ? (value ?? 0) : value } : r)));
 
   const send = async () => {
     setBusy(true);
@@ -46,37 +48,58 @@ function Report({ item, onDone }) {
   };
 
   return (
-    <div style={{ padding: 12 }}>
-      {error && <div style={{ color: 'var(--danger-text, #b42318)', marginBottom: 8 }}>{error}</div>}
-      {!rows && !error && <div>Загрузка…</div>}
+    <div className={classes.fapBody}>
+      {error && <div className={form.alert}>{error}</div>}
+      {!rows && !error && <div className={classes.fapMuted}>Загрузка…</div>}
       {rows && (
         <>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: 'left' }}>Гость</th>
-                {FIELDS.map(([k, label]) => (
-                  <th key={k} style={{ textAlign: 'left' }}>{label}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={r.guestId ?? i}>
-                  <td>{r.fullName}</td>
-                  {FIELDS.map(([k, label, type]) => (
-                    <td key={k}>
-                      <input aria-label={label} type={type} min="0" disabled={item.submitted} value={r[k] ?? ''} onChange={(e) => change(i, k, type, e.target.value)} style={{ width: 80 }} />
-                    </td>
+          <div className={classes.fapTableWrap}>
+            <table className={classes.fapTable}>
+              <thead>
+                <tr>
+                  <th>Гость</th>
+                  {FIELDS.map(([k, label]) => (
+                    <th key={k}>{label}</th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.guestId ?? i}>
+                    <td className={classes.fapGuest}>{r.fullName}</td>
+                    {FIELDS.map(([k, label, type]) => (
+                      <td key={k}>
+                        {type === 'number' ? (
+                          <NumberInput
+                            className={form.input}
+                            aria-label={label}
+                            decimal={false}
+                            disabled={item.submitted}
+                            value={r[k] ?? 0}
+                            onChange={(v) => change(i, k, type, v)}
+                          />
+                        ) : (
+                          <input
+                            className={form.input}
+                            aria-label={label}
+                            disabled={item.submitted}
+                            value={r[k] ?? ''}
+                            onChange={(e) => change(i, k, type, e.target.value)}
+                          />
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           {!item.submitted && (
-            <button style={{ marginTop: 10 }} disabled={busy} onClick={send}>
-              Отправить на согласование
-            </button>
+            <div className={classes.fapActions}>
+              <button type="button" className={form.btnPrimary} disabled={busy} onClick={send}>
+                Отправить на согласование
+              </button>
+            </div>
           )}
         </>
       )}
@@ -88,6 +111,7 @@ function Invoice({ item, onDone }) {
   const [file, setFile] = useState(null);
   const [rub, setRub] = useState('');
   const [number, setNumber] = useState('');
+  const fileRef = useRef(null);
   const [error, setError] = useState(null);
 
   const send = async () => {
@@ -101,12 +125,36 @@ function Invoice({ item, onDone }) {
   };
 
   return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: 12, flexWrap: 'wrap' }}>
-      <input aria-label="Номер счёта" placeholder="Номер счёта" value={number} onChange={(e) => setNumber(e.target.value)} />
-      <input aria-label="Сумма, ₽" placeholder="Сумма, ₽" inputMode="decimal" value={rub} onChange={(e) => setRub(e.target.value)} />
-      <input aria-label="Счёт, PDF" type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-      <button disabled={!file || !rub.trim()} onClick={send}>Приложить счёт</button>
-      {error && <span style={{ color: 'var(--danger-text, #b42318)' }}>{error}</span>}
+    <div className={classes.fapInvoice}>
+      <div className={form.field}>
+        <label className={form.label} htmlFor={`inv-num-${item.fapHotelId}`}>Номер счёта</label>
+        <input id={`inv-num-${item.fapHotelId}`} className={form.input} value={number} onChange={(e) => setNumber(e.target.value)} />
+      </div>
+      <div className={form.field}>
+        <label className={form.label} htmlFor={`inv-sum-${item.fapHotelId}`}>Сумма, ₽</label>
+        <input id={`inv-sum-${item.fapHotelId}`} className={form.input} inputMode="decimal" value={rub} onChange={(e) => setRub(e.target.value)} />
+      </div>
+      <div className={form.field}>
+        <span className={form.label}>Счёт, PDF</span>
+        <div className={classes.fapFile}>
+          <button type="button" className={form.btnSecondary} onClick={() => fileRef.current?.click()}>
+            {file ? 'Заменить файл' : 'Выбрать файл'}
+          </button>
+          <span className={classes.fapMuted}>{file?.name ?? 'Файл не выбран'}</span>
+          <input
+            ref={fileRef}
+            aria-label="Счёт, PDF"
+            type="file"
+            accept="application/pdf"
+            hidden
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          />
+        </div>
+      </div>
+      <button type="button" className={form.btnPrimary} disabled={!file || !rub.trim()} onClick={send}>
+        Приложить счёт
+      </button>
+      {error && <div className={form.fieldError}>{error}</div>}
     </div>
   );
 }
@@ -134,21 +182,21 @@ export default function FapReportsTab() {
   return (
     <div className={classes.section}>
       <div className={classes.sectionTitle}>Детализация для Kars Avia</div>
-      {error && <div>{error}</div>}
-      {items?.length === 0 && !error && <div style={{ padding: 12 }}>Заявок с вашей гостиницей пока нет.</div>}
+      {error && <div className={form.alert}>{error}</div>}
+      {items?.length === 0 && !error && <div className={classes.fapEmpty}>Заявок с вашей гостиницей пока нет.</div>}
       {items?.map((i) => (
-        <div key={i.fapHotelId} style={{ borderTop: '1px solid var(--border, #e5e7eb)' }}>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 12px' }}>
+        <div key={i.fapHotelId} className={classes.fapItem}>
+          <div className={classes.fapHead}>
             <b>{i.number}</b>
-            <span>{i.airport} · {i.flight}</span>
-            <span style={{ marginLeft: 'auto' }}>
+            <span className={classes.fapMuted}>{i.airport} · {i.flight}</span>
+            <span className={classes.fapState}>
               {i.invoice ? `Счёт отправлен: ${i.invoice}` : i.submitted ? STAGE[Math.min(i.stage, 3)] : i.filled ? 'Детализация отправлена' : 'Не заполнена'}
             </span>
-            <button onClick={() => setOpen(open === i.fapHotelId ? null : i.fapHotelId)}>
-              {i.filled ? 'Открыть' : 'Сформировать детализацию'}
+            <button type="button" className={form.btnSecondary} onClick={() => setOpen(open === i.fapHotelId ? null : i.fapHotelId)}>
+              {open === i.fapHotelId ? 'Свернуть' : i.filled ? 'Открыть' : 'Сформировать детализацию'}
             </button>
           </div>
-          {i.comment && <div style={{ padding: '0 12px 8px' }}>Комментарий авиакомпании: {i.comment}</div>}
+          {i.comment && <div className={classes.fapComment}>Комментарий авиакомпании: {i.comment}</div>}
           {open === i.fapHotelId && <Report item={i} onDone={done} />}
           {i.approved && !i.invoice && <Invoice item={i} onDone={done} />}
         </div>
