@@ -1475,7 +1475,8 @@ function CorporateStatus({ plan }) {
     <div className={`${classes.corpBanner} ${classes['corp_' + st.state]}`}>
       <div className={classes.corpHead}>
         <b>{STATE_LABEL[st.state] ?? st.state}</b>
-        <span>{st.reason}</span>
+        {/* У подтверждённого причина совпадает с названием — второй раз не пишем. */}
+        {st.reason !== STATE_LABEL[st.state] && <span>{st.reason}</span>}
       </div>
       {plan.reviewedAt && (
         <div className={classes.corpMeta}>
