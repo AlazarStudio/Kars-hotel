@@ -252,7 +252,10 @@ export function AuthProvider({ children }) {
       acceptInvite,
       dropTabSession,
       isSuperAdmin: user?.isSuperAdmin === true,
-      isImpersonating: impersonatedTenant !== null,
+      /* Признак «от имени» берём с сервера (он видит его в токене), локальное
+         состояние — лишь запасной путь: потерянное состояние вкладки пускало
+         диспетчера «от имени» в панель платформы (11.11.2026). */
+      isImpersonating: user?.isImpersonating === true || impersonatedTenant !== null,
     }),
     [
       user,

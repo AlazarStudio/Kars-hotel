@@ -37,6 +37,13 @@ export interface AuthenticatedUser {
   permissions: string[];
   isSuperAdmin?: boolean;
   isDispatcher?: boolean;
+  /**
+   * Сессия работает от имени гостиницы (`imp` в токене). Интерфейс берёт это
+   * отсюда, а не из своего локального состояния: потерянное состояние вкладки
+   * пускало диспетчера «от имени» в панель платформы, и форма заведения
+   * гостиницы отвечала отказом сервера (11.11.2026).
+   */
+  isImpersonating?: boolean;
 }
 
 @Injectable()
@@ -379,6 +386,7 @@ export class AuthService implements OnModuleInit {
         permissions: fromToken?.permissions ?? [],
         isSuperAdmin: false,
         isDispatcher: actor.isDispatcher,
+        isImpersonating: Boolean(impersonatedBy),
       };
     }
     if (!user) throw new UnauthorizedException('User no longer exists');
@@ -412,6 +420,7 @@ export class AuthService implements OnModuleInit {
       permissions: user.role.rolePermissions.map((rp) => rp.permission.code),
       isSuperAdmin: (user.role.code as string) === 'SUPER_ADMIN',
       isDispatcher,
+      isImpersonating: Boolean(impersonatedBy),
     };
   }
 

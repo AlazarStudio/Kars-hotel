@@ -58,4 +58,34 @@ describe('Панель платформы — гарды', () => {
   it('SuperAdminGuard диспетчера не пускает', () => {
     expect(() => new SuperAdminGuard().canActivate(ctx({ isDispatcher: true }))).toThrow(ForbiddenException);
   });
+
+  /* Интерфейс показывает ответ сервера как есть, поэтому отказ обязан быть
+     понятным по-русски и называть причину кодом: прежняя английская строка
+     «Platform access required» выходила в русской форме заведения гостиницы
+     у диспетчера в режиме «от имени» (11.11.2026). */
+  it('отказ объясняет причину кодом и русским текстом, без английской строки', () => {
+    const response = (activate: () => boolean) => {
+      try {
+        activate();
+      } catch (err) {
+        return (err as ForbiddenException).getResponse() as { code: string; message: string };
+      }
+      throw new Error('отказа не было');
+    };
+    const platform = new PlatformOperatorGuard();
+    const admin = new SuperAdminGuard();
+
+    const staffDenied = response(() => platform.canActivate(ctx({ roleCode: 'OWNER' })));
+    expect(staffDenied.code).toBe('PLATFORM_ACCESS_REQUIRED');
+
+    const impersonatingDenied = response(() => platform.canActivate(ctx({ isDispatcher: true, impersonatedBy: 'd1' })));
+    expect(impersonatingDenied.code).toBe('PLATFORM_ACCESS_WHILE_IMPERSONATING');
+    expect(impersonatingDenied.message).toMatch(/Выйдите из режима «от имени»/);
+
+    expect(response(() => admin.canActivate(ctx({ isDispatcher: true }))).code).toBe('SUPER_ADMIN_REQUIRED');
+    for (const denied of [staffDenied, impersonatingDenied]) {
+      expect(denied.message).toMatch(/[А-Яа-яЁё]/);
+      expect(denied.message).not.toMatch(/Platform access required/i);
+    }
+  });
 });
