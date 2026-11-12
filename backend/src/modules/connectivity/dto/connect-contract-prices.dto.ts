@@ -106,7 +106,10 @@ export class ConnectContractPriceRowDto {
   @Length(1, 120)
   variant?: string | null;
 
-  @ApiPropertyOptional({ example: 1, description: 'На сколько гостей цена; пусто — на любое число' })
+  @ApiPropertyOptional({
+    example: 1,
+    description: 'На сколько гостей цена; пусто — на любое число',
+  })
   @IsOptional()
   @IsInt()
   @Min(1)
@@ -118,7 +121,10 @@ export class ConnectContractPriceRowDto {
   @IsBoolean()
   perPerson?: boolean;
 
-  @ApiPropertyOptional({ enum: ['NONE', 'BB', 'HB', 'FB', 'AI'], description: 'Питание, включённое в цену номера' })
+  @ApiPropertyOptional({
+    enum: ['NONE', 'BB', 'HB', 'FB', 'AI'],
+    description: 'Питание, включённое в цену номера',
+  })
   @IsOptional()
   @IsIn(['NONE', 'BB', 'HB', 'FB', 'AI'])
   mealPlan?: 'NONE' | 'BB' | 'HB' | 'FB' | 'AI';
@@ -253,6 +259,59 @@ export class ConnectContractPricesDto {
   fill?: ConnectFillDto[];
 }
 
+/**
+ * Договор реестра оператора — в том числе без ценового приложения.
+ *
+ * Гостиница должна видеть договор, даже если приложение к нему ещё не пришло:
+ * у «Апартаментов сети Карс Авиа» 27 таких, и пустой кабинет читается как
+ * «договоров нет». Скрытые договоры не присылаются вовсе; архивные — со
+ * `state: 'ARCHIVED'`: он отработал, и по нему считались брони.
+ */
+export class ConnectContractSummaryDto {
+  @ApiProperty({ example: '205' })
+  @IsString()
+  @Length(1, 120)
+  number!: string;
+
+  @ApiPropertyOptional({
+    type: ConnectDirectoryRefDto,
+    description: 'Юрлицо Карс, подписавшее договор',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ConnectDirectoryRefDto)
+  account?: ConnectDirectoryRefDto | null;
+
+  @ApiPropertyOptional({ example: '2025-11-10T00:00:00.000Z' })
+  @IsOptional()
+  @IsISO8601()
+  signedAt?: string | null;
+
+  @ApiPropertyOptional({ example: null, description: 'null — бессрочно' })
+  @IsOptional()
+  @IsISO8601()
+  expiresAt?: string | null;
+
+  @ApiProperty({ example: false, description: 'Рабочий договор гостиницы' })
+  @IsBoolean()
+  isPrimary!: boolean;
+
+  @ApiProperty({ enum: ['ACTIVE', 'ARCHIVED'] })
+  @IsIn(['ACTIVE', 'ARCHIVED'])
+  state!: 'ACTIVE' | 'ARCHIVED';
+
+  @ApiProperty({ type: [String], enum: ['ACCOMMODATION', 'MEAL'] })
+  @IsArray()
+  @ArrayMaxSize(2)
+  @IsIn(['ACCOMMODATION', 'MEAL'], { each: true })
+  services!: ('ACCOMMODATION' | 'MEAL')[];
+
+  @ApiProperty({ example: 3, description: 'Сколько приложений пришло; 0 — цен нет' })
+  @IsInt()
+  @Min(0)
+  sheets!: number;
+}
+
 /* Набор документов, действующих у оператора ПРЯМО СЕЙЧАС.
  *
  * Полная картина, а не добавка: чего в наборе нет, того у гостиницы быть не
@@ -267,4 +326,15 @@ export class ConnectContractPricesSyncDto {
   @ValidateNested({ each: true })
   @Type(() => ConnectContractPricesDto)
   documents!: ConnectContractPricesDto[];
+
+  /* Реестр договоров (11.11.2026). Поле НЕОБЯЗАТЕЛЬНОЕ: старая Авиа его не
+     присылает, и тогда список договоров в ПМС не трогается — иначе первый же
+     sync старой версией стёр бы реестр. */
+  @ApiPropertyOptional({ type: [ConnectContractSummaryDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(2000)
+  @ValidateNested({ each: true })
+  @Type(() => ConnectContractSummaryDto)
+  contracts?: ConnectContractSummaryDto[];
 }

@@ -25,8 +25,12 @@ import { ConnectCreateReservationDto } from './dto/connect-create-reservation.dt
 import { ConnectUpdateReservationDto } from './dto/connect-update-reservation.dto';
 import { ConnectReservationMealsDto } from './dto/connect-reservation-meals.dto';
 import { ConnectRegisterHotelDto } from './dto/connect-register-hotel.dto';
-import { ConnectContractPricesDto } from './dto/connect-contract-prices.dto';
+import {
+  ConnectContractPricesDto,
+  ConnectContractSummaryDto,
+} from './dto/connect-contract-prices.dto';
 import { ReviewCorporateTariffDto } from './dto/review-corporate-tariff.dto';
+import { contractRows } from './contract-registry';
 import { RatePlansService } from '../rate-plans/rate-plans.service';
 import { slugifyHotelName } from '../auth/slug.util';
 import { PartnerWebhookService } from './partner-webhook.service';
@@ -1115,7 +1119,12 @@ export class ConnectivityService {
    *
    * Одной транзакцией: между удалением лишнего и записью нового кабинет не
    * должен показывать полупустую картину — по ней как раз и спорят о деньгах. */
-  async syncContractPrices(slug: string, documents: ConnectContractPricesDto[], partnerId: string) {
+  async syncContractPrices(
+    slug: string,
+    documents: ConnectContractPricesDto[],
+    partnerId: string,
+    contracts?: ConnectContractSummaryDto[],
+  ) {
     const tenant = await this.resolveTenant(slug);
     /* Ключ документа — и день начала листа: у одного ДС бывает несколько
        сезонов, и без даты в ключе выживал последний (30.09.2026). */
@@ -1170,7 +1179,21 @@ export class ConnectivityService {
         else await tx.partnerContractPrice.create({ data });
       }
 
-      return { kept: incoming.size, removed: stale.length };
+      /* Реестр договоров — тем же набором и в одной транзакции с ценами: между
+         удалением лишнего и записью нового кабинет не должен показывать
+         полупустую картину. Поля нет ИЛИ оно null — реестр не трогаем вовсе:
+         так приходит старая Авиа, а null присылает битый клиент (в DTO
+         @IsOptional() пропускает null, и .map по нему уронил бы транзакцию
+         вместе с ценами). */
+      let contractsKept: number | null = null;
+      if (Array.isArray(contracts)) {
+        const rows = contractRows(contracts, tenant.id, partnerId);
+        await tx.partnerContract.deleteMany({ where: { tenantId: tenant.id, partnerId } });
+        if (rows.length) await tx.partnerContract.createMany({ data: rows });
+        contractsKept = rows.length;
+      }
+
+      return { kept: incoming.size, removed: stale.length, contracts: contractsKept };
     });
   }
 

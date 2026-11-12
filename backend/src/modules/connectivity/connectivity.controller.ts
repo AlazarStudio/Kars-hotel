@@ -345,7 +345,12 @@ export class ConnectivityController {
     @Body() dto: ConnectContractPricesSyncDto,
     @Req() req: PartnerRequest,
   ) {
-    return this.connectivity.syncContractPrices(slug, dto.documents, req.partner!.partnerId);
+    return this.connectivity.syncContractPrices(
+      slug,
+      dto.documents,
+      req.partner!.partnerId,
+      dto.contracts,
+    );
   }
 
   @Get('hotels/:slug/contract-prices')

@@ -123,6 +123,7 @@ model Tenant {
   auditLogs AuditLog[]
   partnerServices PartnerService[]
   contractPrices  PartnerContractPrice[]
+  contracts       PartnerContract[]
   ownerInvites    OwnerInvite[]
   aviaReportsKey  AviaReportsKey?
   offerAcceptances TenantOfferAcceptance[]
@@ -356,6 +357,42 @@ model PartnerContractPrice {
   @@map("partner_contract_price")
 }
 
+/// Договор оператора со списком приложений — реестр Авии (11.11.2026).
+///
+/// До этого гостиница знала о договоре только по приложению с ценами: у
+/// «Апартаментов сети Карс Авиа» 27 договоров и ни одного приложения, и в
+/// кабинете было пусто. Теперь договор живёт сам по себе, а приложение к нему —
+/// отдельная строка `partner_contract_price`.
+model PartnerContract {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Чей реестр: синхронизация партнёра трогает только свои договоры.
+  partnerId   String    @map("partner_id") @db.Uuid
+  partner     Partner   @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  /// Номер договора — тот же, что в документах цен (`hotelContract.number`).
+  number      String
+  /// Юрлицо партнёра, подписавшее договор, — снимок кода и названия.
+  accountCode String?   @map("account_code")
+  accountName String?   @map("account_name")
+  /// Срок договора, как в реестре.
+  validFrom   DateTime? @map("valid_from")
+  validTo     DateTime? @map("valid_to")
+  /// Рабочий договор гостиницы (у Авии `isPrimary`).
+  isPrimary   Boolean   @default(false) @map("is_primary")
+  /// ACTIVE | ARCHIVED: скрытый (hiddenAt) не присылается вовсе, архивный приходит как ARCHIVED.
+  state       String    @default("ACTIVE")
+  /// Какие услуги есть по договору: ACCOMMODATION, MEAL.
+  services    String[]  @default([])
+  /// Сколько приложений пришло в наборе; 0 — цен нет.
+  sheetsCount Int       @default(0) @map("sheets_count")
+  receivedAt  DateTime  @default(now()) @map("received_at")
+
+  @@unique([tenantId, partnerId, number], map: "partner_contract_key")
+  @@index([tenantId], map: "partner_contract_tenant_idx")
+  @@map("partner_contract")
+}
+
 model PartnerService {
   id        String              @id @default(uuid()) @db.Uuid
   tenantId  String              @map("tenant_id") @db.Uuid
@@ -478,6 +515,7 @@ model Partner {
   customers PartnerCustomer[]
   ratePlans RatePlan[]
   contractPrices PartnerContractPrice[]
+  contracts      PartnerContract[]
 
   @@map("partner")
 }

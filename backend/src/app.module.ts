@@ -17,6 +17,7 @@ import { RoomTypesModule } from './modules/room-types/room-types.module';
 import { RoomsModule } from './modules/rooms/rooms.module';
 import { demoSeedModules } from './modules/demo-seed/demo-seed.module';
 import { RatePlansModule } from './modules/rate-plans/rate-plans.module';
+import { ContractsModule } from './modules/contracts/contracts.module';
 import { RatesModule } from './modules/rates/rates.module';
 import { RestrictionsModule } from './modules/restrictions/restrictions.module';
 import { PricingModule } from './modules/pricing/pricing.module';
@@ -50,6 +51,7 @@ import { BackupsModule } from './modules/backups/backups.module';
     ...demoSeedModules(),
     RetentionModule,
     RatePlansModule,
+    ContractsModule,
     RatesModule,
     RestrictionsModule,
     PricingModule,
