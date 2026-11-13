@@ -23,6 +23,7 @@ import {
 import NumberInput from '../../shared/NumberInput.jsx';
 import Select from '../../shared/Select';
 import DateInput from '../../shared/DateInput';
+import WizardSteps from '../../shared/WizardSteps.jsx';
 import ContractPricesTab from './ContractPricesTab';
 import ContractCalendar from './ContractCalendar';
 
@@ -146,24 +147,6 @@ const mealForContract = (contract, preferred) => {
   if (!options.length) return preferred ?? 'NONE';
   return options.includes(preferred) ? preferred : options[0];
 };
-
-function WizardSteps({ steps, hints, step }) {
-  return (
-    <div style={{ padding: '0 24px 8px' }}>
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12.5 }}>
-        {steps.map((s, i) => (
-          <span
-            key={s}
-            style={{ fontWeight: i === step ? 700 : 400, color: i === step ? '#1B2A47' : '#8896AB' }}
-          >
-            {i + 1}. {s}
-          </span>
-        ))}
-      </div>
-      <div className={classes.fieldHint} style={{ marginTop: 6 }}>{hints[step]}</div>
-    </div>
-  );
-}
 
 /* Проверка своего тарифа: он уже создан, цены и сезоны записаны своими
    кнопками на шагах выше. Говорим то же, что говорило второе окно мастера. */
@@ -294,7 +277,7 @@ function RatePlanForm({ plan, prefill, allPlans, contracts, partners, roomTypes,
           </div>
           <button className={classes.closeBtn} onClick={onClose}>✕</button>
         </div>
-        {isNew && <WizardSteps steps={stepList} hints={hints} step={step} />}
+        {isNew && <WizardSteps steps={stepList} current={step} hint={hints[step]} />}
 
         {!priceStep && (
         <div className={classes.formGrid}>
@@ -419,7 +402,7 @@ function RatePlanForm({ plan, prefill, allPlans, contracts, partners, roomTypes,
               <span>Корпоративный тариф партнёра</span>
             </label>
             <div className={classes.fieldHint}>
-              Для гостей партнёра. Работает после того, как партнёр сверит его с договором.
+              Для гостей партнёра. Работает, когда в договоре партнёра есть цена на нужные ночи.
             </div>
           </div>
 

@@ -1,0 +1,87 @@
+/* ШАГИ МАСТЕРА (Tariffs → «Новый тариф»). Токены — из проектного приёма
+   TenantDialogs.module.css (.stepNo: 22px, серый кружок #E5E7EB, #374151;
+   пройденный — #16A34A с белым номером). Это не свободный текст и не
+   украшение: кружок отвечает на «где я», поэтому текущий — акцент экрана
+   #1E88E5, а пройденный зелёный. Эмодзи и цветных пиктограмм нет. */
+.steps {
+  padding: 0 24px 8px;
+}
+
+.list {
+  /* Промежуток шага и длина связки — одно число: линия ровно в gap. */
+  --steps-gap: 18px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--steps-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* Тонкая связка между шагами: строка читается как один прогресс-путь,
+   а не как набор отдельных подписей. Линия занимает ровно gap после шага,
+   поэтому у последнего шага её нет. */
+.step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  right: calc(-1 * var(--steps-gap));
+  top: 50%;
+  width: var(--steps-gap);
+  height: 1px;
+  background: #E5E7EB;
+  transform: translateY(-50%);
+}
+
+.stepNo {
+  box-sizing: border-box;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: 1px solid #E5E7EB;
+  border-radius: 50%;
+  background: #E5E7EB;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stepLabel {
+  font-size: 13.5px;
+  color: #374151;
+  line-height: 1.3;
+}
+
+.stepCurrent .stepNo {
+  background: #1E88E5;
+  border-color: #1E88E5;
+  color: #fff;
+}
+
+.stepCurrent .stepLabel {
+  font-weight: 700;
+  color: #1B2A47;
+}
+
+.stepDone .stepNo {
+  background: #16A34A;
+  border-color: #16A34A;
+  color: #fff;
+}
+
+.hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #9CA3AF;
+  line-height: 1.45;
+}

@@ -117,7 +117,7 @@ export default function ContractPricesTab({ plan }) {
         )}
       </div>
 
-      <table className={classes.occTable}>
+      <table className={classes.contractTable}>
         <thead>
           <tr>
             <th>Категория</th>
