@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RatePlansService } from './rate-plans.service';
 import { CreateRatePlanDto } from './dto/create-rate-plan.dto';
@@ -25,6 +35,17 @@ export class RatePlansController {
   @ApiOperation({ summary: 'Корпоративный тариф для оператора со статусом сверки' })
   operatorTariff() {
     return this.service.operatorTariff();
+  }
+
+  @Get(':id/contract-prices')
+  @RequirePermissions('rate.read')
+  @ApiOperation({ summary: 'Contract prices of a corporate tariff (read-only)' })
+  contractPrices(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.service.contractPrices(id, from, to);
   }
 
   @Get(':id')

@@ -1,6 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { contractNightRub } from '../contracts/contract-price';
+import { ContractsService } from '../contracts/contracts.service';
+import { PlanSliceSource } from '../contracts/slice';
 import { calculatePricing, makeMapLookup } from './pricing.calculator';
 import { BaselineResolver, isoDay } from './rate-resolution';
 import { PricingBreakdown, RatePlanLike } from './pricing.types';
@@ -16,7 +19,10 @@ export interface QuoteInput {
 
 @Injectable()
 export class PricingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly contracts: ContractsService,
+  ) {}
 
   /**
    * Returns the full pricing breakdown for the given (ratePlan × roomType × dates × occupancy)
@@ -49,9 +55,26 @@ export class PricingService {
           priceModifierType: true,
           priceModifierValue: true,
           occupancyPricing: true,
+          /* Корпоративному тарифу цена нужна из договора (11.11.2026): без среза
+             партнёра (договор, юрлицо, авиакомпания, вид брони) и питания
+             цену не с чем сверить, и своей строкой её не подменить. */
+          forOperator: true,
+          operatorContract: true,
+          partnerId: true,
+          partnerAccountId: true,
+          partnerCustomerId: true,
+          guestKind: true,
+          mealPlan: true,
         },
       });
       if (!ratePlan) throw new NotFoundException('Тариф не найден');
+
+      /* Корпоративный тариф не берёт свои строки цен: его цена — договор
+         (11.11.2026). Свои Rate, сезоны и базовые цены такого тарифа не читаем
+         вовсе — в базе они остаются как история и в расчёт не идут. */
+      if (ratePlan.forOperator) {
+        return this.corporateQuote(ratePlan, roomType.baseOccupancy, input, tx);
+      }
 
       const parentChain: RatePlanLike[] = [];
       let currentParentId = ratePlan.parentRatePlanId;
@@ -167,6 +190,69 @@ export class PricingService {
         currency: input.currency ?? 'RUB',
         rates,
       });
+    });
+  }
+
+  /**
+   * Цена корпоративного тарифа: только договор с оператором (11.11.2026).
+   *
+   * Свои строки цен (Rate, сезоны, базовая цена) у такого тарифа в базе есть,
+   * но как история: в расчёт они не читаются. Срез партнёра и
+   * документы договора читаются ОДИН раз (slicesFor), а ночь считает чистое
+   * правило договора: запроса «на день» здесь нет, и N+1 на трёхночную бронь
+   * не появляется. Нет среза — цены нет; подставить свои строки значило бы
+   * вернуть копию, от которой и уходили.
+   */
+  private async corporateQuote(
+    ratePlan: RatePlanLike & PlanSliceSource,
+    baseOccupancy: number,
+    input: QuoteInput,
+    tx: Prisma.TransactionClient,
+  ): Promise<PricingBreakdown> {
+    const sliced = await this.contracts.slicesFor([ratePlan], tx);
+    /* slicesFor кладёт запись для каждого переданного тарифа, поэтому заглушка
+       недостижима — оставлена только ради типа. */
+    const { slice, docs } = sliced.get(ratePlan.id) ?? { slice: null, docs: [] };
+
+    const corporateRub = new Map<string, string>();
+    if (slice) {
+      for (
+        let d = startOfUTC(input.arrival);
+        d < startOfUTC(input.departure);
+        d = new Date(d.getTime() + 86_400_000)
+      ) {
+        /* Ключ ночи — тот же isoDay, что и в поиске fallback: две разные
+           нарезки дат разошлись бы на границе суток. */
+        const day = isoDay(d);
+        const rub = contractNightRub(docs, slice, input.roomTypeId, input.occupancy, day);
+        if (rub != null) corporateRub.set(day, rub);
+      }
+    }
+
+    return calculatePricing({
+      fallback: (planId, date) => {
+        /* Договор спрашивают только про сам корпоративный тариф: у него не
+           бывает родителя (CHECK rate_plan_partner_scope_check + rate-plans
+           service), а строк цен нет вовсе. */
+        if (planId !== ratePlan.id) return null;
+        const rub = corporateRub.get(isoDay(date));
+        return rub == null ? null : new Prisma.Decimal(rub);
+      },
+      ratePlan: {
+        id: ratePlan.id,
+        parentRatePlanId: ratePlan.parentRatePlanId,
+        priceModifierType: ratePlan.priceModifierType,
+        priceModifierValue: ratePlan.priceModifierValue.toString(),
+        occupancyPricing: ratePlan.occupancyPricing,
+      },
+      parentChain: [],
+      arrival: startOfUTC(input.arrival),
+      departure: startOfUTC(input.departure),
+      occupancy: input.occupancy,
+      baseOccupancy,
+      roomTypeId: input.roomTypeId,
+      currency: input.currency ?? 'RUB',
+      rates: makeMapLookup([]),
     });
   }
 

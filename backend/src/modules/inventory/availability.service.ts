@@ -5,6 +5,13 @@ import { TenantContext } from '../../common/context/tenant-context';
 import { RedisService } from '../../common/redis/redis.service';
 import { InventoryService } from './inventory.service';
 import { BaselineResolver, isoDay } from '../pricing/rate-resolution';
+import { ContractsService } from '../contracts/contracts.service';
+import {
+  ContractPriceDoc,
+  TariffSlice,
+  contractNightRub,
+  contractVatRate,
+} from '../contracts/contract-price';
 import { eachDayOfInterval, parseISO, format, differenceInCalendarDays } from 'date-fns';
 
 /** Per-day availability result. */
@@ -54,7 +61,8 @@ export interface RatePlanPrice {
   partnerAccountId: string | null;
   partnerCustomerId: string | null;
   guestKind: string | null;
-  /** НДС тарифа партнёра, %; null — без НДС или не задан. */
+  /** НДС тарифа партнёра, %; у корпоративного — ставка договора на первую
+   *  ночь (11.11.2026), null — без НДС или не задан. */
   vatRate: string | null;
   nights: number;
   perNight: RatePlanNight[];
@@ -74,6 +82,7 @@ export class AvailabilityService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
+    private readonly contracts: ContractsService,
   ) {}
 
   /**
@@ -385,6 +394,13 @@ export class AvailabilityService {
    * bookable number (matching the published catalog price list). Plans that
    * cannot be priced for every night are dropped.
    *
+   * Corporate (partner) plans are the exception: they are priced ONLY from the
+   * partner contract registry (ACCOMMODATION price grids, exact guest count).
+   * A partner plan never falls back to its own rate/standard rows or to the
+   * category base price; if any night has no contract price, the plan is
+   * dropped. A corporate plan is priced only when `guests` is given; without
+   * it such a plan is silently not offered, which is now its whole price path.
+   *
    * @param basePrice  Category base price used as the last-resort fallback.
    */
   async priceByPlan(
@@ -423,6 +439,7 @@ export class AvailabilityService {
           name: true,
           mealPlan: true,
           partnerId: true,
+          operatorContract: true,
           partnerAccountId: true,
           partnerCustomerId: true,
           guestKind: true,
@@ -430,6 +447,21 @@ export class AvailabilityService {
         },
       });
       if (!ratePlans.length) return [] as RatePlanPrice[];
+
+      /* Корпоративный тариф считает по договору, а не по своим строкам
+         (11.11.2026): сетки цен приезжают в зеркале договора. Срезы и документы
+         сервис читает один раз на партнёра — их единицы. */
+      const contractByPlan = new Map<
+        string,
+        { slice: TariffSlice; docs: ContractPriceDoc[] }
+      >();
+      const slices = await this.contracts.slicesFor(ratePlans, tx);
+      for (const plan of ratePlans) {
+        const entry = slices.get(plan.id);
+        if (entry?.slice) {
+          contractByPlan.set(plan.id, { slice: entry.slice, docs: entry.docs });
+        }
+      }
 
       // Per-day Rate overrides for every plan of this room type in range.
       const dailyRows = await tx.$queryRaw<
@@ -485,8 +517,7 @@ export class AvailabilityService {
 
       /* Цена на день — по числу гостей (29.09.2026). Для своих тарифов отеля,
          если цены на это число нет, — самая низкая из заведённых на день, как
-         было; для тарифа партнёра — только ровно на это число: цена «за
-         двоих» за одного в его счёт не идёт. */
+         было. */
       const dailyByPlanDay = new Map<string, { occupancy: number; price: Prisma.Decimal }[]>();
       for (const r of dailyRows) {
         const k = `${r.rate_plan_id}|${format(r.date, 'yyyy-MM-dd')}`;
@@ -494,14 +525,13 @@ export class AvailabilityService {
         list.push({ occupancy: r.occupancy, price: new Prisma.Decimal(r.price) });
         dailyByPlanDay.set(k, list);
       }
-      const dailyFor = (planId: string, day: string, strict: boolean): Prisma.Decimal | null => {
+      const dailyFor = (planId: string, day: string): Prisma.Decimal | null => {
         const list = dailyByPlanDay.get(`${planId}|${day}`);
         if (!list?.length) return null;
         if (guests) {
           // Точное число гостей, иначе цена «на любое» (0) — как у базовых цен.
           const exact = list.find((x) => x.occupancy === guests) ?? list.find((x) => x.occupancy === 0);
           if (exact) return exact.price;
-          if (strict) return null;
         }
         return list.reduce((m, x) => (x.price.lessThan(m) ? x.price : m), list[0].price);
       };
@@ -512,18 +542,24 @@ export class AvailabilityService {
         let total: Prisma.Decimal | null = new Prisma.Decimal(0);
         let cheapest: Prisma.Decimal | null = null;
 
-        /* Тариф партнёра не берёт базовую цену категории: он про договорные
-           цифры, и «по прайсу» вместо договора — ровно та подмена, ради
-           которой тариф заводили. Нет своей цены на ночь — тариф не
-           предлагается. */
         const isPartnerPlan = plan.partnerId != null;
+        const corp = contractByPlan.get(plan.id);
+        /* У тарифа партнёра своих цен нет вовсе: договор или ничего.
+           Подставить сюда «свои» строки значило бы вернуть копию, от
+           которой и уходили. */
         for (const date of stayDates) {
           const day = format(date, 'yyyy-MM-dd');
-          const daily = dailyFor(plan.id, day, isPartnerPlan);
-          const eff: Prisma.Decimal | null =
-            daily ??
-            baseline.resolve(plan.id, roomTypeId, day, guests) ??
-            (isPartnerPlan ? null : baseFallback);
+          let eff: Prisma.Decimal | null;
+          if (isPartnerPlan) {
+            const rub =
+              corp && guests
+                ? contractNightRub(corp.docs, corp.slice, roomTypeId, guests, day)
+                : null;
+            eff = rub == null ? null : new Prisma.Decimal(rub);
+          } else {
+            const daily = dailyFor(plan.id, day);
+            eff = daily ?? baseline.resolve(plan.id, roomTypeId, day, guests) ?? baseFallback;
+          }
 
           perNight.push({ date: day, price: eff != null ? eff.toFixed(2) : null });
 
@@ -547,7 +583,25 @@ export class AvailabilityService {
           partnerAccountId: plan.partnerAccountId,
           partnerCustomerId: plan.partnerCustomerId,
           guestKind: plan.guestKind,
-          vatRate: plan.vatRate != null ? plan.vatRate.toString() : null,
+          /* НДС корпоративного тарифа — из документа договора (спека §3):
+             поле тарифа у него больше не заполняется, и отдать сюда null
+             значило бы попросить оператора считать по своей ставке. В ответе
+             одно число на весь срок — берём ставку первой ночи; ставка,
+             разная по ночам, сюда не влезает (её отдаёт contractPrices). */
+          vatRate: isPartnerPlan
+            ? corp && stayDates.length
+              ? (() => {
+                  const vat = contractVatRate(
+                    corp.docs,
+                    corp.slice,
+                    format(stayDates[0], 'yyyy-MM-dd'),
+                  );
+                  return vat == null ? null : String(vat);
+                })()
+              : null
+            : plan.vatRate != null
+              ? plan.vatRate.toString()
+              : null,
           nights: stayDates.length,
           perNight,
           total: total.toFixed(2),

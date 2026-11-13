@@ -6,11 +6,12 @@ import {
   tariffFingerprint,
 } from './operator-tariff-status';
 
-/* Правило проверяется ОТРИЦАНИЕМ: тариф применяется только подтверждённый и
- * только пока подтверждение — про сегодняшние цифры. Всё остальное — «нет».
+/* Правило проверяется ОТРИЦАНИЕМ: тариф применяется, только когда по его срезу
+ * есть цена договора на нужный день. Всё остальное — «нет», в том числе
+ * прежнее «подтверждено»: вердикт человека — история, а не шлюз.
  *
- * Дырка, которую эти тесты сторожат, глазами не видна: состояние «подтверждён»
- * выглядит одинаково и когда оно правда, и когда цены с тех пор поменялись. */
+ * Дырка, которую эти тесты сторожат, глазами не видна: тариф с ценой договора
+ * выглядит рабочим и тогда, когда цены на запрошенные ночи в договоре нет. */
 
 const doc = (over: Partial<ContractPriceDoc> = {}): ContractPriceDoc => ({
   contractNumber: '18',
@@ -122,84 +123,53 @@ describe('отпечаток сверки', () => {
 });
 
 describe('состояние корпоративного тарифа', () => {
-  const confirmed = (fingerprint: string) => ({
+  const tariffPlan = (over: Record<string, unknown> = {}) => ({
     ...shape,
+    partnerId: 'p1',
     operatorContract: '18',
-    reviewVerdict: 'CONFIRMED' as const,
-    reviewFingerprint: fingerprint,
+    reviewVerdict: null,
+    reviewFingerprint: null,
+    ...over,
   });
 
-  it('без вердикта не применяется, даже если цены совпадают', () => {
-    const cur = fp([doc()]);
-    const s = operatorTariffStatus(
-      { ...shape, operatorContract: '18', reviewVerdict: null, reviewFingerprint: null },
-      [doc()],
-      cur,
-    );
-    expect(s.state).toBe('DRAFT');
-    expect(s.applies).toBe(false);
+  it('цена договора есть — применяется, вердикт человека не нужен', () => {
+    const s = operatorTariffStatus(tariffPlan() as never, [doc()], true);
+    expect(s.state).toBe('CONFIRMED');
+    expect(s.applies).toBe(true);
+    expect(s.reason).toBe('Цены из договора');
   });
 
   it('без договора говорит, чего не хватает', () => {
-    const s = operatorTariffStatus(
-      { ...shape, operatorContract: null, reviewVerdict: null, reviewFingerprint: null },
-      [doc()],
-      'x',
-    );
+    const s = operatorTariffStatus(tariffPlan({ operatorContract: null }) as never, [doc()], true);
+    expect(s.applies).toBe(false);
     expect(s.reason).toContain('Не указан договор');
   });
 
   it('договор есть, а цен от оператора нет — так и сказано', () => {
-    const s = operatorTariffStatus(
-      { ...shape, operatorContract: '18', reviewVerdict: null, reviewFingerprint: null },
-      [],
-      'x',
-    );
+    const s = operatorTariffStatus(tariffPlan() as never, [], true);
+    expect(s.applies).toBe(false);
     expect(s.reason).toContain('ещё не прислал цены');
   });
 
-  it('подтверждён и цены не менялись — применяется', () => {
-    const cur = fp([doc()]);
-    const s = operatorTariffStatus(confirmed(cur), [doc()], cur);
-    expect(s.state).toBe('CONFIRMED');
-    expect(s.applies).toBe(true);
+  it('приложение есть, а цены на сегодня нет — не применяется', () => {
+    const s = operatorTariffStatus(tariffPlan() as never, [doc()], false);
+    expect(s.applies).toBe(false);
+    expect(s.reason).toContain('на сегодня');
   });
 
-  it('пришла ДС — подтверждение слетает САМО', () => {
-    const wasConfirmedWith = fp([doc()]);
-    const docsNow = [doc(), doc({ amendmentNumber: '2' })];
-    const s = operatorTariffStatus(
-      confirmed(wasConfirmedWith),
-      docsNow,
-      fp(docsNow),
-    );
-    expect(s.state).toBe('STALE');
+  it('чужой договор не считается', () => {
+    const s = operatorTariffStatus(tariffPlan({ operatorContract: '9' }) as never, [doc()], true);
     expect(s.applies).toBe(false);
   });
 
-  it('гостиница подняла ставку после подтверждения — тариф больше не применяется', () => {
-    const wasConfirmedWith = fp([doc()]);
+  /* Вердикт остаётся в базе как история и на применение не влияет: именно
+     этот случай ломал 7 гостиниц — «подтверждено», а цен нет. */
+  it('старое «подтверждено» без цены договора не применяет тариф', () => {
     const s = operatorTariffStatus(
-      confirmed(wasConfirmedWith),
+      tariffPlan({ reviewVerdict: 'CONFIRMED', reviewFingerprint: fp([doc()]) }) as never,
       [doc()],
-      fp([doc()], [day(3200)]),
+      false,
     );
-    expect(s.state).toBe('STALE');
-    expect(s.applies).toBe(false);
-  });
-
-  it('отказ держится, пока оператор не посмотрит снова', () => {
-    const s = operatorTariffStatus(
-      {
-        ...shape,
-        operatorContract: '18',
-        reviewVerdict: 'REJECTED',
-        reviewFingerprint: fp([doc()]),
-      },
-      [doc()],
-      fp([doc()], [day(2800)]),
-    );
-    expect(s.state).toBe('REJECTED');
     expect(s.applies).toBe(false);
   });
 });

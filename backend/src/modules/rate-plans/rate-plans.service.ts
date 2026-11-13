@@ -1,5 +1,13 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PartnerWebhookService } from '../connectivity/partner-webhook.service';
+import { contractNightRub, contractVatRate } from '../contracts/contract-price';
+import { ContractsService } from '../contracts/contracts.service';
+import { PlanSliceSource } from '../contracts/slice';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { InventoryService } from '../inventory/inventory.service';
@@ -15,6 +23,7 @@ import { UpdateRatePlanDto } from './dto/update-rate-plan.dto';
 import {
   ContractPriceDoc,
   PlanPriceRow,
+  ReviewedPlan,
   TariffStatus,
   docsOfContract,
   documentsLabel,
@@ -49,6 +58,9 @@ export class RatePlansService {
     private readonly prisma: PrismaService,
     private readonly webhooks: PartnerWebhookService,
     private readonly redis: RedisService,
+    /* Цены корпоративного тарифа живут в договоре (11.11.2026): срез тарифа и
+       сетки документа читает модуль договоров, а не своя копия запроса здесь. */
+    private readonly contracts: ContractsService,
   ) {}
 
   /* Состав, условия и активность тарифов входят в кеш цен предложения —
@@ -202,15 +214,18 @@ export class RatePlansService {
   }
 
   /** Действующие тарифы партнёра со статусом сверки — выбор тарифа для
-   *  наличия и брони (29.09.2026). */
-  async partnerPlans(partnerId: string) {
+   *  наличия и брони (29.09.2026). День приходит от вызывающего: у предложения
+   *  и брони — день заезда, кабинет не передаёт его вовсе, и тогда берётся
+   *  сегодня. «Применяется» значит «есть цена договора на нужные ночи», а не
+   *  «на сегодня» (11.11.2026). */
+  async partnerPlans(partnerId: string, day?: string) {
     const plans = await this.prisma.forTenant((tx) =>
       tx.ratePlan.findMany({
         where: { partnerId, isActive: true },
         orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       }),
     );
-    return this.withOperatorStatus(plans);
+    return this.withOperatorStatus(plans, day);
   }
 
   /* КОРПОРАТИВНЫЕ ТАРИФЫ ПАРТНЁРА ДЛЯ СВЕРКИ (29.09.2026).
@@ -335,6 +350,102 @@ export class RatePlansService {
     return { ...decorated, contractDocs: docs, categories };
   }
 
+  /* Цены договора для экрана корпоративного тарифа (11.11.2026): периоды ДС и
+     сетка по категориям и числу гостей. Считается тем же правилом, что и
+     расчёт брони, — иначе экран и счёт разошлись бы молча. */
+  async contractPrices(id: string, from?: string, to?: string) {
+    const plan = await this.prisma.forTenant((tx) =>
+      tx.ratePlan.findUnique({ where: { id } }),
+    );
+    if (!plan) throw new NotFoundException('Тариф не найден');
+    if (!plan.forOperator) {
+      throw new BadRequestException('Это не корпоративный тариф оператора');
+    }
+
+    const roomTypes = await this.prisma.forTenant((tx) =>
+      tx.roomType.findMany({
+        where: { isActive: true },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+        select: { id: true, name: true, maxOccupancy: true },
+      }),
+    );
+    const { slice, unknownCustomer } = await this.contracts.sliceOf(plan);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const dayFrom = from ?? today;
+    const dayTo = to ?? dayFrom;
+    const days: string[] = [];
+    for (
+      let d = new Date(`${dayFrom}T00:00:00.000Z`);
+      d <= new Date(`${dayTo}T00:00:00.000Z`) && days.length < 120;
+      d = new Date(d.getTime() + 86_400_000)
+    ) {
+      days.push(d.toISOString().slice(0, 10));
+    }
+
+    const categories = roomTypes.map((rt) => ({
+      categoryId: rt.id,
+      name: rt.name,
+      capacity: rt.maxOccupancy,
+    }));
+    /* hasSlice — экран отличает «нет среза» от «срез есть, сеток нет»: иначе оба печатают «Авиа не прислала приложение». */
+    if (!slice) {
+      return {
+        contractNumber: plan.operatorContract,
+        hasSlice: false,
+        unknownCustomer,
+        periods: [] as string[],
+        categories,
+        nights: [] as { day: string; prices: { categoryId: string; occupancy: number; price: string }[] }[],
+        vatRate: null as number | null,
+      };
+    }
+
+    const docs = await this.contracts.docsFor(slice.partnerId);
+    /* Периоды — по тем же документам, что берёт правило цены (contract-price,
+       ownDocs): юрлицо среза обязано совпасть. Иначе выбор периода предложил
+       бы ДС другого юрлица, а цена по ней не считалась бы. */
+    const periods = [
+      ...new Set(
+        docs
+          .filter(
+            (d) =>
+              d.service === 'ACCOMMODATION' &&
+              d.contractNumber === slice.contractNumber &&
+              (!slice.accountCode || !d.accountCode || d.accountCode === slice.accountCode),
+          )
+          .flatMap((d) => (d.fill ?? []).map((g) => String(g.from).slice(0, 10))),
+      ),
+    ].sort();
+
+    const nights = days
+      .map((day) => ({
+        day,
+        prices: roomTypes.flatMap((rt) => {
+          const rows: { categoryId: string; occupancy: number; price: string }[] = [];
+          for (let g = 1; g <= Math.max(1, rt.maxOccupancy ?? 1); g++) {
+            const rub = contractNightRub(docs, slice, rt.id, g, day);
+            if (rub != null) rows.push({ categoryId: rt.id, occupancy: g, price: rub });
+          }
+          return rows;
+        }),
+      }))
+      .filter((n) => n.prices.length > 0);
+
+    return {
+      contractNumber: plan.operatorContract,
+      hasSlice: true,
+      unknownCustomer: false,
+      periods,
+      categories,
+      nights,
+      /* НДС — документа ЗАПРОШЕННОГО окна (11.11.2026): при двух ДС с разными
+         ставками «сегодняшняя» показывала бы отелю не ту ставку, а если
+         документ периода сегодня не покрывает — ещё и «без НДС». */
+      vatRate: contractVatRate(docs, slice, dayFrom),
+    };
+  }
+
   /* ЗАПИСЬ ВЕРДИКТА ЖИВЁТ ЗДЕСЬ, рядом с правилом.
    *
    * Подтверждают из Авии по партнёрскому API, но считать отпечаток обязана
@@ -360,24 +471,17 @@ export class RatePlansService {
     }
 
     const mine = docsOfContract(await this.contractDocs(), plan.operatorContract, plan.partnerId);
-    if (!mine.length) {
-      // Подтверждать нечему: сверять не с чем, и «подтверждено» было бы
-      // подписью под пустым листом.
-      throw new ConflictException(
-        'Нет ценового приложения договора — сверять не с чем',
-      );
-    }
-    const prices = await this.planPrices([id]);
-    const fingerprint = tariffFingerprint({
-      docs: mine,
-      plan,
-      prices: prices.get(id) ?? [],
-    });
+    const fingerprint = tariffFingerprint({ docs: mine, plan, prices: [] });
 
-    /* Решение относится к тем цифрам, которые человек видел на экране.
-       Между открытием экрана и нажатием кнопки цены могли уехать — прислать
-       новую ДС или поправить ставку никто не мешает. Подтвердить вслепую то,
-       чего не видел, страшнее, чем сходить на экран второй раз. */
+    /* Решение относится к тем документам, которые человек видел на экране.
+       Между открытием экрана и нажатием кнопки могла прийти новая ДС или
+       смениться условия тарифа — никто не мешает. Подтвердить вслепую то,
+       чего не видел, страшнее, чем сходить на экран второй раз.
+
+       Отпечаток теперь договорный (11.11.2026): он стережёт ДС и условия, а не
+       строки цен тарифа — своих цен у корпоративного тарифа больше нет. Текст
+       ошибки остался прежним и говорит про «цены»: это вопрос формулировки к
+       Мусе, а не правка на свой вкус. */
     if (input.seenFingerprint !== fingerprint) {
       throw new ConflictException(
         'Цены изменились, пока вы смотрели тариф. Откройте его заново и сверьте ещё раз.',
@@ -627,33 +731,42 @@ export class RatePlansService {
     return byPlan;
   }
 
-  /* Статус НЕ хранится: он вычисляется на каждом чтении сравнением отпечатка.
-   * Цена этого — два запроса на список тарифов; цена обратного — «подтверждён»
-   * под ценами, которых никто не подтверждал. */
-  private async withOperatorStatus<T extends { id: string; forOperator: boolean }>(
+  /* Статус НЕ хранится: он вычисляется на каждом чтении — по наличию цены
+   * договора на НУЖНЫЙ день (11.11.2026), а не по вердикту человека. День
+   * выбирает вызывающий: предложение и бронь — день заезда, экран — сегодня,
+   * кабинет день не передаёт вовсе. Цена этого — документы договора и срезы
+   * тарифов; цена обратного — «применяется» у тарифа, которого в договоре нет. */
+  private async withOperatorStatus<
+    T extends { id: string; forOperator: boolean } & PlanSliceSource,
+  >(
     plans: T[],
+    /* День, за который спрашивается цена договора (11.11.2026): его передаёт
+       вызывающий — предложение и бронь передают день заезда, экран и кабинет
+       не передают ничего и получают сегодняшний. Иначе новый годовой договор
+       с сеткой из будущего делал бы тариф невидимым ровно на те ночи, которые
+       он уже умеет посчитать. */
+    day = new Date().toISOString().slice(0, 10),
   ): Promise<(T & { operatorStatus: TariffStatus | null; fingerprint: string | null })[]> {
     const corporate = plans.filter((p) => p.forOperator);
     if (!corporate.length) {
       return plans.map((p) => ({ ...p, operatorStatus: null, fingerprint: null }));
     }
-    const [docs, prices] = await Promise.all([
+    const [docs, states] = await Promise.all([
       this.contractDocs(),
-      this.planPrices(corporate.map((p) => p.id)),
+      this.contracts.priceStates(corporate, day),
     ]);
     return plans.map((p) => {
       if (!p.forOperator) return { ...p, operatorStatus: null, fingerprint: null };
-      const plan = p as unknown as Parameters<typeof operatorTariffStatus>[0];
+      const plan = p as unknown as ReviewedPlan;
+      /* Цен тарифа больше нет — отпечаток держится на договоре и условиях,
+         поэтому новая ДС его меняет, а правка несуществующих строк — нет. */
       const mine = docsOfContract(docs, plan.operatorContract, plan.partnerId);
-      const fingerprint = tariffFingerprint({
-        docs: mine,
-        plan,
-        prices: prices.get(p.id) ?? [],
-      });
+      const fingerprint = tariffFingerprint({ docs: mine, plan, prices: [] });
+      const state = states.get(p.id);
       return {
         ...p,
         fingerprint,
-        operatorStatus: operatorTariffStatus(plan, docs, fingerprint),
+        operatorStatus: operatorTariffStatus(plan, docs, state?.hasPrice === true),
       };
     });
   }

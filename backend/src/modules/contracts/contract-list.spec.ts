@@ -25,6 +25,7 @@ const doc = (over: Record<string, unknown> = {}) => ({
   accountName: 'Ани Групп Аэро',
   service: 'ACCOMMODATION',
   receivedAt: new Date('2026-11-10T10:00:00.000Z'),
+  fill: null,
   ...over,
 });
 
@@ -90,6 +91,67 @@ describe('mergeContractList', () => {
     const [row] = mergeContractList([reg({ sheetsCount: 2 })], []);
     expect(row).toMatchObject({ documents: 2, hasPrices: false });
     expect(row.receivedAt).toBe('2026-11-10T10:00:00.000Z');
+  });
+
+  it('срезы договора собираются из сеток и не повторяются', () => {
+    const fill = [
+      {
+        from: '2026-01-01',
+        slices: [
+          { customer: null, guestKind: null, mealPlan: 'BB', cells: [] },
+          { customer: 'cosmos', guestKind: 'CREW', mealPlan: 'BB', cells: [] },
+        ],
+      },
+      {
+        from: '2026-06-01',
+        slices: [
+          { customer: null, guestKind: null, mealPlan: 'BB', cells: [] },
+          { customer: null, guestKind: null, mealPlan: 'HB', cells: [] },
+        ],
+      },
+    ];
+    const [row] = mergeContractList([reg({ sheetsCount: 2 })], [doc({ fill })]);
+    expect(row.slices).toEqual([
+      { customer: null, guestKind: null, mealPlan: 'BB' },
+      { customer: null, guestKind: null, mealPlan: 'HB' },
+      { customer: 'cosmos', guestKind: 'CREW', mealPlan: 'BB' },
+    ]);
+  });
+
+  it('без сеток срезов нет, а не пустой срез', () => {
+    const [row] = mergeContractList([reg()], [doc()]);
+    expect(row.slices).toEqual([]);
+  });
+
+  it('битая сетка список не роняет, а незнакомые срезы отбрасываются', () => {
+    /* fill — Json чужой системы: сетка может быть null, slices — не массивом,
+       вид брони — незнакомым. Список договоров из-за этого падать не должен. */
+    const fill = [
+      null,
+      { from: '2026-01-01', slices: 5 },
+      {
+        from: '2026-02-01',
+        slices: [
+          { customer: null, guestKind: 'SICK', mealPlan: 'BB', cells: [] },
+          { customer: 7, guestKind: null, mealPlan: 'BB', cells: [] },
+          { customer: 'cosmos', guestKind: 'CREW', mealPlan: 'HB', cells: [] },
+        ],
+      },
+    ];
+    const [row] = mergeContractList([reg()], [doc({ fill })]);
+    expect(row.slices).toEqual([{ customer: 'cosmos', guestKind: 'CREW', mealPlan: 'HB' }]);
+  });
+
+  it('один срез из двух приложений договора не повторяется', () => {
+    const fill = [
+      {
+        from: '2026-01-01',
+        slices: [{ customer: null, guestKind: null, mealPlan: 'BB', cells: [] }],
+      },
+    ];
+    const [row] = mergeContractList([reg()], [doc({ fill }), doc({ service: 'MEAL', fill })]);
+    expect(row.documents).toBe(2);
+    expect(row.slices).toEqual([{ customer: null, guestKind: null, mealPlan: 'BB' }]);
   });
 
   it('порядок: рабочий договор выше, затем по номеру', () => {

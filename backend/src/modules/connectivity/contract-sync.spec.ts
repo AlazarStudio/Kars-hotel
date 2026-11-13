@@ -23,7 +23,7 @@ const ONE: ConnectContractSummaryDto = {
   sheets: 1,
 };
 
-function build() {
+function build(opts: { keys?: jest.Mock } = {}) {
   const created: { data: Row[] }[] = [];
   const tx = {
     partnerContract: {
@@ -48,6 +48,15 @@ function build() {
       $transaction: jest.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)),
     },
   };
+  /* Сброс кэша цен после синхронизации: dropPriceCache спрашивает ключи и
+     удаляет их. Отдаём реалистичный ключ витрины, чтобы проверить обе ветки,
+     а не только вход. */
+  const redis = {
+    raw: {
+      keys: opts.keys ?? jest.fn(async () => ['avail:t1:rt:in:out:plans:g2']),
+      del: jest.fn(async () => 1),
+    },
+  };
   const service = new ConnectivityService(
     {} as never,
     prisma as never,
@@ -57,8 +66,9 @@ function build() {
     {} as never,
     {} as never,
     {} as never,
+    redis as never,
   );
-  return { service, tx, created };
+  return { service, tx, created, redis };
 }
 
 describe('syncContractPrices — реестр договоров в зеркале', () => {
@@ -70,6 +80,33 @@ describe('syncContractPrices — реестр договоров в зеркал
     expect(tx.partnerContract.deleteMany).not.toHaveBeenCalled();
     expect(tx.partnerContract.createMany).not.toHaveBeenCalled();
     expect(res.contracts).toBeNull();
+  });
+
+  /* Цена ночи живёт в кэше витрины минуту; после синхронизации договора она
+     обязана умереть — иначе гостиница и оператор минуту видят старую цену.
+     Сбрасываем в любом наборе, и без поля contracts: сетки цен перезаписываются
+     всегда. */
+  it('drops the price cache after every sync', async () => {
+    const { service, redis } = build();
+    await service.syncContractPrices('hotel', [], 'p1');
+    expect(redis.raw.keys).toHaveBeenCalledWith('avail:t1:*:plans:*');
+    expect(redis.raw.del).toHaveBeenCalledWith('avail:t1:rt:in:out:plans:g2');
+  });
+
+  /* Строки уже закоммичены; сбой Redis после COMMIT не должен превращать
+     успешную синхронизацию в 500, иначе Авиа запишет «зеркало не
+     синхронизировано» для уже применённой записи. */
+  it('resolves the committed result when the price cache is down', async () => {
+    const keysDown = jest.fn(async () => {
+      throw new Error('redis down');
+    });
+    const { service, tx } = build({ keys: keysDown });
+    await expect(service.syncContractPrices('hotel', [], 'p1')).resolves.toEqual({
+      kept: 0,
+      removed: 0,
+      contracts: null,
+    });
+    expect(tx.partnerContractPrice.findMany).toHaveBeenCalled();
   });
 
   it('clears the registry on an empty set', async () => {

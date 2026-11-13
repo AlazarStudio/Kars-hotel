@@ -5,6 +5,7 @@ import { mergeContractList } from './contract-list';
 import {
   ContractPriceDoc,
   FillGrid,
+  TariffSlice,
   contractHasPriceOn,
   contractNightRub,
   contractVatRate,
@@ -21,6 +22,13 @@ export interface DirectoryEntry {
 export interface PartnerDirectory {
   accounts: Map<string, DirectoryEntry>;
   customers: Map<string, DirectoryEntry>;
+}
+
+/** Срез тарифа и документы, из которых считается его цена. */
+interface SliceWithDocs {
+  slice: TariffSlice | null;
+  unknownCustomer: boolean;
+  docs: ContractPriceDoc[];
 }
 
 /* То, что нужно от базы этому сервису: и внутри транзакции вызывающего, и в
@@ -58,6 +66,7 @@ export class ContractsService {
             accountName: true,
             service: true,
             receivedAt: true,
+            fill: true,
           },
         }),
       ]),
@@ -130,7 +139,7 @@ export class ContractsService {
    * молча означал бы «любая», то есть чужую цену, поэтому запись берём только
    * действующую, а отсутствие разводим по смыслу: авиакомпания — «не знаем
    * кого» (unknownCustomer), юрлицо — просто не считаем и «любым» не
-   * подменяем. `dir` — уже загруженный справочник партнёра (priceStates). */
+   * подменяем. `dir` — уже загруженный справочник партнёра (slicesFor). */
   async sliceOf(
     plan: PlanSliceSource,
     tx?: Prisma.TransactionClient,
@@ -169,17 +178,14 @@ export class ContractsService {
     return contractNightRub(docs, slice, roomTypeId, guests, day);
   }
 
-  /** Состояние цен тарифов на день: есть ли цена и каков НДС договора. */
-  async priceStates(
+  /** Срезы и документы тарифов сразу: справочник партнёра и сетки читаются
+   *  один раз на партнёра, а не на тариф. */
+  async slicesFor(
     plans: Array<PlanSliceSource & { id: string }>,
-    day: string,
     tx?: Prisma.TransactionClient,
-  ): Promise<Map<string, { hasPrice: boolean; unknownCustomer: boolean; vatRate: number | null }>> {
-    const out = new Map<
-      string,
-      { hasPrice: boolean; unknownCustomer: boolean; vatRate: number | null }
-    >();
-    const byPartner = new Map<string, ContractPriceDoc[]>();
+  ): Promise<Map<string, SliceWithDocs>> {
+    const out = new Map<string, SliceWithDocs>();
+    const docsByPartner = new Map<string, ContractPriceDoc[]>();
     const directories = new Map<string, PartnerDirectory>();
     for (const plan of plans) {
       /* Справочник читается один раз на партнёра и передаётся в sliceOf:
@@ -192,14 +198,37 @@ export class ContractsService {
       const dir = partnerId ? directories.get(partnerId) : undefined;
       const { slice, unknownCustomer } = await this.sliceOf(plan, tx, dir);
       if (!slice) {
-        out.set(plan.id, { hasPrice: false, unknownCustomer, vatRate: null });
+        out.set(plan.id, { slice: null, unknownCustomer, docs: [] });
         continue;
       }
-      if (!byPartner.has(slice.partnerId)) {
-        byPartner.set(slice.partnerId, await this.docsFor(slice.partnerId, tx));
+      if (!docsByPartner.has(slice.partnerId)) {
+        docsByPartner.set(slice.partnerId, await this.docsFor(slice.partnerId, tx));
       }
-      const docs = byPartner.get(slice.partnerId) as ContractPriceDoc[];
       out.set(plan.id, {
+        slice,
+        unknownCustomer,
+        docs: docsByPartner.get(slice.partnerId) as ContractPriceDoc[],
+      });
+    }
+    return out;
+  }
+
+  /** Состояние цен тарифов на день: есть ли цена и каков НДС договора. */
+  async priceStates(
+    plans: Array<PlanSliceSource & { id: string }>,
+    day: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<Map<string, { hasPrice: boolean; unknownCustomer: boolean; vatRate: number | null }>> {
+    const out = new Map<
+      string,
+      { hasPrice: boolean; unknownCustomer: boolean; vatRate: number | null }
+    >();
+    for (const [id, { slice, unknownCustomer, docs }] of await this.slicesFor(plans, tx)) {
+      if (!slice) {
+        out.set(id, { hasPrice: false, unknownCustomer, vatRate: null });
+        continue;
+      }
+      out.set(id, {
         hasPrice: contractHasPriceOn(docs, slice, day),
         unknownCustomer: false,
         vatRate: contractVatRate(docs, slice, day),

@@ -11,9 +11,11 @@ import { OwnerInviteService } from '../auth/owner-invite.service';
 import { PartnerPlanQuery, pickPartnerPlans } from '../rate-plans/partner-tariff-match';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { RedisService } from '../../common/redis/redis.service';
 import { TenantContext, RequestContext } from '../../common/context/tenant-context';
 import { AuthService } from '../auth/auth.service';
 import { AvailabilityService } from '../inventory/availability.service';
+import { InventoryService } from '../inventory/inventory.service';
 import {
   ReservationsService,
   RESERVATION_CREATE_REJECTED_CODE,
@@ -31,6 +33,7 @@ import {
 } from './dto/connect-contract-prices.dto';
 import { ReviewCorporateTariffDto } from './dto/review-corporate-tariff.dto';
 import { contractRows } from './contract-registry';
+import { offerPlanIds } from './offer-plans';
 import { RatePlansService } from '../rate-plans/rate-plans.service';
 import { slugifyHotelName } from '../auth/slug.util';
 import { PartnerWebhookService } from './partner-webhook.service';
@@ -64,6 +67,7 @@ export class ConnectivityService {
     private readonly ratePlans: RatePlansService,
     private readonly partnerWebhooks: PartnerWebhookService,
     private readonly storage: StorageService,
+    private readonly redis: RedisService,
   ) {}
 
   // ─── Catalog (cross-tenant) ────────────────────────────────────────────────
@@ -425,17 +429,24 @@ export class ConnectivityService {
        * тому, что сегодня дешевле, и случайно дешёвый тариф выходного дня
        * показал бы оператору цену, по которой ему счёт не выставят.
        *
-       * Подтверждённый корпоративный тариф становится ценой предложения.
-       * Неподтверждённый из списка убирается совсем: предложить его значило бы
-       * дать выбрать цену, которую никто не сверял, — а подтверждение ровно
-       * для того и заведено. Причину оператор получает отдельным полем и
-       * показывает диспетчеру, вместо того чтобы гадать, куда делся тариф. */
+       * Корпоративный тариф становится ценой предложения по одному признаку —
+       * есть ли цена договора НА НУЖНЫЕ НОЧИ (11.11.2026); вердикт человека
+       * остался в базе историей и ничего не включает. Остальные из списка
+       * убираются совсем: предложить тариф без цены договора значило бы дать
+       * выбрать цифру, которой в договоре нет. Причину оператор получает
+       * отдельным полем и показывает диспетчеру, вместо того чтобы гадать,
+       * куда делся тариф. */
       /* Тарифы партнёра под ЭТОТ запрос (29.09.2026): самые точные из
-         подходящих по юрлицу, заказчику и виду брони. Неподтверждённые не
-         предлагаются, а называются — диспетчер должен знать, почему цена не
-         договорная. Тарифы других партнёров и с другими условиями не
-         показываются вовсе. */
-      const chosen = pickPartnerPlans(await this.ratePlans.partnerPlans(partnerId), query);
+         подходящих по юрлицу, заказчику и виду брони. Цена договора
+         спрашивается на день заезда запроса, а не на сегодня (11.11.2026):
+         иначе будущие ночи нового договора выглядели бы «без цены». Тарифы без
+         цены договора на эти ночи не предлагаются, а называются — диспетчер
+         должен знать, почему цена не договорная. Тарифы других партнёров и с
+         другими условиями не показываются вовсе. */
+      const chosen = pickPartnerPlans(
+        await this.ratePlans.partnerPlans(partnerId, dto.checkIn),
+        query,
+      );
       const applying = new Set(
         chosen.filter((p) => p.operatorStatus?.applies === true).map((p) => p.id),
       );
@@ -474,9 +485,14 @@ export class ConnectivityService {
           rt.basePrice as never,
           dto.guests,
         );
+        /* «Применяется» отвечает про день, а цена — про весь срок и эту
+           категорию с этим числом гостей (11.11.2026). Пересекаем: иначе
+           оператор увидел бы тариф «по договору» там, где priceByPlan ничего не
+           посчитал, а цена молча пришла бы из своих строк отеля. */
+        const offered = offerPlanIds(applying, planPrices);
         const ratePlans: OfferRatePlan[] = planPrices
-          // Свои тарифы отеля — всем; тариф партнёра — только выбранный и подтверждённый.
-          .filter((p) => p.partnerId == null || applying.has(p.ratePlanId))
+          // Свои тарифы отеля — всем; тариф партнёра — выбранный, применимый И посчитанный на эти ночи.
+          .filter((p) => p.partnerId == null || offered.has(p.ratePlanId))
           .map((p) => ({
             ratePlanId: p.ratePlanId,
             code: p.code,
@@ -489,15 +505,16 @@ export class ConnectivityService {
             })),
             total: p.total != null ? Number(p.total) : null,
             nightlyFrom: p.nightlyFrom != null ? Number(p.nightlyFrom) : null,
-            forOperator: applying.has(p.ratePlanId),
+            forOperator: offered.has(p.ratePlanId),
             vatRate: p.vatRate != null ? Number(p.vatRate) : null,
           }));
 
-        // Back-compat nightly rate: cheapest plan's nightly, else cheapest
-        // configured rate on the first night, else the category base price.
-        const corporateNightly = corporateApplies
-          ? (ratePlans.find((p) => p.forOperator)?.nightlyFrom ?? null)
-          : null;
+        /* Опорная ночная цена: договорная — только у реально предложенного
+           корпоративного тарифа (список уже пересечён с ценой), иначе самая
+           дешёвая из посчитанных, иначе цена первой ночи. Раньше здесь стояла
+           проверка corporateApplies, и без корпоративного тарифа в списке в
+           цену предложения попадал дешёвый свой тариф — как будто это договор. */
+        const corporateNightly = ratePlans.find((p) => p.forOperator)?.nightlyFrom ?? null;
         const cheapestPlanNightly = ratePlans
           .map((p) => p.nightlyFrom)
           .filter((n): n is number => n != null)
@@ -616,10 +633,14 @@ export class ConnectivityService {
       let ratePlanId: string | undefined;
       let totalPrice: number | undefined;
       /* Корпоративный тариф брони (29.09.2026) — только подходящий условиям и
-         подтверждённый. Раньше проходил любой тариф по id, и партнёр мог
-         забронировать по неподтверждённому или чужому. Без тарифа в запросе —
-         берётся подходящий сам, если он один. */
-      const chosen = pickPartnerPlans(await this.ratePlans.partnerPlans(partnerId), query);
+         с ценой договора НА ЭТИ НОЧИ (11.11.2026; «подтверждённый» больше не
+         шлюз). Раньше проходил любой тариф по id, и партнёр мог забронировать
+         по чужому или по тарифу без цены. Без тарифа в запросе — берётся
+         подходящий сам, если он один. */
+      const chosen = pickPartnerPlans(
+        await this.ratePlans.partnerPlans(partnerId, dto.checkIn),
+        query,
+      );
       const planPrices = await this.availability.priceByPlan(
         dto.categoryId,
         dto.checkIn,
@@ -1136,7 +1157,7 @@ export class ConnectivityService {
       validFrom: string | Date;
     }) => `${d.contractNumber}|${d.amendmentNumber ?? ''}|${d.service}|${dayOf(d.validFrom)}`;
 
-    return this.prisma.admin.$transaction(async (tx) => {
+    const result = await this.prisma.admin.$transaction(async (tx) => {
       // Только документы ЭТОГО партнёра: набор одного не стирает договоры другого.
       const existing = await tx.partnerContractPrice.findMany({
         where: { tenantId: tenant.id, partnerId },
@@ -1195,6 +1216,21 @@ export class ConnectivityService {
 
       return { kept: incoming.size, removed: stale.length, contracts: contractsKept };
     });
+
+    /* Цены тарифов кэшируются на минуту; после синхронизации договора кэш
+       обязан умереть, иначе гостиница и оператор минуту видят старую цену.
+       Сбрасываем и без поля contracts: сетки цен перезаписываются в любом
+       наборе, и старый кэш после них — та же неправда. Строки уже
+       закоммичены, а кэш истечёт сам через минуту: сбой Redis не должен
+       превращать успешную синхронизацию в ошибку. */
+    try {
+      await InventoryService.dropPriceCache(this.redis, tenant.id);
+    } catch (err) {
+      this.logger.warn(
+        `Contract sync committed for tenant ${tenant.id}, but price cache drop failed: ${(err as Error).message}`,
+      );
+    }
+    return result;
   }
 
   /**

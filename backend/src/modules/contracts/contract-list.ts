@@ -4,7 +4,8 @@
  * (приходили и раньше). Ни один не главнее: у старой Авии реестра нет вовсе,
  * а у нового договора может не быть приложения. Терять договор из-за того,
  * что о нём знает только один источник, гостиница не должна — по этой
- * строке она заводит тариф. */
+ * строке она заводит тариф. Срезы для тарифа дают только сетки приложений:
+ * реестр называет число приложений, но не их содержимое. */
 export interface RegistryContractRow {
   partnerId: string;
   number: string;
@@ -26,6 +27,52 @@ export interface ContractPriceDocRow {
   accountName: string | null;
   service: string;
   receivedAt: Date;
+  /** Сетки цен: в них срез и его цена собраны вместе. */
+  fill: unknown;
+}
+
+/** Срез договора: код авиакомпании, вид брони, питание. */
+export interface SliceKey {
+  customer: string | null;
+  guestKind: 'CREW' | 'DISRUPTION' | null;
+  mealPlan: string;
+}
+
+const sliceKey = (s: SliceKey) => [s.customer, s.guestKind, s.mealPlan].join('|');
+
+const bySlice = (a: SliceKey, b: SliceKey) =>
+  Number(!!a.customer) - Number(!!b.customer) ||
+  a.mealPlan.localeCompare(b.mealPlan) ||
+  (a.guestKind ?? '').localeCompare(b.guestKind ?? '') ||
+  (a.customer ?? '').localeCompare(b.customer ?? '');
+
+/** Срезы из сеток документа: то, подо что гостиница может завести тариф.
+ *
+ * `fill` — Json чужой системы, поэтому разбор терпеливый: битая сетка не
+ * должна ронять весь список договоров гостиницы. Срез с незнакомым значением
+ * (чужой `guestKind`, не-строковый код авиакомпании) отбрасываем, а не
+ * подменяем «любым»: подменить — значит предложить тариф, который ни с одной
+ * ценой не совпадёт. Отсутствующее поле — это «любой» (null), как и раньше. */
+function slicesOf(fill: unknown): SliceKey[] {
+  const grids: unknown[] = Array.isArray(fill) ? fill : [];
+  const out = new Map<string, SliceKey>();
+  for (const grid of grids) {
+    if (!grid || typeof grid !== 'object') continue;
+    const slices = (grid as { slices?: unknown }).slices;
+    if (!Array.isArray(slices)) continue;
+    for (const item of slices) {
+      if (!item || typeof item !== 'object') continue;
+      const s = item as { customer?: unknown; guestKind?: unknown; mealPlan?: unknown };
+      if (typeof s.mealPlan !== 'string') continue;
+      const customer = s.customer ?? null;
+      const guestKind = s.guestKind ?? null;
+      if (customer !== null && typeof customer !== 'string') continue;
+      if (guestKind !== null && guestKind !== 'CREW' && guestKind !== 'DISRUPTION') continue;
+      const key: SliceKey = { customer, guestKind, mealPlan: s.mealPlan };
+      out.set(sliceKey(key), key);
+    }
+  }
+  return [...out.values()].sort(bySlice);
 }
 
 export interface ContractView {
@@ -50,6 +97,11 @@ export interface ContractView {
    */
   hasPrices: boolean;
   receivedAt: string | null;
+  /**
+   * Срезы, которые в договоре реально есть: по ним мастер заводит тариф.
+   * Пусто — сеток нет, и предлагать нечего.
+   */
+  slices: SliceKey[];
 }
 
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
@@ -68,6 +120,7 @@ interface Acc {
   priceDocs: number;
   /** Число приложений из реестра: цифра без строк, ценой не считается. */
   registrySheets: number;
+  slices: SliceKey[];
   registryAt: Date | null;
   priceAt: Date | null;
 }
@@ -100,6 +153,7 @@ export function mergeContractList(
       services: [...r.services],
       priceDocs: 0,
       registrySheets: r.sheetsCount,
+      slices: [],
       registryAt: r.receivedAt,
       priceAt: null,
     });
@@ -118,11 +172,15 @@ export function mergeContractList(
       services: [],
       priceDocs: 0,
       registrySheets: 0,
+      slices: [],
       registryAt: null,
       priceAt: null,
     };
     row.priceDocs += 1;
     if (!row.services.includes(d.service)) row.services.push(d.service);
+    for (const s of slicesOf(d.fill)) {
+      if (!row.slices.some((x) => sliceKey(x) === sliceKey(s))) row.slices.push(s);
+    }
     if (!row.account && d.accountCode) {
       row.account = { code: d.accountCode, name: d.accountName ?? d.accountCode };
     }
@@ -142,6 +200,7 @@ export function mergeContractList(
       isPrimary: r.isPrimary,
       state: r.state,
       services: [...r.services].sort(),
+      slices: r.slices.sort(bySlice),
       documents: Math.max(r.priceDocs, r.registrySheets),
       hasPrices: r.priceDocs > 0,
       receivedAt: latestIso(r.registryAt, r.priceAt),
