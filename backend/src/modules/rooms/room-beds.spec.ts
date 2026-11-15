@@ -10,20 +10,28 @@ import { bedsForCreate, bedsForUpdate } from './room-beds';
 
 const ALL: BedType[] = Object.values(BedType);
 
-function migrationMapping(): Record<string, { singleBeds: number; doubleBeds: number; sofas: number }> {
+function migrationMapping(): Record<
+  string,
+  { singleBeds: number; doubleBeds: number; sofas: number }
+> {
   const sql = readFileSync(
     join(__dirname, '../../../prisma/migrations/20261027180000_room_bed_counts/migration.sql'),
     'utf8',
   );
   const column = (name: string) => {
     const body = sql.split(`"${name}" = CASE "bed_type"`)[1].split('END')[0];
-    return Object.fromEntries([...body.matchAll(/WHEN '(\w+)' THEN (\d+)/g)].map((m) => [m[1], Number(m[2])]));
+    return Object.fromEntries(
+      [...body.matchAll(/WHEN '(\w+)' THEN (\d+)/g)].map((m) => [m[1], Number(m[2])]),
+    );
   };
   const single = column('single_beds');
   const double = column('double_beds');
   const sofa = column('sofas');
   return Object.fromEntries(
-    ALL.map((t) => [t, { singleBeds: single[t] ?? 0, doubleBeds: double[t] ?? 0, sofas: sofa[t] ?? 0 }]),
+    ALL.map((t) => [
+      t,
+      { singleBeds: single[t] ?? 0, doubleBeds: double[t] ?? 0, sofas: sofa[t] ?? 0 },
+    ]),
   );
 }
 

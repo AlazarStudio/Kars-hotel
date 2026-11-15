@@ -9,9 +9,12 @@ import { PlatformOperatorGuard, SuperAdminGuard } from './super-admin.guard';
  * и настройки — только суперадмину. У КАЖДОЙ ручки свой гард: новая без
  * гарда валит тест. */
 
-const handlers = Object.getOwnPropertyNames(SuperAdminController.prototype).filter((n) => n !== 'constructor');
+const handlers = Object.getOwnPropertyNames(SuperAdminController.prototype).filter(
+  (n) => n !== 'constructor',
+);
 const guardsOf = (name: string) =>
-  (Reflect.getMetadata(GUARDS_METADATA, (SuperAdminController.prototype as never)[name]) ?? []) as unknown[];
+  (Reflect.getMetadata(GUARDS_METADATA, (SuperAdminController.prototype as never)[name]) ??
+    []) as unknown[];
 
 const ctx = (user: object) => ({ switchToHttp: () => ({ getRequest: () => ({ user }) }) }) as never;
 
@@ -29,7 +32,9 @@ describe('Панель платформы — гарды', () => {
      Сотрудники гостиниц (getTenant, listUsers, toggleUserActive) и
      настройки — тоже НЕ диспетчеру. */
   it('диспетчеру — ровно сводка, гостиницы, вход «от имени» и функции гостиниц', () => {
-    const forDispatcher = handlers.filter((h) => guardsOf(h).includes(PlatformOperatorGuard)).sort();
+    const forDispatcher = handlers
+      .filter((h) => guardsOf(h).includes(PlatformOperatorGuard))
+      .sort();
     expect(forDispatcher).toEqual([
       'applyFeature',
       'archiveTenant',
@@ -44,19 +49,27 @@ describe('Панель платформы — гарды', () => {
       'toggleActive',
       'updateTenant',
     ]);
-    expect(handlers.filter((h) => !forDispatcher.includes(h)).every((h) => guardsOf(h).includes(SuperAdminGuard))).toBe(true);
+    expect(
+      handlers
+        .filter((h) => !forDispatcher.includes(h))
+        .every((h) => guardsOf(h).includes(SuperAdminGuard)),
+    ).toBe(true);
   });
 
   it('PlatformOperatorGuard: суперадмин и диспетчер вне гостиницы — да; сотрудник и диспетчер «от имени» — нет', () => {
     const g = new PlatformOperatorGuard();
     expect(g.canActivate(ctx({ isSuperAdmin: true }))).toBe(true);
     expect(g.canActivate(ctx({ isDispatcher: true }))).toBe(true);
-    expect(() => g.canActivate(ctx({ isDispatcher: true, impersonatedBy: 'd1' }))).toThrow(ForbiddenException);
+    expect(() => g.canActivate(ctx({ isDispatcher: true, impersonatedBy: 'd1' }))).toThrow(
+      ForbiddenException,
+    );
     expect(() => g.canActivate(ctx({ roleCode: 'OWNER' }))).toThrow(ForbiddenException);
   });
 
   it('SuperAdminGuard диспетчера не пускает', () => {
-    expect(() => new SuperAdminGuard().canActivate(ctx({ isDispatcher: true }))).toThrow(ForbiddenException);
+    expect(() => new SuperAdminGuard().canActivate(ctx({ isDispatcher: true }))).toThrow(
+      ForbiddenException,
+    );
   });
 
   /* Интерфейс показывает ответ сервера как есть, поэтому отказ обязан быть
@@ -78,11 +91,15 @@ describe('Панель платформы — гарды', () => {
     const staffDenied = response(() => platform.canActivate(ctx({ roleCode: 'OWNER' })));
     expect(staffDenied.code).toBe('PLATFORM_ACCESS_REQUIRED');
 
-    const impersonatingDenied = response(() => platform.canActivate(ctx({ isDispatcher: true, impersonatedBy: 'd1' })));
+    const impersonatingDenied = response(() =>
+      platform.canActivate(ctx({ isDispatcher: true, impersonatedBy: 'd1' })),
+    );
     expect(impersonatingDenied.code).toBe('PLATFORM_ACCESS_WHILE_IMPERSONATING');
     expect(impersonatingDenied.message).toMatch(/Выйдите из режима «от имени»/);
 
-    expect(response(() => admin.canActivate(ctx({ isDispatcher: true }))).code).toBe('SUPER_ADMIN_REQUIRED');
+    expect(response(() => admin.canActivate(ctx({ isDispatcher: true }))).code).toBe(
+      'SUPER_ADMIN_REQUIRED',
+    );
     for (const denied of [staffDenied, impersonatingDenied]) {
       expect(denied.message).toMatch(/[А-Яа-яЁё]/);
       expect(denied.message).not.toMatch(/Platform access required/i);

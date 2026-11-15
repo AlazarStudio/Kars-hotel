@@ -25,25 +25,43 @@ const ids = (xs: PartnerPlanScope[]) => xs.map((p) => p.id);
 describe('pickPartnerPlans — какой корпоративный тариф применяется', () => {
   it('самый точный подходящий: «Смартавиа — сбойный рейс» для сбоя Смартавиа', () => {
     expect(
-      ids(pickPartnerPlans(plans, { partnerId: 'kars', customerId: 'smartavia', guestKind: 'DISRUPTION' })),
+      ids(
+        pickPartnerPlans(plans, {
+          partnerId: 'kars',
+          customerId: 'smartavia',
+          guestKind: 'DISRUPTION',
+        }),
+      ),
     ).toEqual(['smart-disruption']);
   });
 
   it('экипаж Смартавиа — тариф Смартавиа, а не сбойный и не общий', () => {
-    expect(ids(pickPartnerPlans(plans, { partnerId: 'kars', customerId: 'smartavia', guestKind: 'CREW' }))).toEqual([
-      'smart',
-    ]);
+    expect(
+      ids(
+        pickPartnerPlans(plans, { partnerId: 'kars', customerId: 'smartavia', guestKind: 'CREW' }),
+      ),
+    ).toEqual(['smart']);
   });
 
   it('другая авиакомпания — общий тариф; выключенный тариф «России» не применяется', () => {
-    expect(ids(pickPartnerPlans(plans, { partnerId: 'kars', customerId: 'rossiya' }))).toEqual(['general']);
+    expect(ids(pickPartnerPlans(plans, { partnerId: 'kars', customerId: 'rossiya' }))).toEqual([
+      'general',
+    ]);
   });
 
   it('заказчик весит больше юрлица', () => {
     expect(
-      ids(pickPartnerPlans(plans, { partnerId: 'kars', accountId: 'ani-group', customerId: 'smartavia' })),
+      ids(
+        pickPartnerPlans(plans, {
+          partnerId: 'kars',
+          accountId: 'ani-group',
+          customerId: 'smartavia',
+        }),
+      ),
     ).toEqual(['smart']);
-    expect(ids(pickPartnerPlans(plans, { partnerId: 'kars', accountId: 'ani-group' }))).toEqual(['ani']);
+    expect(ids(pickPartnerPlans(plans, { partnerId: 'kars', accountId: 'ani-group' }))).toEqual([
+      'ani',
+    ]);
   });
 
   it('тариф с условием НЕ применяется, если в запросе условие не названо', () => {

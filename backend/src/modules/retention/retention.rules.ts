@@ -90,7 +90,9 @@ async function anonymizeGuests(tx: Tx, ripe: Prisma.Sql) {
 }
 
 const countRipe = (tx: Tx, ripe: Prisma.Sql) =>
-  tx.$queryRaw<Array<{ tenant_id: string; n: bigint }>>`SELECT tenant_id, count(*)::bigint AS n FROM (${ripe}) x GROUP BY tenant_id`;
+  tx.$queryRaw<
+    Array<{ tenant_id: string; n: bigint }>
+  >`SELECT tenant_id, count(*)::bigint AS n FROM (${ripe}) x GROUP BY tenant_id`;
 
 export const RULES: Rule[] = [
   {
@@ -106,7 +108,11 @@ export const RULES: Rule[] = [
         UPDATE reservation SET phone = NULL, email = NULL
           FROM (${contactsRipe}) ripe WHERE reservation.id = ripe.id
         RETURNING reservation.id, reservation.tenant_id`;
-      await scrubJournal(tx, rows.map((r) => r.id), CONTACT_KEYS);
+      await scrubJournal(
+        tx,
+        rows.map((r) => r.id),
+        CONTACT_KEYS,
+      );
       return byTenant(rows);
     },
   },
@@ -162,28 +168,36 @@ export interface RuleResult {
 }
 
 /** Один прогон всех правил. В режиме dry — только подсчёт. */
-export async function runRetention(db: PrismaClient, mode: Exclude<RetentionMode, 'off'>): Promise<RuleResult[]> {
+export async function runRetention(
+  db: PrismaClient,
+  mode: Exclude<RetentionMode, 'off'>,
+): Promise<RuleResult[]> {
   const out: RuleResult[] = [];
   for (const rule of RULES) {
-    const res = await db.$transaction(async (tx) => {
-      const [{ locked }] = await tx.$queryRaw<Array<{ locked: boolean }>>`
+    const res = await db.$transaction(
+      async (tx) => {
+        const [{ locked }] = await tx.$queryRaw<Array<{ locked: boolean }>>`
         SELECT pg_try_advisory_xact_lock(${LOCK_NS}::int, hashtext(${rule.id})) AS locked`;
-      if (!locked) return { rule: rule.id, skipped: 'locked' as const, byTenant: [] };
-      const rows = mode === 'on' ? await rule.apply(tx) : await rule.count(tx);
-      const byTenantRows = rows.filter((r) => Number(r.n) > 0).map((r) => ({ tenantId: r.tenant_id, count: Number(r.n) }));
-      for (const r of byTenantRows) {
-        if (!r.tenantId) continue;
-        await tx.auditLog.create({
-          data: {
-            tenantId: r.tenantId,
-            entity: 'retention',
-            action: `${mode === 'on' ? 'retention.destroy' : 'retention.dry'}.${rule.id}`,
-            diff: { before: {}, after: { count: r.count } },
-          },
-        });
-      }
-      return { rule: rule.id, byTenant: byTenantRows };
-    }, { timeout: 120_000 });
+        if (!locked) return { rule: rule.id, skipped: 'locked' as const, byTenant: [] };
+        const rows = mode === 'on' ? await rule.apply(tx) : await rule.count(tx);
+        const byTenantRows = rows
+          .filter((r) => Number(r.n) > 0)
+          .map((r) => ({ tenantId: r.tenant_id, count: Number(r.n) }));
+        for (const r of byTenantRows) {
+          if (!r.tenantId) continue;
+          await tx.auditLog.create({
+            data: {
+              tenantId: r.tenantId,
+              entity: 'retention',
+              action: `${mode === 'on' ? 'retention.destroy' : 'retention.dry'}.${rule.id}`,
+              diff: { before: {}, after: { count: r.count } },
+            },
+          });
+        }
+        return { rule: rule.id, byTenant: byTenantRows };
+      },
+      { timeout: 120_000 },
+    );
     out.push(res);
   }
   return out;

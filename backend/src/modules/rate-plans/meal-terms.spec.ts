@@ -26,7 +26,9 @@ describe('питание тарифа', () => {
   });
 
   it('питание в цене номера — отдельной стоимости НЕТ', () => {
-    expect(mealCostOf({ ...base, mealIncluded: true }, { breakfast: 4, lunch: 0, dinner: 0 }, 4)).toBeNull();
+    expect(
+      mealCostOf({ ...base, mealIncluded: true }, { breakfast: 4, lunch: 0, dinner: 0 }, 4),
+    ).toBeNull();
   });
 
   it('одной суммой за сутки — по гостям-суткам', () => {
@@ -36,11 +38,15 @@ describe('питание тарифа', () => {
   });
 
   it('цены не заведены — null, а НЕ ноль', () => {
-    expect(mealCostOf({ ...base, mealPriceBreakfast: null }, { breakfast: 3, lunch: 0, dinner: 0 }, 3)).toBeNull();
+    expect(
+      mealCostOf({ ...base, mealPriceBreakfast: null }, { breakfast: 3, lunch: 0, dinner: 0 }, 3),
+    ).toBeNull();
   });
 
   it('«что входит» — только у «всё включено»', () => {
-    expect(mealTermsOf({ ...base, mealPlan: 'AI', allInclusiveNote: 'бар до 23:00' }).allInclusiveNote).toBe('бар до 23:00');
+    expect(
+      mealTermsOf({ ...base, mealPlan: 'AI', allInclusiveNote: 'бар до 23:00' }).allInclusiveNote,
+    ).toBe('бар до 23:00');
     expect(mealTermsOf({ ...base, allInclusiveNote: 'бар' }).allInclusiveNote).toBeNull();
   });
 });

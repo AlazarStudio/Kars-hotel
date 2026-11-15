@@ -3,87 +3,113 @@
   background: #F5F7FA;
   height: 100%;
   overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
 }
 
 .pageHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
   flex-wrap: wrap;
   gap: 12px;
 }
 
-.pageTitle { font-size: 22px; font-weight: 700; color: #1B2A47; }
+.pageTitle { margin: 0; font-size: 22px; font-weight: 700; color: #0F1F3F; }
 
 .dateRange {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
+  margin-bottom: 16px;
 }
 
-.dateInput {
-  width: 136px;
+.dateRange .dateInput,
+.dateField .dateInput {
+  width: 145px;
+  min-height: 40px;
   padding: 7px 12px;
-  border: 1px solid #D8E2F0;
-  border-radius: 7px;
+  border: 1px solid #DFE6EE;
+  border-radius: 8px;
   font-size: 13px;
-  color: #1B2A47;
-  outline: none;
+  color: #0F1F3F;
   background: #fff;
+  box-sizing: border-box;
 }
-.dateInput:focus { border-color: #1E88E5; }
 
-.dateSep { color: #8896AB; font-size: 14px; }
+.dateSep { color: #526277; font-size: 14px; }
+.timelineError { padding: 10px 16px; background: #FEF2F2; color: #991B1B; border-radius: 8px; margin-bottom: 16px; font-size: 13px; }
 
 .kpiRow {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 16px;
-  margin-bottom: 28px;
+  margin-bottom: 16px;
 }
 
 .kpi {
   background: #fff;
-  border-radius: 10px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+  border: 1px solid #DFE6EE;
+  border-radius: 12px;
   padding: 18px 20px;
 }
 
-.kpiValue { font-size: 24px; font-weight: 800; color: #1B2A47; }
-.kpiLabel { font-size: 12px; color: #8896AB; font-weight: 500; margin-top: 4px; }
+.kpiValue { font-size: 24px; font-weight: 800; color: #0F1F3F; }
+.kpiLabel { font-size: 12px; color: #526277; font-weight: 500; margin-top: 4px; }
 
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
-  margin-bottom: 20px;
+  padding: 4px;
+  margin-bottom: 16px;
+  border: 1px solid #DFE6EE;
+  border-radius: 12px;
+  background: #fff;
 }
 
 .tab {
-  padding: 8px 18px;
-  border-radius: 7px;
-  border: none;
-  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 0;
+  font: inherit;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  background: #fff;
-  color: #4A5568;
-  transition: all 0.15s;
+  background: transparent;
+  color: #526277;
 }
-.tab:hover { background: #E8EDF3; }
-.tabActive { background: #1E88E5; color: #fff; }
+.tab:hover { background: #F1F5F9; color: #0F1F3F; }
+.tab[aria-pressed='true'] { background: #E8F2FC; color: #10548D; }
+.root button:focus-visible { outline: 2px solid #1E88E5; outline-offset: 2px; }
+.root button:disabled { cursor: not-allowed; opacity: .65; }
 
-.section { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); overflow: hidden; }
+.aviaStack { display: grid; gap: 16px; min-width: 0; container-type: inline-size; }
+.section { min-width: 0; background: #fff; border: 1px solid #DFE6EE; border-radius: 12px; overflow: hidden; }
 
 .sectionTitle {
-  font-size: 14px;
+  margin: 0;
+  font-size: 16px;
   font-weight: 700;
-  color: #1B2A47;
-  padding: 16px 20px 12px;
-  border-bottom: 1px solid #E8EDF3;
+  color: #0F1F3F;
+  padding: 16px 20px;
+  border-bottom: 1px solid #DFE6EE;
 }
+.sectionHeader { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.sectionHeading { flex: 1 1 auto; margin: 0; font: inherit; }
+.headerActions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.sectionBody { min-width: 0; padding: 16px 20px; }
+.sectionBody > :last-child { margin-bottom: 0; }
+.sectionAlert { margin-top: 16px; }
+.sectionNotice { margin: 12px 0 0; color: #526277; font-size: 13px; line-height: 1.5; }
 
-.table { width: 100%; }
+.table { width: 100%; overflow-x: auto; }
 
 .tableHead {
   display: grid;
@@ -91,9 +117,10 @@
   background: #F5F7FA;
   border-bottom: 1px solid #E8EDF3;
   padding: 10px 20px;
+  min-width: 640px;
 }
 
-.th { font-size: 11px; font-weight: 700; color: #8896AB; text-transform: uppercase; letter-spacing: 0.5px; }
+.th { font-size: 11px; font-weight: 700; color: #526277; text-transform: uppercase; letter-spacing: 0.5px; }
 
 .tableRow {
   display: grid;
@@ -102,11 +129,15 @@
   border-bottom: 1px solid #F0F4F9;
   align-items: center;
   transition: background 0.1s;
+  min-width: 640px;
 }
 .tableRow:last-child { border-bottom: none; }
 .tableRow:hover { background: #F8FAFF; }
 
-.td { font-size: 13px; color: #1B2A47; }
+.td { min-width: 0; font-size: 13px; color: #0F1F3F; overflow-wrap: anywhere; }
+.aviaTableGrid { grid-template-columns: 56px minmax(180px, 3fr) minmax(150px, 2fr) minmax(170px, 2fr) 120px; min-width: 760px; }
+.tableFooter { padding: 12px 20px; color: #526277; font-size: 12px; }
+.emptyHeading { display: block; margin-bottom: 4px; color: #0F1F3F; }
 
 .barWrap {
   display: flex;
@@ -133,29 +164,90 @@
   font-weight: 700;
 }
 
-/* 4.2 · Детализация для Kars Avia: поля и кнопки — общие формы PMS. */
-.fapItem { border-top: 1px solid #E8EDF3; }
-.fapHead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 20px; font-size: 13.5px; color: #1B2A47; }
-.fapState { margin-left: auto; font-size: 13px; color: #4A5568; }
-.fapMuted { font-size: 13px; color: #8896AB; }
-.fapEmpty { padding: 16px 20px; font-size: 13px; color: #8896AB; }
-.fapComment { padding: 0 20px 12px; font-size: 13px; color: #4A5568; }
-.fapBody { padding: 4px 20px 16px; }
-.fapTableWrap { overflow-x: auto; }
+/* Детализация и отчёты используют общие поля и кнопки PMS. */
+.fapItem { border-top: 1px solid #DFE6EE; min-width: 0; }
+.sectionTitle + .fapItem { border-top: 0; }
+.fapHead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 20px; font-size: 13.5px; color: #0F1F3F; }
+.fapState { margin-left: auto; padding: 5px 9px; border-radius: 6px; background: #F1F5F9; font-size: 12px; color: #526277; }
+.fapMuted { font-size: 13px; color: #526277; }
+.fapEmpty { padding: 18px 20px; font-size: 13px; line-height: 1.5; color: #526277; }
+.fapComment { padding: 0 20px 12px; font-size: 13px; line-height: 1.5; color: #526277; overflow-wrap: anywhere; }
+.fapBody { min-width: 0; padding: 4px 20px 16px; }
+.fapBody .fapEmpty { padding: 12px 0; }
+.fapTableWrap { min-width: 0; max-width: 100%; overflow-x: auto; border: 1px solid #DFE6EE; border-radius: 10px; }
 .fapTable { width: 100%; border-collapse: collapse; table-layout: fixed; min-width: 640px; }
-.fapTable th { text-align: left; padding: 8px 6px; font-size: 11px; font-weight: 700; color: #8896AB; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #E8EDF3; }
+.fapTable th { text-align: left; padding: 10px 8px; font-size: 11px; font-weight: 700; color: #526277; background: #F4F7FA; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #DFE6EE; }
 .fapTable th:first-child { width: 32%; }
-.fapTable td { padding: 6px; font-size: 13px; color: #1B2A47; border-bottom: 1px solid #F0F4F9; }
+.fapTable td { padding: 8px; font-size: 13px; color: #0F1F3F; border-bottom: 1px solid #F0F4F9; }
+.fapTable tbody tr:last-child td { border-bottom: 0; }
 .fapGuest { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fapActions { display: flex; justify-content: flex-end; margin-top: 12px; }
 .fapInvoice { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 4px 20px 16px; }
-.fapInvoice > div { margin-bottom: 0; flex: 1 1 180px; }
-.fapFile { display: flex; align-items: center; gap: 10px; min-height: 38px; }
+.fapInvoice > div { margin-bottom: 0; flex: 1 1 180px; min-width: 0; }
+.fapFile { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-height: 38px; overflow-wrap: anywhere; }
+
+.squadronFilters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.filterGroup { display: grid; gap: 6px; min-width: 0; }
+.filterHeading { font-size: 12px; font-weight: 600; color: #526277; }
+.dateFields { display: flex; flex-wrap: wrap; gap: 8px; }
+.dateField { display: flex; align-items: center; gap: 6px; color: #526277; font-size: 13px; font-weight: 600; }
+.segmented { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; padding: 4px; border: 1px solid #DFE6EE; border-radius: 10px; background: #fff; }
+.segment { min-height: 32px; padding: 6px 10px; border: 0; border-radius: 6px; background: transparent; color: #526277; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.segment:hover { background: #F1F5F9; color: #0F1F3F; }
+.segment[aria-pressed='true'] { background: #E8F2FC; color: #10548D; }
+.squadronFormAction { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-left: auto; }
+.squadronFormAction button, .squadronSummary button { min-height: 40px; }
+.squadronPreview { min-width: 0; padding-top: 16px; margin-top: 16px; border-top: 1px solid #DFE6EE; }
+.previewEmpty { margin: 0; padding: 12px 14px; border: 1px solid #DFE6EE; border-radius: 8px; background: #F8FAFC; color: #526277; font-size: 13px; }
+.previewHeading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 8px 20px; margin-bottom: 12px; }
+.previewHeading h3 { margin: 0 0 4px; color: #0F1F3F; font-size: 14px; }
+.previewHeading span, .previewHeading p { color: #526277; font-size: 13px; line-height: 1.5; }
+.previewHeading p { max-width: 520px; margin: 0; }
+.revisionNotice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 12px; }
+.revisionNotice p { margin: 0; color: #526277; font-size: 13px; line-height: 1.5; }
+.previewEmpty + .revisionNotice { margin: 12px 0 0; }
+.squadronTable { min-width: 1120px; table-layout: auto; }
+.fapTable.squadronTable th:first-child { width: auto; }
+.squadronTable td { vertical-align: middle; white-space: nowrap; }
+.squadronTable th:nth-last-child(-n+2), .squadronTable td:nth-last-child(-n+2) { text-align: right; }
+.squadronAmount { min-width: 115px; }
+.squadronAmount input { min-width: 105px; text-align: right; }
+.squadronSummary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; }
+.squadronTotal { font-size: 14px; font-weight: 700; color: #0F1F3F; }
+.fapBody .squadronTotal { margin-top: 12px; }
+.squadronListRow { display: grid; grid-template-columns: minmax(165px, 1.5fr) minmax(110px, 1fr) minmax(130px, 1fr) auto; align-items: center; gap: 10px 16px; padding: 12px 20px; color: #0F1F3F; font-size: 13px; }
+.squadronListAmount { font-variant-numeric: tabular-nums; }
+.squadronStatus { justify-self: start; padding: 5px 9px; border-radius: 6px; background: #F1F5F9; color: #526277; font-size: 12px; font-weight: 600; }
+.statusSubmitted { background: #E8F2FC; color: #10548D; }
+.statusReturned { background: #FFF5E5; color: #87521B; }
+.statusAccepted { background: #E7F6EC; color: #24633C; }
+.rowActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+@container (max-width: 760px) {
+  .squadronListRow { grid-template-columns: minmax(0, 1fr) auto; }
+  .squadronListAmount { text-align: right; }
+}
+@container (max-width: 420px) {
+  .rowActions { grid-column: 1 / -1; justify-content: flex-start; }
+}
 
 /* Телефон */
+@media (max-width: 900px) {
+  .squadronListRow { grid-template-columns: minmax(0, 1fr) auto; }
+  .squadronListAmount { text-align: right; }
+}
 @media (max-width: 768px) {
   .root { padding: 16px; }
   .kpiRow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .table { overflow-x: auto; }
-  .tableHead, .tableRow { min-width: 640px; }
+  .kpi { padding: 14px; }
+  .kpiValue { font-size: 20px; overflow-wrap: anywhere; }
+  .sectionTitle, .sectionBody { padding-left: 16px; padding-right: 16px; }
+  .fapHead, .squadronListRow { padding-left: 16px; padding-right: 16px; }
+  .fapBody, .fapInvoice { padding-left: 16px; padding-right: 16px; }
+  .fapComment { padding-left: 16px; padding-right: 16px; }
+  .squadronFormAction { margin-left: 0; }
+}
+@media (max-width: 480px) {
+  .rowActions { grid-column: 1 / -1; justify-content: flex-start; }
+  .squadronListRow { grid-template-columns: minmax(0, 1fr) auto; }
 }

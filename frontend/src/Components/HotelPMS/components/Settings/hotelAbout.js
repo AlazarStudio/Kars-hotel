@@ -372,7 +372,7 @@ export function parseHotelAbout(text) {
   const otherLines = [];
 
   for (const raw of text.replace(/\r\n?/g, '\n').split('\n')) {
-    const line = raw.replace(/ /g, ' ').trim();
+    const line = raw.replace(/\u00a0/g, ' ').trim();
     const match = LABEL_RE.exec(line);
     const section = match ? LABEL_ALIASES[normalizeLabel(match[1])] : undefined;
     if (!section) {

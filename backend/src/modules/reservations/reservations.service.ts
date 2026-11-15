@@ -125,9 +125,8 @@ export class ReservationsService {
 
     const checkIn = parseISO(dto.checkIn);
     const checkOut = parseISO(dto.checkOut);
-    const rejected = (message: string) => channel?.idempotency
-      ? { message, code: RESERVATION_CREATE_REJECTED_CODE }
-      : message;
+    const rejected = (message: string) =>
+      channel?.idempotency ? { message, code: RESERVATION_CREATE_REJECTED_CODE } : message;
 
     if (checkOut <= checkIn) {
       throw new ConflictException(rejected('checkOut must be after checkIn'));
@@ -142,7 +141,10 @@ export class ReservationsService {
         // Два запроса с одним ключом не должны одновременно пройти allocation.
         // Замок живёт до COMMIT; проверка после него видит уже записанную бронь.
         const lockKey = JSON.stringify([
-          'reservation-create', tenantId, channel.partnerId, channel.idempotency.key,
+          'reservation-create',
+          tenantId,
+          channel.partnerId,
+          channel.idempotency.key,
         ]);
         await tx.$executeRaw`
           SELECT pg_advisory_xact_lock(
@@ -212,7 +214,7 @@ export class ReservationsService {
           ${dto.totalPrice != null ? dto.totalPrice : null},
           ${dto.ratePlanId ?? null}::uuid,
           ${placeNumber},
-          ${channel ? true : dto.channelManaged ?? false},
+          ${channel ? true : (dto.channelManaged ?? false)},
           ${channel?.partnerId ?? null}::uuid,
           ${channel?.idempotency?.key ?? null},
           ${channel?.idempotency?.payloadHash ?? null},
@@ -241,7 +243,9 @@ export class ReservationsService {
         case 'ROOM_NOT_FOUND':
           throw new NotFoundException(rejected('Room not found or inactive'));
         case 'NO_PLACE_AVAILABLE':
-          throw new ConflictException(rejected('No available place in this room for the selected period'));
+          throw new ConflictException(
+            rejected('No available place in this room for the selected period'),
+          );
       }
     }
 
@@ -270,7 +274,9 @@ export class ReservationsService {
   }
 
   /** Ранний повтор партнёра — до проверки тарифа и уже занятого им номера. */
-  async findChannelReservation(channel: ReservationChannelContext): Promise<CreatedReservation | null> {
+  async findChannelReservation(
+    channel: ReservationChannelContext,
+  ): Promise<CreatedReservation | null> {
     if (!channel.idempotency) return null;
     const tenantId = TenantContext.getTenantIdOrThrow();
     return this.prisma.forTenant((tx) => this.channelReservation(tx, tenantId, channel));
@@ -289,12 +295,20 @@ export class ReservationsService {
         channelManaged: true,
         partnerIdempotencyKey: channel.idempotency.key,
       },
-      select: { id: true, status: true, version: true, placeNumber: true, partnerPayloadHash: true },
+      select: {
+        id: true,
+        status: true,
+        version: true,
+        placeNumber: true,
+        partnerPayloadHash: true,
+      },
     });
     if (!row) return null;
     // Сравнивается исходное тело партнёра, а не изменяемая бронь или новая цена.
     if (row.partnerPayloadHash !== channel.idempotency.payloadHash) {
-      throw new ConflictException('X-Idempotency-Key was already used with a different reservation payload');
+      throw new ConflictException(
+        'X-Idempotency-Key was already used with a different reservation payload',
+      );
     }
     return { id: row.id, status: row.status, version: row.version, placeNumber: row.placeNumber };
   }
@@ -308,11 +322,20 @@ export class ReservationsService {
     const tenantId = TenantContext.getTenantIdOrThrow();
     const category = String(dto.category ?? '').trim();
     const surcharge = Number(dto.surcharge);
-    if (!category || !Number.isInteger(surcharge) || surcharge < 0) throw new BadRequestException('Укажите категорию и доплату');
-    const row = await this.prisma.forTenantExplicit(tenantId, (tx) => tx.reservation.findUnique({ where: { id }, select: { upgradeWish: true } }));
+    if (!category || !Number.isInteger(surcharge) || surcharge < 0)
+      throw new BadRequestException('Укажите категорию и доплату');
+    const row = await this.prisma.forTenantExplicit(tenantId, (tx) =>
+      tx.reservation.findUnique({ where: { id }, select: { upgradeWish: true } }),
+    );
     if (!row?.upgradeWish) throw new BadRequestException('Пассажир не просил номер выше');
-    await this.prisma.forTenantExplicit(tenantId, (tx) => tx.reservation.update({ where: { id }, data: { upgradeOffer: { category, surcharge } } }));
-    await this.partnerWebhooks.emitForReservation('upgrade.offered', id, { reservationId: id, category, surcharge });
+    await this.prisma.forTenantExplicit(tenantId, (tx) =>
+      tx.reservation.update({ where: { id }, data: { upgradeOffer: { category, surcharge } } }),
+    );
+    await this.partnerWebhooks.emitForReservation('upgrade.offered', id, {
+      reservationId: id,
+      category,
+      surcharge,
+    });
     return { ok: true };
   }
 
@@ -563,15 +586,40 @@ export class ReservationsService {
          брони 0913 восстанавливали по журналу прокси, потому что запись
          правки хранила только новый статус и номер версии. */
       const was: Record<string, unknown> = {
-        roomId: cur.room_id, checkIn: format(cur.check_in, 'yyyy-MM-dd'), checkOut: format(cur.check_out, 'yyyy-MM-dd'),
-        guestName: cur.guest_name, phone: cur.phone, email: cur.email, adults: cur.adults, children: cur.children,
-        status: cur.status, source: cur.source, notes: cur.notes,
-        totalPrice: cur.total_price ? Number(cur.total_price) : null, placeNumber: cur.place_number,
-        arrivalAt: cur.arrival_at, departureAt: cur.departure_at, flight: cur.flight,
+        roomId: cur.room_id,
+        checkIn: format(cur.check_in, 'yyyy-MM-dd'),
+        checkOut: format(cur.check_out, 'yyyy-MM-dd'),
+        guestName: cur.guest_name,
+        phone: cur.phone,
+        email: cur.email,
+        adults: cur.adults,
+        children: cur.children,
+        status: cur.status,
+        source: cur.source,
+        notes: cur.notes,
+        totalPrice: cur.total_price ? Number(cur.total_price) : null,
+        placeNumber: cur.place_number,
+        arrivalAt: cur.arrival_at,
+        departureAt: cur.departure_at,
+        flight: cur.flight,
       };
       const now: Record<string, unknown> = {
-        roomId, checkIn: checkInStr, checkOut: checkOutStr, guestName, phone, email, adults, children,
-        status, source, notes, totalPrice, placeNumber, arrivalAt, departureAt, flight,
+        roomId,
+        checkIn: checkInStr,
+        checkOut: checkOutStr,
+        guestName,
+        phone,
+        email,
+        adults,
+        children,
+        status,
+        source,
+        notes,
+        totalPrice,
+        placeNumber,
+        arrivalAt,
+        departureAt,
+        flight,
       };
       const before: Record<string, unknown> = {};
       const after: Record<string, unknown> = {};
@@ -630,7 +678,11 @@ export class ReservationsService {
       // Кто правил — из контекста запроса (writeAuditLog); откуда — партнёр или кабинет.
       diff: {
         before: result.changes.before,
-        after: { ...result.changes.after, version: result.version, ...(opts.fromChannel ? { via: 'partner-api' } : {}) },
+        after: {
+          ...result.changes.after,
+          version: result.version,
+          ...(opts.fromChannel ? { via: 'partner-api' } : {}),
+        },
       },
     });
 
@@ -722,7 +774,7 @@ export class ReservationsService {
   // ─── Arrivals ─────────────────────────────────────────────────────────────────
 
   async getArrivals(date: string) {
-    const tenantId = TenantContext.getTenantIdOrThrow();
+    TenantContext.getTenantIdOrThrow();
     return this.prisma.forTenant(async (tx) => {
       return tx.$queryRaw<
         {
@@ -757,7 +809,7 @@ export class ReservationsService {
   // ─── Departures ───────────────────────────────────────────────────────────────
 
   async getDepartures(date: string) {
-    const tenantId = TenantContext.getTenantIdOrThrow();
+    TenantContext.getTenantIdOrThrow();
     return this.prisma.forTenant(async (tx) => {
       return tx.$queryRaw<
         {
@@ -872,15 +924,25 @@ export class ReservationsService {
 
   /** Следы факта в той же транзакции: время заезда или выезда; освободившийся
    *  номер — грязный. */
-  private async stampFact(tx: Prisma.TransactionClient, id: string, fact: Fact, roomId: string, at?: Date) {
+  private async stampFact(
+    tx: Prisma.TransactionClient,
+    id: string,
+    fact: Fact,
+    roomId: string,
+    at?: Date,
+  ) {
     // `at` — время партнёра; без него — момент нажатия.
     if (fact === 'CHECKED_IN') {
-      if (at) await tx.$executeRaw`UPDATE reservation SET checked_in_at = ${at} WHERE id = ${id}::uuid`;
-      else await tx.$executeRaw`UPDATE reservation SET checked_in_at = now() WHERE id = ${id}::uuid`;
+      if (at)
+        await tx.$executeRaw`UPDATE reservation SET checked_in_at = ${at} WHERE id = ${id}::uuid`;
+      else
+        await tx.$executeRaw`UPDATE reservation SET checked_in_at = now() WHERE id = ${id}::uuid`;
     }
     if (fact === 'CHECKED_OUT') {
-      if (at) await tx.$executeRaw`UPDATE reservation SET checked_out_at = ${at} WHERE id = ${id}::uuid`;
-      else await tx.$executeRaw`UPDATE reservation SET checked_out_at = now() WHERE id = ${id}::uuid`;
+      if (at)
+        await tx.$executeRaw`UPDATE reservation SET checked_out_at = ${at} WHERE id = ${id}::uuid`;
+      else
+        await tx.$executeRaw`UPDATE reservation SET checked_out_at = now() WHERE id = ${id}::uuid`;
       await tx.$executeRaw`
         UPDATE room
         SET status = 'DIRTY'::"RoomStatus", "updatedAt" = now()
@@ -957,7 +1019,13 @@ export class ReservationsService {
       tx.reservation.findUnique({ where: { id }, select: { id: true } }),
     );
     if (!found) throw new NotFoundException('Reservation not found');
-    await this.prisma.writeAuditLog({ tenantId, userId, entity: 'reservation', entityId: id, action: 'view' });
+    await this.prisma.writeAuditLog({
+      tenantId,
+      userId,
+      entity: 'reservation',
+      entityId: id,
+      action: 'view',
+    });
   }
 
   // ─── Cancel ───────────────────────────────────────────────────────────────────
@@ -1171,6 +1239,10 @@ export class ReservationsService {
             AND check_out > ${checkIn}::date
             AND status NOT IN ('CANCELLED', 'NO_SHOW')
         `;
-    return rows.map((r) => ({ placeNumber: r.place_number, adults: r.adults, children: r.children ?? 0 }));
+    return rows.map((r) => ({
+      placeNumber: r.place_number,
+      adults: r.adults,
+      children: r.children ?? 0,
+    }));
   }
 }

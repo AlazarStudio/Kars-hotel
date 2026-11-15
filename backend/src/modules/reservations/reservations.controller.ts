@@ -35,7 +35,9 @@ export class ReservationsController {
   @Get('guest-export')
   @HttpCode(HttpStatus.OK)
   @RequirePermissions('guest.export')
-  @ApiOperation({ summary: 'Export all data the hotel holds about a guest (exact phone, email or full name)' })
+  @ApiOperation({
+    summary: 'Export all data the hotel holds about a guest (exact phone, email or full name)',
+  })
   guestExport(
     @Query('phone') phone: string | undefined,
     @Query('email') email: string | undefined,
@@ -50,7 +52,9 @@ export class ReservationsController {
   @Post(':id/anonymize')
   @HttpCode(HttpStatus.OK)
   @RequirePermissions('guest.anonymize')
-  @ApiOperation({ summary: 'Anonymize a finished reservation (name, phone, email, notes; journal traces)' })
+  @ApiOperation({
+    summary: 'Anonymize a finished reservation (name, phone, email, notes; journal traces)',
+  })
   anonymize(@Param('id') id: string, @CurrentUser() user: AuthenticatedRequestUser) {
     return this.guestData.anonymize(id, user.userId);
   }

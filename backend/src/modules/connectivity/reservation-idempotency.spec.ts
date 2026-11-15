@@ -47,7 +47,10 @@ function make() {
         }),
     },
     ratePlans: { partnerPlans: plans },
-    availability: { priceByPlan: price },
+    availability: {
+      priceByPlan: price,
+      check: async () => ({ bookable: true, restrictionsAllowed: true }),
+    },
     resolvePinnedRoom: room,
     pickAvailableRoom: room,
     reservations: { create: createReservation, findChannelReservation: replay },

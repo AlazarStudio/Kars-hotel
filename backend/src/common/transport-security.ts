@@ -41,7 +41,9 @@ export function assertSecureTransport(
   if (!bad.length) return;
   const list = bad.map((n) => `${n}=${env[n]}`).join(', ');
   if (env.ALLOW_INSECURE_HTTP === 'yes') {
-    warn(`ВНИМАНИЕ: production работает по HTTP (${list}) — разрешено ALLOW_INSECURE_HTTP=yes. Данные идут открытым текстом.`);
+    warn(
+      `ВНИМАНИЕ: production работает по HTTP (${list}) — разрешено ALLOW_INSECURE_HTTP=yes. Данные идут открытым текстом.`,
+    );
     return;
   }
   throw new Error(

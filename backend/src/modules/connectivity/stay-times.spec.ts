@@ -40,25 +40,48 @@ describe('Партнёр присылает время прилёта и отъ�
     ['13-й месяц', '2026-13-22T02:00'],
     ['24 часа', '2026-10-22T24:00'],
   ])('время %s — НЕ принимается', async (_n, arrivalAt) => {
-    expect(await errorsOf(ConnectCreateReservationDto, { ...CREATE, arrivalAt })).toContain('arrivalAt');
-    expect(await errorsOf(ConnectUpdateReservationDto, { departureAt: arrivalAt })).toContain('departureAt');
+    expect(await errorsOf(ConnectCreateReservationDto, { ...CREATE, arrivalAt })).toContain(
+      'arrivalAt',
+    );
+    expect(await errorsOf(ConnectUpdateReservationDto, { departureAt: arrivalAt })).toContain(
+      'departureAt',
+    );
   });
 
   it('рейс длиннее 64 знаков — НЕ принимается', async () => {
-    expect(await errorsOf(ConnectCreateReservationDto, { ...CREATE, flight: 'S'.repeat(65) })).toContain('flight');
+    expect(
+      await errorsOf(ConnectCreateReservationDto, { ...CREATE, flight: 'S'.repeat(65) }),
+    ).toContain('flight');
   });
 
   it('правка: null стирает время и рейс', async () => {
-    expect(await errorsOf(ConnectUpdateReservationDto, { arrivalAt: null, departureAt: null, flight: null })).toEqual([]);
+    expect(
+      await errorsOf(ConnectUpdateReservationDto, {
+        arrivalAt: null,
+        departureAt: null,
+        flight: null,
+      }),
+    ).toEqual([]);
   });
 
   it('кабинет гостиницы время брони НЕ меняет — поля в его правке нет', async () => {
-    expect(await errorsOf(UpdateReservationDto, { version: 1, arrivalAt: '2026-10-22T02:00' })).toContain('arrivalAt');
-    expect(await errorsOf(UpdateReservationDto, { version: 1, flight: 'S7 178' })).toContain('flight');
+    expect(
+      await errorsOf(UpdateReservationDto, { version: 1, arrivalAt: '2026-10-22T02:00' }),
+    ).toContain('arrivalAt');
+    expect(await errorsOf(UpdateReservationDto, { version: 1, flight: 'S7 178' })).toContain(
+      'flight',
+    );
   });
 });
 
-const TENANT = { id: 't1', slug: 'h1', currency: 'RUB', isActive: true, partnerVisible: true, provisional: false };
+const TENANT = {
+  id: 't1',
+  slug: 'h1',
+  currency: 'RUB',
+  isActive: true,
+  partnerVisible: true,
+  provisional: false,
+};
 const logger = { log: jest.fn(), warn: jest.fn() };
 
 describe('Партнёрский API передаёт время брони дальше', () => {
@@ -73,12 +96,17 @@ describe('Партнёрский API передаёт время брони да
       prisma: {
         forTenantExplicit: async (_t: string, cb: (tx: object) => unknown) =>
           cb({
-            roomType: { findUnique: async () => ({ isActive: true, maxOccupancy: 2, basePrice: 1000 }) },
+            roomType: {
+              findUnique: async () => ({ isActive: true, maxOccupancy: 2, basePrice: 1000 }),
+            },
             reservation: { update: async () => ({}) },
           }),
       },
       ratePlans: { partnerPlans: async () => [] },
-      availability: { priceByPlan: async () => [] },
+      availability: {
+        priceByPlan: async () => [],
+        check: async () => ({ bookable: true, restrictionsAllowed: true }),
+      },
       pickAvailableRoom: async () => 'room-1',
       reservations: {
         create: async (...args: unknown[]) => {
@@ -110,16 +138,43 @@ describe('Партнёрский API передаёт время брони да
         },
       },
     });
-    await svc.updateReservation('h1', 'r1', { arrivalAt: null, flight: 'S7 178' } as never, 'p-avia');
-    expect(updates[0][2]).toEqual({ fromChannel: true, stay: { arrivalAt: null, flight: 'S7 178' } });
+    await svc.updateReservation(
+      'h1',
+      'r1',
+      { arrivalAt: null, flight: 'S7 178' } as never,
+      'p-avia',
+    );
+    expect(updates[0][2]).toEqual({
+      fromChannel: true,
+      stay: { arrivalAt: null, flight: 'S7 178' },
+    });
   });
 
   it('чтение — партнёр видит то, что прислал', async () => {
     const row = {
-      id: 'r1', tenantId: 't1', guestName: 'Гость', phone: null, roomId: 'room', roomTypeId: 'cat', status: 'CONFIRMED',
-      checkIn: new Date('2026-10-21'), checkOut: new Date('2026-10-24'), adults: 1, children: 0, totalPrice: null,
-      placeNumber: 1, version: 3, notes: null, createdAt: new Date(), updatedAt: new Date(), checkedInAt: null,
-      checkedOutAt: null, room: { number: '101' }, channelManaged: true, partnerId: 'p-avia', ...TIMES,
+      id: 'r1',
+      tenantId: 't1',
+      guestName: 'Гость',
+      phone: null,
+      roomId: 'room',
+      roomTypeId: 'cat',
+      status: 'CONFIRMED',
+      checkIn: new Date('2026-10-21'),
+      checkOut: new Date('2026-10-24'),
+      adults: 1,
+      children: 0,
+      totalPrice: null,
+      placeNumber: 1,
+      version: 3,
+      notes: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      checkedInAt: null,
+      checkedOutAt: null,
+      room: { number: '101' },
+      channelManaged: true,
+      partnerId: 'p-avia',
+      ...TIMES,
     };
     const svc = Object.create(ConnectivityService.prototype) as ConnectivityService;
     Object.assign(svc, {

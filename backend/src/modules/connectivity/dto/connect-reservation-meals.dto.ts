@@ -1,12 +1,5 @@
 import { Type } from 'class-transformer';
-import {
-  ArrayMaxSize,
-  IsArray,
-  IsInt,
-  IsISO8601,
-  Min,
-  ValidateNested,
-} from 'class-validator';
+import { ArrayMaxSize, IsArray, IsInt, IsISO8601, Min, ValidateNested } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 /** Порции одного дня заезда. */

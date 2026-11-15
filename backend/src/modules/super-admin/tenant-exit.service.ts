@@ -55,7 +55,9 @@ export class TenantExitService {
 
   /** Таблицы без tenant_id со ссылкой (одностолбцовой) на таблицу гостиницы. */
   private async dependents(tx: { $queryRaw: PrismaService['$queryRaw'] }, tables: string[]) {
-    const rows = await tx.$queryRaw<Array<{ child: string; col: string; parent: string; pcol: string }>>`
+    const rows = await tx.$queryRaw<
+      Array<{ child: string; col: string; parent: string; pcol: string }>
+    >`
       SELECT c.conrelid::regclass::text AS child, a.attname AS col,
              c.confrelid::regclass::text AS parent, af.attname AS pcol
         FROM pg_constraint c
@@ -87,10 +89,20 @@ export class TenantExitService {
       });
     }
     const { id, slug, name } = tenant;
-    const json = JSON.stringify({ exportedAt: new Date().toISOString(), tenant: { ...tenant }, tables }, null, 2);
+    const json = JSON.stringify(
+      { exportedAt: new Date().toISOString(), tenant: { ...tenant }, tables },
+      null,
+      2,
+    );
     const sha = createHash('sha256').update(json).digest('hex');
     await this.prisma.admin.tenantExitAct.create({
-      data: { tenantId: id, tenantSlug: slug, tenantName: name, exportedBy: actorId, exportSha256: sha },
+      data: {
+        tenantId: id,
+        tenantSlug: slug,
+        tenantName: name,
+        exportedBy: actorId,
+        exportSha256: sha,
+      },
     });
     await this.prisma.writeAuditLog({
       tenantId: id,
@@ -110,10 +122,17 @@ export class TenantExitService {
     }
     if (tenant.isActive) throw new ConflictException('Сначала выключите гостиницу');
     const act = await this.prisma.admin.tenantExitAct.findFirst({
-      where: { tenantId, destroyedAt: null, exportedAt: { gte: new Date(Date.now() - EXPORT_FRESH_DAYS * 86_400_000) } },
+      where: {
+        tenantId,
+        destroyedAt: null,
+        exportedAt: { gte: new Date(Date.now() - EXPORT_FRESH_DAYS * 86_400_000) },
+      },
       orderBy: { exportedAt: 'desc' },
     });
-    if (!act) throw new ConflictException(`Сначала выгрузите данные гостиницы (выгрузка не старше ${EXPORT_FRESH_DAYS} дней)`);
+    if (!act)
+      throw new ConflictException(
+        `Сначала выгрузите данные гостиницы (выгрузка не старше ${EXPORT_FRESH_DAYS} дней)`,
+      );
 
     const tables = await this.tenantTables();
     let counts: Record<string, number> = {};
@@ -128,7 +147,9 @@ export class TenantExitService {
       { timeout: 120_000 },
     );
     const files = await this.deleteFiles(tenantId, tenant.slug);
-    this.logger.log(`Гостиница ${tenant.slug} уничтожена по акту ${act.id}: ${JSON.stringify(counts)}, файлов ${files}`);
+    this.logger.log(
+      `Гостиница ${tenant.slug} уничтожена по акту ${act.id}: ${JSON.stringify(counts)}, файлов ${files}`,
+    );
     return { actId: act.id, counts, files };
   }
 
@@ -179,13 +200,18 @@ export class TenantExitService {
       { timeout: 120_000 },
     );
     const files = await this.deleteFiles(tenantId, tenant.slug);
-    this.logger.log(`Пустая гостиница ${tenant.slug} удалена (акт ${act.id}): ${JSON.stringify(counts)}, файлов ${files}`);
+    this.logger.log(
+      `Пустая гостиница ${tenant.slug} удалена (акт ${act.id}): ${JSON.stringify(counts)}, файлов ${files}`,
+    );
     return { actId: act.id, counts, files };
   }
 
   /** Все строки гостиницы во всех её таблицах — внутри транзакции вызывающего. */
   private async wipe(
-    tx: { $executeRawUnsafe: PrismaService['$executeRawUnsafe']; $queryRaw: PrismaService['$queryRaw'] },
+    tx: {
+      $executeRawUnsafe: PrismaService['$executeRawUnsafe'];
+      $queryRaw: PrismaService['$queryRaw'];
+    },
     tenantId: string,
     tables: string[],
   ): Promise<Record<string, number>> {
@@ -194,9 +220,15 @@ export class TenantExitService {
     // а уходит всё, что принадлежит гостинице, целиком.
     await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = replica`);
     for (const t of tables) {
-      counts[t] = await tx.$executeRawUnsafe(`DELETE FROM "${t}" WHERE tenant_id = $1::uuid`, tenantId);
+      counts[t] = await tx.$executeRawUnsafe(
+        `DELETE FROM "${t}" WHERE tenant_id = $1::uuid`,
+        tenantId,
+      );
     }
-    counts.tenant = await tx.$executeRawUnsafe(`DELETE FROM "tenant" WHERE id = $1::uuid`, tenantId);
+    counts.tenant = await tx.$executeRawUnsafe(
+      `DELETE FROM "tenant" WHERE id = $1::uuid`,
+      tenantId,
+    );
     /* Каскады при молчащих ключах тоже молчат: строки таблиц без tenant_id,
        висевшие на удалённых (права ролей гостиницы), стираем явно. Связи —
        из схемы базы, как и список таблиц. */
@@ -212,7 +244,9 @@ export class TenantExitService {
   /** Файлы — после фиксации: откат не оставит строк, указывающих на стёртое. */
   private deleteFiles(tenantId: string, slug: string): Promise<number> {
     return this.storage.deleteTenantFiles(tenantId).catch((e: unknown) => {
-      this.logger.error(`Файлы гостиницы ${slug} не стёрты: ${e instanceof Error ? e.message : String(e)}`);
+      this.logger.error(
+        `Файлы гостиницы ${slug} не стёрты: ${e instanceof Error ? e.message : String(e)}`,
+      );
       return -1;
     });
   }

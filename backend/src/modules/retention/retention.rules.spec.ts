@@ -15,7 +15,14 @@ describe('Сроки хранения PMS', () => {
 
   it('все правила решения 21 на месте', () => {
     expect(RULES.map((r) => r.id).sort()).toEqual(
-      ['cancelled-noshow', 'dismissed-staff', 'folio-names', 'guest-contacts', 'orphan-journal', 'sessions'].sort(),
+      [
+        'cancelled-noshow',
+        'dismissed-staff',
+        'folio-names',
+        'guest-contacts',
+        'orphan-journal',
+        'sessions',
+      ].sort(),
     );
     expect([CANCELLED_DAYS, CONTACTS_DAYS]).toEqual([30, 92]);
   });

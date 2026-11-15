@@ -135,7 +135,9 @@ export class PartnerWebhookService {
         version: r.version,
       });
     } catch (e) {
-      this.log.warn(`Не удалось подготовить вебхук reservation.changed по брони ${reservationId}: ${(e as Error).message}`);
+      this.log.warn(
+        `Не удалось подготовить вебхук reservation.changed по брони ${reservationId}: ${(e as Error).message}`,
+      );
     }
   }
 

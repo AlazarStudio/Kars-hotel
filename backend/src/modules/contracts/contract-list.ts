@@ -1,3 +1,6 @@
+import { contractNumberKey } from './contract-identity';
+import { usableFillCell } from './contract-price';
+
 /* ДОГОВОРЫ ГОСТИНИЦЫ ДЛЯ КАБИНЕТА (11.11.2026).
  *
  * Два источника: реестр (пришёл списком от партнёра) и приложения с ценами
@@ -91,11 +94,12 @@ export interface ContractView {
    */
   documents: number;
   /**
-   * Есть ли цены: только реальные строки ценового приложения. Реестр цифр не
-   * даёт, и обещанное им приложение ценой не считается — тариф по такому
-   * договору заводится, но не работает.
+   * Есть ли пригодные ячейки проживания в присланных сетках. Сам документ
+   * без сетки или только с услугой питания ещё не даёт цену номера.
    */
   hasPrices: boolean;
+  hasDocuments: boolean;
+  hasGrids: boolean;
   receivedAt: string | null;
   /**
    * Срезы, которые в договоре реально есть: по ним мастер заводит тариф.
@@ -116,8 +120,10 @@ interface Acc {
   isPrimary: boolean;
   state: string;
   services: string[];
-  /** Строки ценовых приложений — единственное доказательство, что цены есть. */
+  /** Документы приехали; наличие пригодных сеток проверяется отдельно. */
   priceDocs: number;
+  hasGrids: boolean;
+  hasPrices: boolean;
   /** Число приложений из реестра: цифра без строк, ценой не считается. */
   registrySheets: number;
   slices: SliceKey[];
@@ -137,14 +143,13 @@ export function mergeContractList(
   docs: ContractPriceDocRow[],
 ): ContractView[] {
   const map = new Map<string, Acc>();
-  // Номер реестра уже trim()-нут на входе (connectivity/contract-registry.ts), а
-  // номер из ценового документа — нет: без нормализации «205 » дал бы вторую карточку.
-  const key = (partnerId: string, number: string) => `${partnerId}|${String(number).trim()}`;
+  // У старых документов ещё встречаются пробелы; новых миграций для чтения не нужно.
+  const key = (partnerId: string, number: string) => `${partnerId}|${contractNumberKey(number)}`;
 
   for (const r of registry) {
     map.set(key(r.partnerId, r.number), {
       partnerId: r.partnerId,
-      number: r.number,
+      number: contractNumberKey(r.number),
       account: r.accountCode ? { code: r.accountCode, name: r.accountName ?? r.accountCode } : null,
       signedAt: iso(r.validFrom),
       expiresAt: iso(r.validTo),
@@ -152,6 +157,8 @@ export function mergeContractList(
       state: r.state,
       services: [...r.services],
       priceDocs: 0,
+      hasGrids: false,
+      hasPrices: false,
       registrySheets: r.sheetsCount,
       slices: [],
       registryAt: r.receivedAt,
@@ -163,7 +170,7 @@ export function mergeContractList(
     const k = key(d.partnerId, d.contractNumber);
     const row: Acc = map.get(k) ?? {
       partnerId: d.partnerId,
-      number: d.contractNumber,
+      number: contractNumberKey(d.contractNumber),
       account: null,
       signedAt: null,
       expiresAt: null,
@@ -171,6 +178,8 @@ export function mergeContractList(
       state: 'ACTIVE',
       services: [],
       priceDocs: 0,
+      hasGrids: false,
+      hasPrices: false,
       registrySheets: 0,
       slices: [],
       registryAt: null,
@@ -178,7 +187,26 @@ export function mergeContractList(
     };
     row.priceDocs += 1;
     if (!row.services.includes(d.service)) row.services.push(d.service);
-    for (const s of slicesOf(d.fill)) {
+    const accommodationGrids =
+      d.service === 'ACCOMMODATION' && Array.isArray(d.fill)
+        ? d.fill.filter(
+            (g): g is { from: string; slices: unknown[] } =>
+              !!g && typeof g === 'object' && typeof g.from === 'string' && Array.isArray(g.slices),
+          )
+        : [];
+    row.hasGrids ||= accommodationGrids.length > 0;
+    row.hasPrices ||= accommodationGrids.some((g) =>
+      g.slices.some((s) => {
+        if (!s || typeof s !== 'object') return false;
+        const cells = (s as { cells?: unknown }).cells;
+        return (
+          slicesOf([{ ...g, slices: [s] }]).length > 0 &&
+          Array.isArray(cells) &&
+          cells.some(usableFillCell)
+        );
+      }),
+    );
+    for (const s of slicesOf(accommodationGrids)) {
       if (!row.slices.some((x) => sliceKey(x) === sliceKey(s))) row.slices.push(s);
     }
     if (!row.account && d.accountCode) {
@@ -202,7 +230,9 @@ export function mergeContractList(
       services: [...r.services].sort(),
       slices: r.slices.sort(bySlice),
       documents: Math.max(r.priceDocs, r.registrySheets),
-      hasPrices: r.priceDocs > 0,
+      hasPrices: r.hasPrices,
+      hasDocuments: r.priceDocs > 0,
+      hasGrids: r.hasGrids,
       receivedAt: latestIso(r.registryAt, r.priceAt),
     }))
     .sort(

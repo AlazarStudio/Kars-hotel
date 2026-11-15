@@ -11,7 +11,9 @@ import { UpdateRoomDto } from './update-room.dto';
 const ROOM_TYPE = '7d9f4c2e-1b3a-4c5d-8e6f-0a1b2c3d4e5f';
 const APARTMENT = 'ул. 40 лет Победы 3 кв 58, подъезд 2, этаж 5, вход со двора';
 const numberErrors = (cls: typeof CreateRoomDto | typeof UpdateRoomDto, number: string) =>
-  validateSync(plainToInstance(cls, { roomTypeId: ROOM_TYPE, number })).filter((e) => e.property === 'number');
+  validateSync(plainToInstance(cls, { roomTypeId: ROOM_TYPE, number })).filter(
+    (e) => e.property === 'number',
+  );
 
 describe('номер номера — длина', () => {
   it('адрес квартиры длиннее 16 — проходит и при заведении, и при правке', () => {

@@ -444,7 +444,14 @@ export class AuthService implements OnModuleInit {
     fromTenantId?: string,
   ): Promise<AuthTokens> {
     if (fromTenantId) {
-      await this.auditImpersonation('impersonation.end', fromTenantId, operatorUserId, null, ip, userAgent);
+      await this.auditImpersonation(
+        'impersonation.end',
+        fromTenantId,
+        operatorUserId,
+        null,
+        ip,
+        userAgent,
+      );
     }
     const user = await this.prisma.admin.user.findUnique({
       where: { id: operatorUserId },
@@ -509,7 +516,8 @@ export class AuthService implements OnModuleInit {
       where: { id: adminUserId },
       select: { id: true, email: true, isActive: true },
     });
-    if (!actor || !actor.isActive) throw new ForbiddenException('Operator account not found or inactive');
+    if (!actor || !actor.isActive)
+      throw new ForbiddenException('Operator account not found or inactive');
     return {
       userId: actor.id,
       email: actor.email,
@@ -536,7 +544,14 @@ export class AuthService implements OnModuleInit {
     userAgent?: string,
   ): Promise<{ accessToken: string; accessTtlSeconds: number }> {
     const who = await this.resolveImpersonation(targetTenantId, adminUserId);
-    await this.auditImpersonation('impersonation.start', targetTenantId, adminUserId, 'admin-panel', ip, userAgent);
+    await this.auditImpersonation(
+      'impersonation.start',
+      targetTenantId,
+      adminUserId,
+      'admin-panel',
+      ip,
+      userAgent,
+    );
     const accessPayload: JwtAccessPayload = {
       sub: who.userId,
       tid: targetTenantId,
@@ -675,7 +690,14 @@ export class AuthService implements OnModuleInit {
     // Hotel mode: dispatcher works inside one hotel, tagged with their id.
     if (entry.tenantId) {
       const who = await this.resolveImpersonation(entry.tenantId, entry.dispatcherUserId);
-      await this.auditImpersonation('impersonation.start', entry.tenantId, entry.dispatcherUserId, 'kars-avia-sso', ip, userAgent);
+      await this.auditImpersonation(
+        'impersonation.start',
+        entry.tenantId,
+        entry.dispatcherUserId,
+        'kars-avia-sso',
+        ip,
+        userAgent,
+      );
       const tokens = await this.issueTokens({
         userId: who.userId,
         tenantId: entry.tenantId,
@@ -730,7 +752,12 @@ export class AuthService implements OnModuleInit {
     if (!platform) throw new ForbiddenException('Platform tenant is not provisioned');
     return this.prisma.admin.role.upsert({
       where: { tenantId_code: { tenantId: platform.id, code: RoleCode.DISPATCHER } },
-      create: { tenantId: platform.id, code: RoleCode.DISPATCHER, name: 'Диспетчер Kars Avia', isSystem: true },
+      create: {
+        tenantId: platform.id,
+        code: RoleCode.DISPATCHER,
+        name: 'Диспетчер Kars Avia',
+        isSystem: true,
+      },
       update: {},
       select: { id: true, tenantId: true },
     });
@@ -746,7 +773,10 @@ export class AuthService implements OnModuleInit {
     });
     if (!user || !user.isDispatcher) return { deactivated: false };
     await this.prisma.admin.$transaction([
-      this.prisma.admin.user.update({ where: { id: user.id }, data: { isActive: false, deactivatedAt: new Date() } }),
+      this.prisma.admin.user.update({
+        where: { id: user.id },
+        data: { isActive: false, deactivatedAt: new Date() },
+      }),
       this.prisma.admin.refreshToken.updateMany({
         where: { userId: user.id, revokedAt: null },
         data: { revokedAt: new Date() },

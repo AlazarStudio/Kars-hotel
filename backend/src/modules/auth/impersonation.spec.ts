@@ -235,7 +235,11 @@ describe('продление сессии «от имени»', () => {
 
   it.each([
     ['кука гостиницы — вход в ДРУГУЮ гостиницу', ROW, OTHER_HOTEL],
-    ['кука гостиницы — собственный вход без «от имени», пусть и этой гостиницы', { ...ROW, impersonatedBy: null }, TENANT],
+    [
+      'кука гостиницы — собственный вход без «от имени», пусть и этой гостиницы',
+      { ...ROW, impersonatedBy: null },
+      TENANT,
+    ],
     ['общая кука — вход «от имени» в гостиницу', ROW, undefined],
   ])('НЕ продлевает: %s — и запись не отзывает', async (_case, row, hotelTenantId) => {
     const { service, signed, prisma } = serviceForRefresh(row);

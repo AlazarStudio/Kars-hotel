@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { contractNightRub } from '../contracts/contract-price';
@@ -84,6 +89,8 @@ export class PricingService {
           where: { id: currentParentId },
           select: {
             id: true,
+            forOperator: true,
+            partnerId: true,
             parentRatePlanId: true,
             priceModifierType: true,
             priceModifierValue: true,
@@ -91,6 +98,9 @@ export class PricingService {
           },
         });
         if (!parent) break;
+        if (parent.forOperator || parent.partnerId) {
+          throw new ConflictException('Корпоративный тариф нельзя использовать как базовый');
+        }
         parentChain.push({
           id: parent.id,
           parentRatePlanId: parent.parentRatePlanId,
@@ -275,7 +285,9 @@ export class PricingService {
       return rows.map((r) => ({
         id: r.id,
         partnerId: r.partnerId,
-        account: r.accountCode ? { code: r.accountCode, name: r.accountName ?? r.accountCode } : null,
+        account: r.accountCode
+          ? { code: r.accountCode, name: r.accountName ?? r.accountCode }
+          : null,
         contractNumber: r.contractNumber,
         amendmentNumber: r.amendmentNumber,
         service: r.service,
@@ -294,5 +306,3 @@ export class PricingService {
 function startOfUTC(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
-
-

@@ -16,13 +16,40 @@ const MAX_ARRAY = 50;
 const MAX_DEPTH = 8;
 
 /** Подстроки имени поля (без регистра и разделителей), которые всегда скрываются. */
-const SECRET_PARTS = ['password', 'passwd', 'secret', 'token', 'apikey', 'mrz', 'passport', 'otp', 'cookie', 'authorization'];
+const SECRET_PARTS = [
+  'password',
+  'passwd',
+  'secret',
+  'token',
+  'apikey',
+  'mrz',
+  'passport',
+  'otp',
+  'cookie',
+  'authorization',
+];
 /** Точные имена (без регистра и разделителей). */
 const SECRET_KEYS = new Set([
-  'pin', 'newpin', 'oldpin', 'currentpin',
+  'pin',
+  'newpin',
+  'oldpin',
+  'currentpin',
   // Паспорт гостя — поля документа (гостевая карточка, гости брони).
-  'document', 'documentnumber', 'docnumber', 'docseries', 'series', 'passportseries', 'passportnumber',
-  'cardnumber', 'cvv', 'cvc', 'snils', 'inn_personal', 'docnum', 'documentseries', 'birthplace',
+  'document',
+  'documentnumber',
+  'docnumber',
+  'docseries',
+  'series',
+  'passportseries',
+  'passportnumber',
+  'cardnumber',
+  'cvv',
+  'cvc',
+  'snils',
+  'inn_personal',
+  'docnum',
+  'documentseries',
+  'birthplace',
 ]);
 
 const norm = (key: string) => key.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -30,6 +57,11 @@ const norm = (key: string) => key.toLowerCase().replace(/[^a-z0-9]/g, '');
 /** Путь, где `code` — одноразовый код (вход, второй фактор, устройство, телефон). */
 export function isAuthPath(path: string): boolean {
   return /\/(auth|sso|login|verify|password|pin|2fa|otp)(\/|$|\?)/i.test(path);
+}
+
+/** На этом маршруте общее имя `key` означает секрет гостиницы. */
+export function isReportsKeyPath(path: string): boolean {
+  return /^\/api\/connect\/v1\/hotels\/[^/]+\/reports-key\/?$/i.test(path.split('?')[0]);
 }
 
 export function isSecretKey(key: string, authPath: boolean): boolean {
@@ -41,25 +73,33 @@ export function isSecretKey(key: string, authPath: boolean): boolean {
 
 /** Тело или параметры запроса — для журнала: секреты скрыты, длинное обрезано с пометкой. */
 export function redactForJournal(value: unknown, path: string): unknown {
-  return walk(value, isAuthPath(path), 0);
+  return walk(value, isAuthPath(path), isReportsKeyPath(path), 0);
 }
 
-function walk(value: unknown, authPath: boolean, depth: number): unknown {
+function walk(value: unknown, authPath: boolean, reportsKeyPath: boolean, depth: number): unknown {
   if (value === null || value === undefined) return value;
   if (typeof value === 'string') {
-    return value.length > MAX_STRING ? `${value.slice(0, MAX_STRING)}… (+${value.length - MAX_STRING})` : value;
+    return value.length > MAX_STRING
+      ? `${value.slice(0, MAX_STRING)}… (+${value.length - MAX_STRING})`
+      : value;
   }
   if (typeof value !== 'object') return value;
   if (value instanceof Date) return value.toISOString();
   if (depth >= MAX_DEPTH) return '…';
   if (Array.isArray(value)) {
-    const head = value.slice(0, MAX_ARRAY).map((v) => walk(v, authPath, depth + 1));
+    const head = value.slice(0, MAX_ARRAY).map((v) => walk(v, authPath, reportsKeyPath, depth + 1));
     return value.length > MAX_ARRAY ? [...head, `… (+${value.length - MAX_ARRAY})`] : head;
   }
   if (Buffer.isBuffer(value)) return `<${value.length} B>`;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    out[k] = isSecretKey(k, authPath) && v !== null && v !== undefined && v !== '' ? JOURNAL_HIDDEN : walk(v, authPath, depth + 1);
+    out[k] =
+      (isSecretKey(k, authPath) || (reportsKeyPath && k.toLowerCase() === 'key')) &&
+      v !== null &&
+      v !== undefined &&
+      v !== ''
+        ? JOURNAL_HIDDEN
+        : walk(v, authPath, reportsKeyPath, depth + 1);
   }
   return out;
 }

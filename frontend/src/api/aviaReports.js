@@ -43,3 +43,23 @@ export async function sendFapInvoice(id, file, amount, number) {
   const { data } = await api.post(`/avia-reports/fap/${encodeURIComponent(id)}/invoice`, form);
   return data;
 }
+
+export async function listSquadronReports() {
+  const { data } = await api.get('/avia-reports/squadron');
+  return data;
+}
+
+export async function getSquadronReport(id) {
+  const { data } = await api.get(`/avia-reports/squadron/${encodeURIComponent(id)}`);
+  return data;
+}
+
+export async function previewSquadronReport(startDate, endDate) {
+  const { data } = await api.get('/avia-reports/squadron/preview', { params: { startDate, endDate } });
+  return data;
+}
+
+export async function sendSquadronReport(payload) {
+  const { data } = await api.post('/avia-reports/squadron', payload);
+  return data;
+}

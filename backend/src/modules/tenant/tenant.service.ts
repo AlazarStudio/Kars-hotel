@@ -115,7 +115,9 @@ export class TenantService {
     const tenantId = TenantContext.getTenantIdOrThrow();
     // Use admin client to bypass RLS — tenant table is not tenant-scoped by RLS,
     // but the app_user connection requires SET LOCAL app.tenant_id which forTenant provides.
-    return this.present(await this.prisma.admin.tenant.findUniqueOrThrow({ where: { id: tenantId } }));
+    return this.present(
+      await this.prisma.admin.tenant.findUniqueOrThrow({ where: { id: tenantId } }),
+    );
   }
 
   async updateSettings(dto: UpdateTenantSettingsDto) {
@@ -295,7 +297,8 @@ export class TenantService {
       include: { role: { select: { code: true } } },
     });
     if (!user) throw new NotFoundException('User not found');
-    if (user.role.code === 'OWNER') throw new ForbiddenException('Пароль владельца так не сбросить');
+    if (user.role.code === 'OWNER')
+      throw new ForbiddenException('Пароль владельца так не сбросить');
     if (!user.isActive) throw new ForbiddenException('Сотрудник деактивирован');
 
     const temporaryPassword = crypto.randomBytes(8).toString('hex');
@@ -337,7 +340,9 @@ export class TenantService {
       where: { id: userId },
       data: {
         ...(dto.roleId ? { roleId: dto.roleId } : {}),
-        ...(dto.isActive !== undefined ? { isActive: dto.isActive, deactivatedAt: dto.isActive ? null : new Date() } : {}),
+        ...(dto.isActive !== undefined
+          ? { isActive: dto.isActive, deactivatedAt: dto.isActive ? null : new Date() }
+          : {}),
         ...(dto.fullName ? { fullName: dto.fullName } : {}),
       },
       select: {

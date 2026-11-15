@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { parseISO, format, differenceInDays, eachDayOfInterval } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import classes from './Reports.module.css';
@@ -6,8 +6,11 @@ import { BOOKING_STATUS, BOOKING_SOURCE } from '../../constants';
 import { useTimeline } from '../../../../hooks/useTimeline';
 import AviaReportsTab from './AviaReportsTab';
 import FapReportsTab from './FapReportsTab';
+import SquadronReportsTab from './SquadronReportsTab';
 import { useAuth } from '../../../../auth/AuthContext';
 import DateInput from '../../shared/DateInput';
+const EMPTY = [];
+const dateLabel = (value) => value ? value.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$3.$2.$1') : 'выберите дату';
 
 // ─── CSV export helper ───────────────────────────────────────────────────────
 function exportCSV(rows, filename) {
@@ -48,9 +51,9 @@ function Reports() {
 
   const { data, loading, error } = useTimeline(fromDate, daysCount);
 
-  const bookings   = data?.bookings   ?? [];
-  const rooms      = data?.rooms      ?? [];
-  const categories = data?.categories ?? [];
+  const bookings   = data?.bookings   ?? EMPTY;
+  const rooms      = data?.rooms      ?? EMPTY;
+  const categories = data?.categories ?? EMPTY;
 
   // Filter to range, exclude cancelled
   const rangeBookings = useMemo(() =>
@@ -162,42 +165,11 @@ function Reports() {
   return (
     <div className={classes.root}>
       <div className={classes.pageHeader}>
-        <div className={classes.pageTitle}>Отчёты</div>
-        <div className={classes.dateRange}>
-          <DateInput className={classes.dateInput} value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
-          <span className={classes.dateSep}>—</span>
-          <DateInput className={classes.dateInput} value={dateTo}   onChange={e => setDateTo(e.target.value)} />
-        </div>
-      </div>
-
-      {error && (
-        <div style={{ padding: '10px 16px', background: '#FEF2F2', color: '#DC2626', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
-          Ошибка загрузки: {error}
-        </div>
-      )}
-
-      {/* ── KPIs ── */}
-      <div className={classes.kpiRow}>
-        <div className={classes.kpi}>
-          <div className={classes.kpiValue}>{loading ? '…' : `${occupancy}%`}</div>
-          <div className={classes.kpiLabel}>Загрузка</div>
-        </div>
-        <div className={classes.kpi}>
-          <div className={classes.kpiValue}>{loading ? '…' : `${revenue.toLocaleString('ru-RU')} ₽`}</div>
-          <div className={classes.kpiLabel}>Выручка</div>
-        </div>
-        <div className={classes.kpi}>
-          <div className={classes.kpiValue}>{loading ? '…' : `${adr.toLocaleString('ru-RU')} ₽`}</div>
-          <div className={classes.kpiLabel}>ADR (ср. цена/ночь)</div>
-        </div>
-        <div className={classes.kpi}>
-          <div className={classes.kpiValue}>{loading ? '…' : rangeBookings.length}</div>
-          <div className={classes.kpiLabel}>Бронирований</div>
-        </div>
+        <h1 className={classes.pageTitle}>Отчёты</h1>
       </div>
 
       {/* ── Tabs ── */}
-      <div className={classes.tabs}>
+      <div className={classes.tabs} role="group" aria-label="Разделы отчётов">
         {[
           ['occupancy', 'По категориям'],
           ['source',    'По источникам'],
@@ -206,11 +178,43 @@ function Reports() {
         ].map(([key, label]) => (
           <button
             key={key}
-            className={`${classes.tab} ${tab === key ? classes.tabActive : ''}`}
+            type="button"
+            className={classes.tab}
+            aria-pressed={tab === key}
             onClick={() => setTab(key)}
           >{label}</button>
         ))}
       </div>
+
+      {tab !== 'avia' && <>
+        <div className={classes.dateRange}>
+          <DateInput className={classes.dateInput} aria-label={`Начало периода: ${dateLabel(dateFrom)}`} value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+          <span className={classes.dateSep}>—</span>
+          <DateInput className={classes.dateInput} aria-label={`Конец периода: ${dateLabel(dateTo)}`} value={dateTo} onChange={e => setDateTo(e.target.value)} />
+        </div>
+
+        {error && <div className={classes.timelineError} role="alert">Ошибка загрузки: {error}</div>}
+
+        {/* ── KPIs ── */}
+        <div className={classes.kpiRow}>
+          <div className={classes.kpi}>
+            <div className={classes.kpiValue}>{loading ? '…' : `${occupancy}%`}</div>
+            <div className={classes.kpiLabel}>Загрузка</div>
+          </div>
+          <div className={classes.kpi}>
+            <div className={classes.kpiValue}>{loading ? '…' : `${revenue.toLocaleString('ru-RU')} ₽`}</div>
+            <div className={classes.kpiLabel}>Выручка</div>
+          </div>
+          <div className={classes.kpi}>
+            <div className={classes.kpiValue}>{loading ? '…' : `${adr.toLocaleString('ru-RU')} ₽`}</div>
+            <div className={classes.kpiLabel}>ADR (ср. цена/ночь)</div>
+          </div>
+          <div className={classes.kpi}>
+            <div className={classes.kpiValue}>{loading ? '…' : rangeBookings.length}</div>
+            <div className={classes.kpiLabel}>Бронирований</div>
+          </div>
+        </div>
+      </>}
 
       {/* ── Occupancy by category ── */}
       {tab === 'occupancy' && (
@@ -278,8 +282,11 @@ function Reports() {
       )}
 
       {/* ── Отчёты, выпущенные Kars Avia для гостиницы ── */}
-      {tab === 'avia' && canAvia && <FapReportsTab />}
-      {tab === 'avia' && canAvia && <AviaReportsTab />}
+      {tab === 'avia' && canAvia && <div className={classes.aviaStack}>
+        <SquadronReportsTab {...{ dateFrom, dateTo, setDateFrom, setDateTo }} />
+        <FapReportsTab />
+        <AviaReportsTab />
+      </div>}
 
       {/* ── Bookings list ── */}
       {tab === 'bookings' && (

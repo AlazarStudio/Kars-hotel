@@ -1,6 +1,7 @@
 import { Children, isValidElement, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import './controls.css';
+import { useDialogOwner } from './dialogContext';
 
 /* Свой выпадающий список PMS. Принимает то же, что родной <select> с <option> и <optgroup>,
    и зовёт onChange с { target: { value, name } }, поэтому формы менять не нужно. */
@@ -26,6 +27,7 @@ function readOptions(children, group = null, out = []) {
 const SEARCH_FROM = 9;
 
 export default function Select({ value, onChange, children, className = '', style, disabled, name, id, placeholder, ...rest }) {
+  const dialogOwner = useDialogOwner();
   const options = useMemo(() => readOptions(children), [children]);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -90,6 +92,7 @@ export default function Select({ value, onChange, children, className = '', styl
       e.preventDefault();
       e.stopPropagation();
       setOpen(false);
+      button.current?.focus();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       setActive((i) => Math.min(shown.length - 1, i + 1));
@@ -122,7 +125,7 @@ export default function Select({ value, onChange, children, className = '', styl
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
       </button>
       {open && box && createPortal(
-        <div ref={pop} className="pms-pop" role="listbox" style={box} onKeyDown={onKey}>
+        <div ref={pop} className="pms-pop" role="listbox" data-dialog-owner={dialogOwner} style={box} onKeyDown={onKey}>
           {options.length >= SEARCH_FROM && (
             <input autoFocus className="pms-pop-search" placeholder="Поиск" aria-label="Поиск" value={query} onChange={(e) => { setQuery(e.target.value); setActive(0); }} />
           )}

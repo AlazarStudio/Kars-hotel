@@ -8,9 +8,24 @@ import { ReservationsService } from './reservations.service';
  * партнёрский API — меняет; та же цифра в форме — не изменение. */
 
 const CUR = {
-  id: 'r1', room_id: 'room', room_type_id: 'rt', check_in: new Date('2026-10-21'), check_out: new Date('2026-10-25'),
-  version: 1, guest_name: 'Морозова И.В.', phone: null, email: null, adults: 1, children: 0, status: 'CONFIRMED',
-  source: 'CORPORATE', notes: null, total_price: null, rate_plan_id: null, place_number: 1, channel_managed: true,
+  id: 'r1',
+  room_id: 'room',
+  room_type_id: 'rt',
+  check_in: new Date('2026-10-21'),
+  check_out: new Date('2026-10-25'),
+  version: 1,
+  guest_name: 'Морозова И.В.',
+  phone: null,
+  email: null,
+  adults: 1,
+  children: 0,
+  status: 'CONFIRMED',
+  source: 'CORPORATE',
+  notes: null,
+  total_price: null,
+  rate_plan_id: null,
+  place_number: 1,
+  channel_managed: true,
 };
 
 /* Дальше проверки гостей сервис идёт к местам и записи — в тесте это
@@ -29,13 +44,21 @@ function make(row = CUR) {
       throw NEXT;
     }),
   };
-  Object.assign(svc, { prisma: { forTenant: jest.fn(async (cb: (t: typeof tx) => unknown) => cb(tx)) } });
+  Object.assign(svc, {
+    prisma: { forTenant: jest.fn(async (cb: (t: typeof tx) => unknown) => cb(tx)) },
+  });
   return svc;
 }
 
 const run = (svc: ReservationsService, dto: object, opts?: { fromChannel?: boolean }) =>
   TenantContext.run(
-    { tenantId: 't1', userId: 'u1', roleCode: 'OWNER', permissions: [], isSuperAdmin: false } as never,
+    {
+      tenantId: 't1',
+      userId: 'u1',
+      roleCode: 'OWNER',
+      permissions: [],
+      isSuperAdmin: false,
+    } as never,
     () => svc.update('r1', { version: 1, ...dto } as never, opts),
   );
 

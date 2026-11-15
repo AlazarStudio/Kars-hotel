@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useId, useLayoutEffect } from 'react';
 import {
   format, startOfMonth,
   addDays, subDays, parseISO,
@@ -6,8 +6,7 @@ import {
 } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import classes from './Tariffs.module.css';
-import { useRatePlans, useCreateRatePlan, useUpdateRatePlan, useDeleteRatePlan } from '../../../../hooks/api/useRatePlans';
-import { useRoomTypes } from '../../../../hooks/api/useRoomTypes';
+import { useRatePlans, useTariffRoomTypes, useCreateRatePlan, useUpdateRatePlan, useDeleteRatePlan } from '../../../../hooks/api/useRatePlans';
 import {
   useRates, useBulkUpsertRates, useFillRates,
   useStandardRates, useSetStandardRates,
@@ -15,17 +14,23 @@ import {
 } from '../../../../hooks/api/useRates';
 import { useContracts } from '../../../../hooks/api/useContracts';
 import { usePartners } from '../../../../hooks/api/usePartners';
+import { useAuth } from '../../../../auth/AuthContext';
 import {
   GUEST_KIND_LABELS, GUEST_KIND_SHORT, MEAL_PLAN_SHORT,
   occupancyColumns, occupancyLabel, priceKey, pickOccupancy, partnerConditions,
   planForSlice,
+  sliceOptions, reconcileSlice, contractViewKey, contractAvailabilityText,
 } from './corporateTariff';
+import { saveWizardSteps } from './tariffWizard';
 import NumberInput from '../../shared/NumberInput.jsx';
 import Select from '../../shared/Select';
 import DateInput from '../../shared/DateInput';
 import WizardSteps from '../../shared/WizardSteps.jsx';
-import ContractPricesTab from './ContractPricesTab';
+import ContractPricesTab, { ContractTariffPreview, ContractPriceNotice } from './ContractPricesTab';
 import ContractCalendar from './ContractCalendar';
+import DialogLayer from '../../shared/DialogLayer';
+import ConfirmDialog from '../../shared/ConfirmDialog';
+import useModalCloseGuard from '../../shared/useModalCloseGuard';
 
 /* 5.3 · подписи — без латинских аббревиатур: гостиница читает «что
    входит», а не код канала продаж. */
@@ -76,7 +81,9 @@ const CAL_DAY_MIN = 46;
 const TODAY = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
 
 const codeFromName = (name) =>
-  name.toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_-]/g, '').slice(0, 32) || 'PLAN';
+  !name.trim() ? '' : name.toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_-]/g, '').slice(0, 32) || 'PLAN';
+
+const formSignature = (form) => JSON.stringify(Object.fromEntries(Object.entries(form).filter(([key]) => !['id', '_autoCode'].includes(key))));
 
 const fmtRub = (v) => Number(v).toLocaleString('ru-RU');
 const fmtDay = (d) => (d ? format(parseISO(String(d).slice(0, 10)), 'dd.MM.yyyy') : '—');
@@ -128,13 +135,13 @@ const HINTS_OWN = [
   'Что входит в тариф и платит ли гость за питание отдельно.',
   'Одна цена за номер или своя цена на каждое число гостей.',
   'Необязательно: другие цены на отдельные даты. Можно пропустить.',
-  'Проверьте и закройте окно: всё уже сохранено.',
+  'Проверьте тариф. «Готово» сохранит условия, цены и сезоны.',
 ];
 const HINTS_CORP = [
   'Назовите тариф. Он будет считаться по договору партнёра.',
   'Выберите договор из реестра Kars Avia — цены придут из него.',
   'Для кого этот срез: юрлицо, авиакомпания, вид брони, питание.',
-  'Проверьте и создайте: цены уже посчитаны по договору.',
+  'Проверьте цены, сроки и категории. Тариф без цен можно создать заранее.',
 ];
 
 /* Питание корпоративного тарифа — только из договора: цена питания приходит
@@ -154,10 +161,14 @@ function OwnTariffCheck({ plan, form }) {
   const { data: standard = [] } = useStandardRates(plan.id);
   const priced = standard.filter((s) => Number(s.price) > 0).length;
   return (
-    <div className={classes.formGroup} style={{ gridColumn: '1/-1' }}>
-      <div><b>{form.name}</b> · {form.code}</div>
-      <div>Питание: {MEAL_PLAN_LABELS[form.mealPlan] ?? form.mealPlan}</div>
-      <div>{priced > 0 ? `Цен задано: ${priced}` : 'Цены не заданы — тариф не продаётся, пока их нет'}</div>
+    <div className={classes.reviewSummary} style={{ gridColumn: '1/-1' }}>
+      <div className={classes.reviewHeading}><div><span className={classes.reviewOverline}>Свой тариф гостиницы</span><h3>{form.name}</h3></div><code>{form.code}</code></div>
+      <dl className={classes.reviewFacts}>
+        <div><dt>Базовые цены</dt><dd>{priced > 0 ? `Задано: ${priced}` : 'Пока не заданы'}</dd></div>
+        <div><dt>Питание</dt><dd>{MEAL_PLAN_LABELS[form.mealPlan] ?? form.mealPlan}</dd></div>
+        <div><dt>Статус</dt><dd>{form.isActive ? 'Активен' : 'Неактивен'}</dd></div>
+      </dl>
+      {!priced && <div className={classes.fieldHint}>Тариф не продаётся, пока для него не заданы цены.</div>}
     </div>
   );
 }
@@ -171,6 +182,13 @@ function RatePlanForm({ plan, prefill, allPlans, contracts, partners, roomTypes,
   /* Свой тариф создаётся на втором шаге: без id не показать ни цены, ни
      сезоны, а второго окна больше нет. Созданный тариф живёт здесь. */
   const [created, setCreated] = useState(null);
+  const [savingStep, setSavingStep] = useState(false);
+  const [previewState, setPreviewState] = useState({ loading: true, error: false });
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showRequired, setShowRequired] = useState(false);
+  const pricesSave = useRef(null);
+  const seasonsSave = useRef(null);
+  const stepBody = useRef(null);
   const [form, setForm] = useState({
     /* id — чтобы «Готово» после создания своего тарифа дописывало его, а не
        заводило второй. */
@@ -217,7 +235,7 @@ function RatePlanForm({ plan, prefill, allPlans, contracts, partners, roomTypes,
     setForm(f => ({ ...f, code: v.toUpperCase().replace(/[^A-Z0-9_-]/g, ''), _autoCode: false }));
   };
 
-  const parentOptions = allPlans.filter(p => p.id !== plan?.id);
+  const parentOptions = allPlans.filter(p => p.id !== plan?.id && !p.forOperator);
   /* Корпоративный тариф не наследуется: правка родителя меняла бы цены молча.
      Поэтому признак и базовый план — исключающие друг друга, и включение
      первого гасит второй прямо в форме, а не отказом сервера после
@@ -237,25 +255,42 @@ function RatePlanForm({ plan, prefill, allPlans, contracts, partners, roomTypes,
   const stepList = form.forOperator ? STEPS_CORP : STEPS_OWN;
   const hints = form.forOperator ? HINTS_CORP : HINTS_OWN;
   const chosenContract = contracts.find(
-    (c) => c.number === form.operatorContract && (!form.partnerId || c.partnerId === form.partnerId),
+    (c) => c.number.trim() === form.operatorContract.trim() && (!form.partnerId || c.partnerId === form.partnerId),
   );
-  const slices = chosenContract?.slices ?? [];
-  const meals = [...new Set(slices.map((s) => s.mealPlan))];
-  const customers = [...new Set(slices.map((s) => s.customer).filter(Boolean))];
-  const kinds = [...new Set(slices.map((s) => s.guestKind).filter(Boolean))];
+  const partner = partners.find((p) => p.id === form.partnerId);
+  const options = sliceOptions(chosenContract, partner, form);
+  const setSlice = (key, value) => setForm((f) => reconcileSlice(chosenContract, partner, { ...f, [key]: value }));
+  const validSlice = !options.unresolvedAccount && !options.unresolvedCustomer &&
+    (chosenContract?.account || form.partnerAccountId ? options.accounts.some((a) => a.id === form.partnerAccountId) : true) &&
+    options.meals.includes(form.mealPlan) &&
+    options.kinds.some((k) => (k ?? '') === (form.guestKind ?? '')) &&
+    (options.anyCustomer || options.customers.some((c) => c.id === form.partnerCustomerId));
+  const busy = saving || savingStep;
+  const initialSignature = useRef(formSignature(form));
+  const closeGuard = useModalCloseGuard({ onClose, busy,
+    dirty: formSignature(form) !== initialSignature.current,
+    force: (isNew && step > 0) || !!created,
+    message: created ? 'Тариф уже создан: записанные цены и сезоны останутся. Несохранённые изменения будут потеряны. Вернуться к настройке можно из карточки тарифа.' : undefined,
+  });
+  useEffect(() => {
+    setShowRequired(false);
+    if (stepBody.current) stepBody.current.scrollTop = 0;
+    if (step > 0) stepBody.current?.focus();
+  }, [step]);
 
   const canNext =
     step === 0
-      ? Boolean(form.name && form.code)
+      ? Boolean(form.name.trim().length >= 2 && /^[A-Z0-9_-]{2,32}$/.test(form.code))
       : form.forOperator && step === 1
-        ? Boolean(form.operatorContract)
+        ? Boolean(chosenContract && form.partnerId)
         : form.forOperator && step === 2
-          ? Boolean(form.mealPlan) && (meals.length === 0 || meals.includes(form.mealPlan))
+          ? validSlice
           : true;
 
   /* Договор корпоративному тарифу нужен и на последнем шаге, и в правке: без
      него цены брать неоткуда. */
-  const canFinish = canNext && (!form.forOperator || Boolean(form.operatorContract));
+  const canFinish = canNext && (!form.forOperator || (chosenContract && validSlice &&
+    (!isNew || (!previewState.loading && !previewState.error))));
 
   /* В правке шаг один, как было: степпера нет, все поля сразу. */
   const finalStep = isNew ? stepList.length - 1 : 0;
@@ -263,43 +298,72 @@ function RatePlanForm({ plan, prefill, allPlans, contracts, partners, roomTypes,
   /* «Цены» и «Сезоны» — те же экраны, что вкладки тарифа, и им нужна ширина
      прежнего окна мастера: иначе сетка по числу гостей уезжает под край. */
   const priceStep = Boolean(!form.forOperator && created && (step === 2 || step === 3));
+  const wideStep = priceStep || (form.forOperator && step === 3);
+  const requiredHint = step === 0 ? 'Введите название от 2 символов и код от 2 до 32 латинских букв, цифр, «_» или «-».'
+    : step === 1 ? 'Выберите договор партнёра.' : 'Выберите совместимые условия тарифа. Если справочник неполный, попросите диспетчера обновить его.';
+  const saveSteps = (steps, savePlan) => saveWizardSteps(steps.map((stepIndex) => ({
+    step: stepIndex,
+    save: () => (stepIndex === 2 ? pricesSave : seasonsSave).current?.() ?? false,
+  })), savePlan);
 
   return (
-    <div className={classes.overlay} onClick={onClose}>
-      <div
-        className={classes.modal}
-        style={priceStep ? { maxWidth: 860, maxHeight: '92vh', overflowY: 'auto' } : undefined}
-        onClick={e => e.stopPropagation()}
-      >
+    <>
+      <DialogLayer onClose={closeGuard.requestClose} busy={busy}
+        backdropClassName={classes.overlay} className={`${classes.modal} ${classes.wizardModal}`}
+        labelledBy="tariff-form-title" style={wideStep ? { maxWidth: 1040 } : undefined}>
         <div className={classes.modalHeader}>
-          <div className={classes.modalTitle}>
-            {isNew ? (created ? `Новый тариф · ${created.name}` : 'Новый тариф') : 'Редактировать план'}
+          <div>
+            <div className={classes.modalEyebrow}>Тарифы гостиницы</div>
+            <h2 className={classes.modalTitle} id="tariff-form-title">{isNew ? 'Новый тариф' : 'Редактировать тариф'}</h2>
+            <div className={classes.modalSubtitle}>{form.forOperator ? 'Размещение по условиям договора партнёра' : 'Собственные цены и сезонные предложения'}</div>
           </div>
-          <button className={classes.closeBtn} onClick={onClose}>✕</button>
+          <button className={classes.closeBtn} disabled={busy} aria-label="Закрыть мастер" onClick={closeGuard.requestClose}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
+          </button>
         </div>
         {isNew && <WizardSteps steps={stepList} current={step} hint={hints[step]} />}
 
+        <div className={classes.wizardBody} ref={stepBody} tabIndex={-1} aria-label={isNew ? stepList[step] : 'Условия тарифа'}>
+        <fieldset className={classes.wizardFields} disabled={busy}>
         {!priceStep && (
-        <div className={classes.formGrid}>
+        <div className={`${classes.formGrid} ${form.forOperator && step === 3 ? classes.reviewGrid : ''}`}>
           {at(0) && (<>
+          <fieldset className={classes.typeChoice}>
+            <legend>Источник цен</legend>
+            <label className={!form.forOperator ? classes.typeChoiceActive : undefined}>
+              <input type="radio" name="tariff-type" checked={!form.forOperator} disabled={Boolean(created)} onChange={() => setCorporate(false)} />
+              <strong>Свой тариф</strong><span>Цены и сезоны задаёт гостиница</span>
+            </label>
+            <label className={form.forOperator ? classes.typeChoiceActive : undefined}>
+              <input type="radio" name="tariff-type" checked={form.forOperator} disabled={Boolean(created)} onChange={() => setCorporate(true)} />
+              <strong>По договору партнёра</strong><span>Цены, питание и НДС — из реестра</span>
+            </label>
+          </fieldset>
           <div className={classes.formGroup}>
-            <label>Название *</label>
+              <label htmlFor="tariff-name">Название *</label>
             <input
               className={classes.input}
+              id="tariff-name"
+              name="tariffName" autoComplete="off" spellCheck={false} data-autofocus=""
+              aria-invalid={showRequired && form.name.trim().length < 2}
               value={form.name}
               onChange={e => handleNameChange(e.target.value)}
               placeholder="Стандартный тариф"
             />
           </div>
           <div className={classes.formGroup}>
-            <label>Код *</label>
+            <label htmlFor="tariff-code">Код *</label>
             <input
               className={classes.input}
+              id="tariff-code"
+              name="tariffCode" autoComplete="off" spellCheck={false}
+              aria-invalid={showRequired && !/^[A-Z0-9_-]{2,32}$/.test(form.code)}
               value={form.code}
               onChange={e => handleCodeChange(e.target.value)}
               placeholder="STANDARD"
               style={{ fontFamily: 'monospace', letterSpacing: 0.5 }}
             />
+            <div className={classes.fieldHint}>Уникальный код тарифа — латинские буквы и цифры</div>
           </div>
           </>)}
 
@@ -389,23 +453,6 @@ function RatePlanForm({ plan, prefill, allPlans, contracts, partners, roomTypes,
             </Select>
           </div>
 
-          <div className={classes.formGroup} style={{ gridColumn: '1/-1' }}>
-            <label className={classes.checkRow}>
-              {/* Созданный тариф вид не меняет: смена вида оставила бы в списке
-                  второй тариф, а первый — без цен. */}
-              <input
-                type="checkbox"
-                checked={form.forOperator}
-                onChange={e => setCorporate(e.target.checked)}
-                disabled={Boolean(created)}
-              />
-              <span>Корпоративный тариф партнёра</span>
-            </label>
-            <div className={classes.fieldHint}>
-              Для гостей партнёра. Работает, когда в договоре партнёра есть цена на нужные ночи.
-            </div>
-          </div>
-
           {!form.forOperator && parentOptions.length > 0 && (
             <div className={classes.formGroup} style={{ gridColumn: '1/-1' }}>
               <label>Базовый план (наследование цен)</label>
@@ -445,7 +492,7 @@ function RatePlanForm({ plan, prefill, allPlans, contracts, partners, roomTypes,
             <label>Описание</label>
             <textarea
               className={classes.textarea}
-              rows={3}
+              rows={2}
               value={form.description}
               onChange={e => set('description', e.target.value)}
             />
@@ -457,12 +504,12 @@ function RatePlanForm({ plan, prefill, allPlans, contracts, partners, roomTypes,
               <label>Договор с партнёром *</label>
               <Select
                 className={classes.input}
-                value={form.operatorContract}
+                value={chosenContract ? chosenContract.partnerId + '|' + chosenContract.number : ''}
                 onChange={(e) => {
-                  const c = contracts.find((x) => x.number === e.target.value);
-                  setForm((f) => ({
+                  const c = contracts.find((x) => x.partnerId + '|' + x.number === e.target.value);
+                  setForm((f) => reconcileSlice(c, partners.find((p) => p.id === c?.partnerId), {
                     ...f,
-                    operatorContract: e.target.value,
+                    operatorContract: c?.number ?? '',
                     partnerId: c?.partnerId ?? '',
                     partnerAccountId: '',
                     partnerCustomerId: '',
@@ -475,7 +522,7 @@ function RatePlanForm({ plan, prefill, allPlans, contracts, partners, roomTypes,
               >
                 <option value="">— выберите договор —</option>
                 {contracts.map((c) => (
-                  <option key={c.partnerId + '|' + c.number} value={c.number}>
+                  <option key={c.partnerId + '|' + c.number} value={c.partnerId + '|' + c.number}>
                     {'Договор ' + c.number + (c.account ? ' · ' + c.account.name : '') + (c.hasPrices ? '' : ' — цен нет')}
                   </option>
                 ))}
@@ -492,64 +539,55 @@ function RatePlanForm({ plan, prefill, allPlans, contracts, partners, roomTypes,
             <>
               <div className={classes.formGroup}>
                 <label>Юрлицо партнёра</label>
-                <Select className={classes.input} value={form.partnerAccountId} onChange={(e) => set('partnerAccountId', e.target.value)}>
-                  <option value="">— любое —</option>
-                  {(partners.find((p) => p.id === form.partnerId)?.accounts ?? []).map((a) => (
+                <Select className={classes.input} value={form.partnerAccountId} onChange={(e) => setSlice('partnerAccountId', e.target.value)}>
+                  {!chosenContract?.account && <option value="">Любое юрлицо</option>}
+                  {options.accounts.map((a) => (
                     <option key={a.id} value={a.id}>{a.name}{a.inn ? ' (ИНН ' + a.inn + ')' : ''}</option>
                   ))}
                 </Select>
-                <div className={classes.fieldHint}>Оставьте пустым, если договор подходит любому юрлицу партнёра.</div>
+                <div className={classes.fieldHint}>{chosenContract?.account ? 'Юрлицо указано в договоре.' : 'Договор не ограничен одним юрлицом.'}</div>
               </div>
               <div className={classes.formGroup}>
                 <label>Авиакомпания</label>
-                <Select className={classes.input} value={form.partnerCustomerId} onChange={(e) => set('partnerCustomerId', e.target.value)}>
-                  <option value="">— любая —</option>
-                  {(partners.find((p) => p.id === form.partnerId)?.customers ?? [])
-                    .filter((c) => customers.length === 0 || customers.includes(c.code))
+                <Select className={classes.input} value={form.partnerCustomerId} onChange={(e) => setSlice('partnerCustomerId', e.target.value)}>
+                  {options.anyCustomer && <option value="">Любая авиакомпания</option>}
+                  {options.customers
                     .map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  {customers
-                    .filter((code) => !(partners.find((p) => p.id === form.partnerId)?.customers ?? []).some((c) => c.code === code))
-                    .map((code) => <option key={code} value="">{code} (нет в справочнике)</option>)}
                 </Select>
               </div>
               <div className={classes.formGroup}>
                 <label>Вид брони</label>
-                <Select className={classes.input} value={form.guestKind} onChange={(e) => set('guestKind', e.target.value)}>
-                  <option value="">— любой —</option>
-                  {Object.entries(GUEST_KIND_LABELS)
-                    .filter(([k]) => kinds.length === 0 || kinds.includes(k))
-                    .map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                <Select className={classes.input} value={form.guestKind} onChange={(e) => setSlice('guestKind', e.target.value)}>
+                  {options.kinds.map((k) => <option key={k ?? 'any'} value={k ?? ''}>{k ? GUEST_KIND_LABELS[k] : 'Любой вид брони'}</option>)}
                 </Select>
               </div>
               <div className={classes.formGroup}>
                 <label>Питание *</label>
-                <Select className={classes.input} value={form.mealPlan} onChange={(e) => set('mealPlan', e.target.value)}>
-                  {(meals.length ? meals : Object.keys(MEAL_PLAN_LABELS)).map((m) => (
+                <Select className={classes.input} value={form.mealPlan} onChange={(e) => setSlice('mealPlan', e.target.value)}>
+                  {options.meals.map((m) => (
                     <option key={m} value={m}>{MEAL_PLAN_LABELS[m] ?? m}</option>
                   ))}
                 </Select>
                 <div className={classes.fieldHint}>
-                  Показано только то, что есть в договоре. Цена питания — из договора.
+                  {options.waiting ? 'Выберите ожидаемые условия. До прихода подходящих цен тариф не продаётся.' : 'Питание доступно для выбранной авиакомпании и вида брони. Его цена — из договора.'}
                 </div>
               </div>
+              {(options.unresolvedAccount || options.unresolvedCustomer) && <div className={classes.formError} role="alert">
+                Юрлицо или авиакомпания договора отсутствует в справочнике партнёра. Попросите диспетчера обновить справочник.
+              </div>}
             </>
           )}
 
           {form.forOperator && step === 3 && (
-            <div className={classes.formGroup} style={{ gridColumn: '1/-1' }}>
-              <div><b>{form.name}</b> · {form.code}</div>
-              <div>Договор: {form.operatorContract}{chosenContract?.account ? ' · ' + chosenContract.account.name : ''}</div>
-              <div>
-                Авиакомпания:{' '}
-                {(partners.find((p) => p.id === form.partnerId)?.customers ?? []).find((c) => c.id === form.partnerCustomerId)?.name ?? 'любая'}
-              </div>
-              <div>Вид брони: {form.guestKind ? GUEST_KIND_LABELS[form.guestKind] : 'любой'}</div>
-              <div>Питание: {MEAL_PLAN_LABELS[form.mealPlan] ?? form.mealPlan}</div>
-              <div className={classes.fieldHint}>
-                Цены — из договора: {chosenContract?.hasPrices
-                  ? 'они уже посчитаны и появятся в тарифе сразу.'
-                  : 'приложения к договору ещё нет, тариф будет ждать цен.'}
-              </div>
+            <div className={classes.reviewSummary}>
+              <div className={classes.reviewHeading}><div><span className={classes.reviewOverline}>Корпоративный тариф</span><h3>{form.name}</h3></div><code>{form.code}</code></div>
+              <dl className={classes.reviewFacts}>
+                <div><dt>Договор</dt><dd>№ {form.operatorContract}</dd></div>
+                <div><dt>Юрлицо</dt><dd>{partner?.accounts?.find((a) => a.id === form.partnerAccountId)?.name ?? chosenContract?.account?.name ?? 'Любое'}</dd></div>
+                <div><dt>Авиакомпания</dt><dd>{partner?.customers?.find((c) => c.id === form.partnerCustomerId)?.name ?? 'Любая'}</dd></div>
+                <div><dt>Вид брони</dt><dd>{form.guestKind ? GUEST_KIND_LABELS[form.guestKind] : 'Любой'}</dd></div>
+                <div><dt>Питание</dt><dd>{MEAL_PLAN_LABELS[form.mealPlan] ?? form.mealPlan}</dd></div>
+              </dl>
             </div>
           )}
 
@@ -559,38 +597,50 @@ function RatePlanForm({ plan, prefill, allPlans, contracts, partners, roomTypes,
         </div>
         )}
 
+        {form.forOperator && step === 3 && <section className={classes.reviewPrices} aria-label="Цены выбранного договора">
+          <div className={classes.reviewPricesTitle}><h3>Цены из договора</h3><span>Применяются автоматически после синхронизации</span></div>
+          <ContractTariffPreview
+          key={contractViewKey(form)} form={form} onStateChange={setPreviewState}
+        /></section>}
+
         {/* Цены и сезоны остаются смонтированными, пока окно открыто: их
             черновики живут в самих экранах, и переход по шагам не должен их
             выбрасывать. Виден только текущий шаг. */}
         {!form.forOperator && created && (
           <>
-            <div style={{ padding: '0 24px 16px', display: step === 2 ? undefined : 'none' }}>
-              <StandardPrices plan={created} roomTypes={roomTypes} />
+            <div className={classes.wizardEditor} style={{ display: step === 2 ? undefined : 'none' }}>
+              <StandardPrices plan={created} roomTypes={roomTypes} saveRef={pricesSave} />
             </div>
-            <div style={{ padding: '0 24px 16px', display: step === 3 ? undefined : 'none' }}>
-              <Seasons plan={created} roomTypes={roomTypes} />
+            <div className={classes.wizardEditor} style={{ display: step === 3 ? undefined : 'none' }}>
+              <Seasons plan={created} roomTypes={roomTypes} saveRef={seasonsSave} />
             </div>
           </>
         )}
 
         {error && (
-          <div style={{ padding: '0 24px 12px', color: '#EF4444', fontSize: 13 }}>{error}</div>
+          <div className={classes.formError} role="alert">{error}</div>
         )}
+        {showRequired && !canNext && <div className={classes.formError} role="alert">{requiredHint}</div>}
+        </fieldset>
+        </div>
 
         <div className={classes.modalFooter}>
           {!isNew && step === 0 && (
-            <button className={classes.btnDelete} onClick={() => onDelete(plan.id)}>Удалить</button>
+            <button className={classes.btnDelete} disabled={busy} onClick={() => setConfirmDelete(true)}>Удалить</button>
+          )}
+          {step > 0 && (
+            <button className={classes.btnCancel} disabled={busy} onClick={() => setStep(step - 1)}>Назад</button>
           )}
           <div style={{ flex: 1 }} />
-          <button className={classes.btnCancel} onClick={onClose}>Отмена</button>
-          {step > 0 && (
-            <button className={classes.btnCancel} onClick={() => setStep(step - 1)}>Назад</button>
-          )}
+          <button className={classes.btnCancel} disabled={busy} onClick={closeGuard.requestClose}>{created ? 'Закрыть' : 'Отмена'}</button>
           {step < finalStep ? (
+            <span className={classes.actionGate} onClick={() => { if (!canNext && !busy) setShowRequired(true); }}>
             <button
               className={classes.btnSave}
-              disabled={!canNext || saving}
+              disabled={!canNext || busy}
               onClick={async () => {
+                setSavingStep(true);
+                try {
                 /* Первый шаг своего тарифа — создание: без id не покажешь ни
                    цены, ни сезоны, а второго окна больше нет. */
                 if (!form.forOperator && isNew && step === 1 && !created) {
@@ -604,24 +654,34 @@ function RatePlanForm({ plan, prefill, allPlans, contracts, partners, roomTypes,
                   }
                   return;
                 }
+                if (!form.forOperator && created && (step === 2 || step === 3)) {
+                  const result = await saveSteps([step]);
+                  if (!result.saved) return;
+                }
                 setStep(step + 1);
+                } finally { setSavingStep(false); }
               }}
             >
-              Далее
+              {busy ? 'Сохранение…' : priceStep ? 'Сохранить и далее' : 'Далее'}
             </button>
+            </span>
           ) : (
             <button
               className={classes.btnSave}
-              disabled={saving || !canFinish}
+              disabled={busy || !canFinish}
               onClick={async () => {
                 /* «Готово» у своего тарифа тоже пишет форму: после создания его
                    можно переименовать, вернувшись на первый шаг, — правка
                    должна сохраниться, и тариф остаётся один. */
-                const saved = await onSave(form);
-                if (saved) onClose();
+                setSavingStep(true);
+                try {
+                  const result = await saveSteps(!form.forOperator && created ? [2, 3] : [], () => onSave(form));
+                  if (result.saved) onClose();
+                  else setStep(result.step);
+                } finally { setSavingStep(false); }
               }}
             >
-              {saving
+              {busy
                 ? 'Сохранение...'
                 : isNew
                   ? (form.forOperator ? 'Создать тариф' : 'Готово')
@@ -629,15 +689,18 @@ function RatePlanForm({ plan, prefill, allPlans, contracts, partners, roomTypes,
             </button>
           )}
         </div>
-      </div>
-    </div>
+      </DialogLayer>
+      {closeGuard.confirmation}
+      <ConfirmDialog open={confirmDelete} title="Удалить тариф?" message={`Тариф «${plan?.name ?? form.name}» будет удалён. Если он используется в бронированиях, система не позволит его удалить.`}
+        confirmLabel="Удалить тариф" danger onClose={() => setConfirmDelete(false)} onConfirm={() => onDelete(plan.id)} />
+    </>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OccupancyGrid — цена по числу гостей: категория × «на любое», 1, 2, …
 // ─────────────────────────────────────────────────────────────────────────────
-function OccupancyGrid({ roomTypes, occs, values, onChange }) {
+function OccupancyGrid({ roomTypes, occs, values, onChange, disabled = false }) {
   return (
     <div className={classes.occWrap}>
       <table className={classes.occTable}>
@@ -664,6 +727,7 @@ function OccupancyGrid({ roomTypes, occs, values, onChange }) {
                   <td key={o}>
                     <div className={classes.priceInputWrap}>
                       <NumberInput
+                        disabled={disabled}
                         className={classes.input}
                         min="0"
                         step="0.01"
@@ -695,7 +759,9 @@ function SavedMark({ at }) {
   );
 }
 
-function StandardPrices({ plan, roomTypes }) {
+function StandardPrices({ plan, roomTypes, saveRef }) {
+  const { hasPermission } = useAuth();
+  const canEdit = hasPermission('rate.update');
   const { data: standard = [], isLoading } = useStandardRates(plan.id);
   const save = useSetStandardRates();
   const occs = useMemo(() => occupancyColumns(plan, roomTypes), [plan, roomTypes]);
@@ -719,7 +785,10 @@ function StandardPrices({ plan, roomTypes }) {
   const dirty = cells.some(([rt, o]) => (draft[priceKey(rt, o)] ?? '') !== (stdMap[priceKey(rt, o)] ?? ''));
 
   const handleSave = async () => {
+    if (!canEdit) return false;
     setError(null);
+    if (isLoading || save.isPending) return false;
+    if (!dirty) return true;
     const items = cells.map(([rt, o]) => ({
       roomTypeId: rt,
       occupancy: o,
@@ -728,11 +797,14 @@ function StandardPrices({ plan, roomTypes }) {
     try {
       await save.mutateAsync({ ratePlanId: plan.id, items });
       setSavedAt(new Date());
+      return true;
     } catch (err) {
       const msg = err?.response?.data?.message;
       setError(Array.isArray(msg) ? msg.join(', ') : (msg ?? err.message ?? 'Ошибка'));
+      return false;
     }
   };
+  useEffect(() => { if (saveRef) saveRef.current = handleSave; });
 
   return (
     <div>
@@ -747,6 +819,7 @@ function StandardPrices({ plan, roomTypes }) {
         <div className={classes.seasonsEmpty}>Нет категорий номеров. Создайте их в разделе «Номера».</div>
       ) : plan.partnerId ? (
         <OccupancyGrid
+          disabled={!canEdit}
           roomTypes={roomTypes}
           occs={occs}
           values={draft}
@@ -765,6 +838,7 @@ function StandardPrices({ plan, roomTypes }) {
               </div>
               <div className={classes.priceInputWrap}>
                 <NumberInput
+                  disabled={!canEdit}
                   className={classes.input}
                   min="0"
                   step="0.01"
@@ -778,8 +852,8 @@ function StandardPrices({ plan, roomTypes }) {
           ))}
         </div>
       )}
-      {error && <div style={{ padding: '8px 22px', color: '#DC2626', fontSize: 13 }}>{error}</div>}
-      {roomTypes.length > 0 && (
+      {error && <div className={classes.formError} role="alert">{error}</div>}
+      {canEdit && roomTypes.length > 0 && (
         <div className={classes.sectionActions}>
           <button className={classes.btnPrimary} onClick={handleSave} disabled={!dirty || save.isPending || isLoading}>
             {save.isPending ? 'Сохранение...' : 'Сохранить базовые цены'}
@@ -796,10 +870,13 @@ function StandardPrices({ plan, roomTypes }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Seasons — named date ranges with a price per category
 // ─────────────────────────────────────────────────────────────────────────────
-function Seasons({ plan, roomTypes }) {
+function Seasons({ plan, roomTypes, saveRef }) {
+  const { hasPermission } = useAuth();
+  const canEdit = hasPermission('rate.update');
   const { data: seasonRows = [], isLoading } = useSeasons(plan.id);
   const save = useReplaceSeasons();
   const [savedAt, setSavedAt] = useState(null);
+  const [removing, setRemoving] = useState(null);
 
   // Group flat rows back into seasons keyed by their identity.
   const initial = useMemo(() => {
@@ -842,10 +919,13 @@ function Seasons({ plan, roomTypes }) {
   const removeSeason = (idx) => setList((l) => l.filter((_, i) => i !== idx));
 
   const handleSave = async () => {
+    if (!canEdit) return false;
     setError(null);
+    if (isLoading || save.isPending) return false;
+    if (!dirty) return true;
     for (const s of list) {
-      if (!s.name.trim()) return setError('У каждого сезона должно быть название');
-      if (s.dateTo < s.dateFrom) return setError(`Сезон «${s.name}»: дата окончания раньше начала`);
+      if (!s.name.trim()) { setError('У каждого сезона должно быть название'); return false; }
+      if (s.dateTo < s.dateFrom) { setError(`Сезон «${s.name}»: дата окончания раньше начала`); return false; }
     }
     const payload = {
       ratePlanId: plan.id,
@@ -865,11 +945,14 @@ function Seasons({ plan, roomTypes }) {
     try {
       await save.mutateAsync(payload);
       setSavedAt(new Date());
+      return true;
     } catch (err) {
       const msg = err?.response?.data?.message;
       setError(Array.isArray(msg) ? msg.join(', ') : (msg ?? err.message ?? 'Ошибка'));
+      return false;
     }
   };
+  useEffect(() => { if (saveRef) saveRef.current = handleSave; });
 
   return (
     <div>
@@ -888,6 +971,7 @@ function Seasons({ plan, roomTypes }) {
             <div key={idx} className={classes.seasonCard}>
               <div className={classes.seasonCardHead}>
                 <input
+                  disabled={!canEdit}
                   type="color"
                   className={classes.colorInput}
                   value={s.color}
@@ -895,20 +979,22 @@ function Seasons({ plan, roomTypes }) {
                   title="Цвет в календаре"
                 />
                 <input
+                  disabled={!canEdit}
                   className={`${classes.input} ${classes.seasonNameInput}`}
                   value={s.name}
                   placeholder="Название сезона"
                   onChange={(e) => update(idx, { name: e.target.value })}
                 />
                 <div className={classes.seasonDates}>
-                  <DateInput className={classes.input} value={s.dateFrom} onChange={(e) => update(idx, { dateFrom: e.target.value })} style={{ width: 150 }} />
+                  <DateInput disabled={!canEdit} className={classes.input} value={s.dateFrom} onChange={(e) => update(idx, { dateFrom: e.target.value })} style={{ width: 150 }} />
                   <span>—</span>
-                  <DateInput className={classes.input} value={s.dateTo} onChange={(e) => update(idx, { dateTo: e.target.value })} style={{ width: 150 }} />
+                  <DateInput disabled={!canEdit} className={classes.input} value={s.dateTo} onChange={(e) => update(idx, { dateTo: e.target.value })} style={{ width: 150 }} />
                 </div>
-                <button className={classes.seasonRemove} onClick={() => removeSeason(idx)}>Удалить</button>
+                {canEdit && <button className={classes.seasonRemove} onClick={() => setRemoving(idx)}>Удалить</button>}
               </div>
               {plan.partnerId ? (
                 <OccupancyGrid
+                  disabled={!canEdit}
                   roomTypes={roomTypes}
                   occs={occs}
                   values={s.prices}
@@ -921,6 +1007,7 @@ function Seasons({ plan, roomTypes }) {
                     <label>{rt.name}</label>
                     <div className={classes.priceInputWrap}>
                       <NumberInput
+                        disabled={!canEdit}
                         className={classes.input}
                         min="0"
                         step="0.01"
@@ -939,9 +1026,11 @@ function Seasons({ plan, roomTypes }) {
         </div>
       )}
 
-      {error && <div style={{ padding: '8px 22px', color: '#DC2626', fontSize: 13 }}>{error}</div>}
+      {error && <div className={classes.formError} role="alert">{error}</div>}
+      <ConfirmDialog open={canEdit && removing !== null} title="Удалить сезон?" message={`Сезон «${list[removing]?.name || 'Без названия'}» будет убран из списка вместе с введёнными ценами. Изменение вступит в силу после сохранения сезонов.`}
+        confirmLabel="Удалить сезон" danger onClose={() => setRemoving(null)} onConfirm={() => removeSeason(removing)} />
 
-      {roomTypes.length > 0 && (
+      {canEdit && roomTypes.length > 0 && (
         <div className={classes.sectionActions}>
           <button className={classes.btnGhost} onClick={addSeason}>+ Добавить сезон</button>
           <div style={{ flex: 1 }} />
@@ -968,13 +1057,15 @@ function FillModal({ roomTypes, defaultFrom, defaultTo, onFill, onClose, saving,
     price: '',
   });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const initial = useRef(formSignature(form));
+  const closeGuard = useModalCloseGuard({ onClose, busy: saving, dirty: formSignature(form) !== initial.current });
 
   return (
-    <div className={classes.overlay} onClick={onClose}>
-      <div className={classes.modal} style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+    <>
+      <DialogLayer title="Заполнить диапазон" onClose={closeGuard.requestClose} busy={saving} backdropClassName={classes.overlay} className={`${classes.modal} ${classes.wizardModal}`} style={{ maxWidth: 480 }}>
         <div className={classes.modalHeader}>
           <div className={classes.modalTitle}>Заполнить диапазон</div>
-          <button className={classes.closeBtn} onClick={onClose}>✕</button>
+          <button className={classes.closeBtn} aria-label="Закрыть окно" disabled={saving} onClick={closeGuard.requestClose}>✕</button>
         </div>
         <div className={classes.formGrid} style={{ gridTemplateColumns: '1fr' }}>
           <div className={classes.formGroup}>
@@ -1010,7 +1101,7 @@ function FillModal({ roomTypes, defaultFrom, defaultTo, onFill, onClose, saving,
         {error && <div style={{ padding: '0 24px 12px', color: '#EF4444', fontSize: 13 }}>{error}</div>}
         <div className={classes.modalFooter}>
           <div style={{ flex: 1 }} />
-          <button className={classes.btnCancel} onClick={onClose}>Отмена</button>
+          <button className={classes.btnCancel} disabled={saving} onClick={closeGuard.requestClose}>Отмена</button>
           <button
             className={classes.btnSave}
             disabled={saving || !form.roomTypeId || form.price === ''}
@@ -1019,8 +1110,9 @@ function FillModal({ roomTypes, defaultFrom, defaultTo, onFill, onClose, saving,
             {saving ? 'Применяется...' : 'Применить'}
           </button>
         </div>
-      </div>
-    </div>
+      </DialogLayer>
+      {closeGuard.confirmation}
+    </>
   );
 }
 
@@ -1028,6 +1120,8 @@ function FillModal({ roomTypes, defaultFrom, defaultTo, onFill, onClose, saving,
 // RateCalendar — month grid showing resolved prices (override → season → standard)
 // ─────────────────────────────────────────────────────────────────────────────
 function RateCalendar({ plan, roomTypes }) {
+  const { hasPermission } = useAuth();
+  const canEdit = hasPermission('rate.update');
   // Rolling window like the шахматка: a week before today, then forward.
   const [viewStart, setViewStart] = useState(() => subDays(TODAY, 7));
   const [daysCount, setDaysCount] = useState(14);
@@ -1119,12 +1213,14 @@ function RateCalendar({ plan, roomTypes }) {
   };
 
   const startEdit = (rtId, date) => {
+    if (!canEdit) return;
     const key = `${rtId}${SEP}${date}`;
     setPending(p => ({ ...p, [key]: p[key] ?? overrideMap[key] ?? '' }));
     setEditingCell({ rtId, date });
   };
 
   const commitCell = (rtId, date, value) => {
+    if (!canEdit) return;
     const key = `${rtId}${SEP}${date}`;
     const cleaned = value.trim();
     if (cleaned === '' || isNaN(Number(cleaned))) {
@@ -1157,6 +1253,7 @@ function RateCalendar({ plan, roomTypes }) {
   };
 
   const handleSave = async () => {
+    if (!canEdit) return;
     setSaveError(null);
     const items = Object.entries(pending).map(([key, priceStr]) => {
       const sepIdx = key.indexOf(SEP);
@@ -1178,6 +1275,7 @@ function RateCalendar({ plan, roomTypes }) {
   };
 
   const handleFill = async (data) => {
+    if (!canEdit) return;
     setFillError(null);
     try {
       await fillMutation.mutateAsync({ ...data, ratePlanId: plan.id, ...(occupancy ? { occupancy } : {}) });
@@ -1211,7 +1309,7 @@ function RateCalendar({ plan, roomTypes }) {
     <div>
       <div className={classes.sectionHint}>
         Календарь показывает итоговую цену каждого дня. <b style={{ color: '#1D4ED8' }}>Синим</b> — индивидуальная цена дня,
-        цветная полоса сверху — действует сезон, серым — базовая цена. Нажмите на ячейку, чтобы задать цену конкретного дня.
+        цветная полоса сверху — действует сезон, серым — базовая цена. {canEdit && 'Нажмите на ячейку, чтобы задать цену конкретного дня.'}
       </div>
 
       <div className={classes.calendarRoot}>
@@ -1262,7 +1360,7 @@ function RateCalendar({ plan, roomTypes }) {
               ))}
             </div>
           </div>
-          <div className={classes.planPanelActions}>
+          {canEdit && <div className={classes.planPanelActions}>
             {isDirty ? (
               <>
                 <button className={classes.btnPrimary} onClick={handleSave} disabled={bulkUpsert.isPending}>
@@ -1276,7 +1374,7 @@ function RateCalendar({ plan, roomTypes }) {
                 <button className={classes.btnGhost} onClick={() => setShowFill(true)} disabled={roomTypes.length === 0}>Заполнить диапазон</button>
               </>
             )}
-          </div>
+          </div>}
         </div>
 
         {saveError && (
@@ -1312,7 +1410,7 @@ function RateCalendar({ plan, roomTypes }) {
                   </div>
                   {dayStrs.map(d => {
                     const key = `${rt.id}${SEP}${d}`;
-                    const isEditing = editingCell?.rtId === rt.id && editingCell?.date === d;
+                    const isEditing = canEdit && editingCell?.rtId === rt.id && editingCell?.date === d;
                     const info = cellInfo(rt.id, d);
                     const hasPending = key in pending;
                     const dow = parseISO(d).getDay();
@@ -1329,7 +1427,7 @@ function RateCalendar({ plan, roomTypes }) {
                           isWe && classes.calCellWeekend,
                         ].filter(Boolean).join(' ')}
                         style={hasPending ? { background: '#FFFBEB' } : {}}
-                        onClick={() => !isEditing && startEdit(rt.id, d)}
+                        onClick={canEdit ? () => !isEditing && startEdit(rt.id, d) : undefined}
                         title={info.source === 'season' ? `Сезон: ${info.season?.name}` : undefined}
                       >
                         {info.source === 'season' && info.season?.color && (
@@ -1367,7 +1465,7 @@ function RateCalendar({ plan, roomTypes }) {
         )}
       </div>
 
-      {showFill && (
+      {canEdit && showFill && (
         <FillModal
           roomTypes={roomTypes}
           defaultFrom={fromStr}
@@ -1414,7 +1512,7 @@ function MonthPicker({ year, onYearChange, onSelect, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // PlanPanel — подтабы по типу тарифа: цены договора или свои цены и сезоны
 // ─────────────────────────────────────────────────────────────────────────────
-function PlanPanel({ plan, roomTypes, onEditPlan, partners }) {
+function PlanPanel({ plan, roomTypes, onEditPlan, partners, canEdit, onOpenContract, headingRef }) {
   const [tab, setTab] = useState(plan.forOperator ? 'contract' : 'standard');
   const { data: seasons = [] } = useSeasons(plan.id);
   const seasonCount = useMemo(() => {
@@ -1430,7 +1528,7 @@ function PlanPanel({ plan, roomTypes, onEditPlan, partners }) {
     <div className={classes.planPanel}>
       <div className={classes.planPanelHeader}>
         <div>
-          <div className={classes.planPanelTitle}>{plan.name}</div>
+          <h2 ref={headingRef} className={classes.planPanelTitle} tabIndex={-1}>{plan.name}</h2>
           <div className={classes.planPanelMeta}>
             <code>{plan.code}</code>
             {' · '}{MEAL_PLAN_LABELS[plan.mealPlan] ?? plan.mealPlan}
@@ -1440,9 +1538,10 @@ function PlanPanel({ plan, roomTypes, onEditPlan, partners }) {
           </div>
           {/* Состояние корпоративного тарифа считает сервер по цене договора —
               строка показывает его причины, своих слов экран не добавляет. */}
-          {plan.forOperator && plan.operatorStatus?.reason && (
-            <div className={classes.fieldHint}>{plan.operatorStatus.reason}</div>
-          )}
+          {plan.forOperator && <div className={classes.tariffStatus}>
+            {plan.operatorStatus?.applies ? 'Работает · цены из договора' : 'Ждёт цен по договору'}
+            {!plan.operatorStatus?.applies && plan.operatorStatus?.reason && <span>{plan.operatorStatus.reason}</span>}
+          </div>}
         </div>
         {plan.partnerId && (
           <div className={classes.planConditions}>
@@ -1453,13 +1552,14 @@ function PlanPanel({ plan, roomTypes, onEditPlan, partners }) {
             ))}
           </div>
         )}
-        <div className={classes.planPanelActions}>
-          <button className={classes.iconBtn} title="Редактировать план" onClick={onEditPlan}>
+        {(canEdit || onOpenContract) && <div className={classes.planPanelActions}>
+          {onOpenContract && <button type="button" className={classes.btnGhost} onClick={onOpenContract}>Открыть договор</button>}
+          {canEdit && <button className={classes.iconBtn} title="Редактировать план" onClick={onEditPlan}>
             <svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
             </svg>
-          </button>
-        </div>
+          </button>}
+        </div>}
       </div>
 
       <div className={classes.subTabs}>
@@ -1493,8 +1593,8 @@ function PlanPanel({ plan, roomTypes, onEditPlan, partners }) {
         </div>
       )}
 
-      {plan.forOperator && tab === 'contract' && <ContractPricesTab plan={plan} />}
-      {plan.forOperator && tab === 'calendar' && <ContractCalendar plan={plan} />}
+      {plan.forOperator && tab === 'contract' && <ContractPricesTab key={contractViewKey(plan)} plan={plan} />}
+      {plan.forOperator && tab === 'calendar' && <ContractCalendar key={contractViewKey(plan)} plan={plan} />}
       {!plan.forOperator && tab === 'standard' && <StandardPrices plan={plan} roomTypes={roomTypes} />}
       {!plan.forOperator && tab === 'seasons' && <Seasons plan={plan} roomTypes={roomTypes} />}
       {!plan.forOperator && tab === 'calendar' && <RateCalendar plan={plan} roomTypes={roomTypes} />}
@@ -1512,7 +1612,16 @@ function PlanPanel({ plan, roomTypes, onEditPlan, partners }) {
  * Договор без приложения цен виден честно («цен нет»): тариф по нему завести
  * можно, он начнёт работать, когда цены придут.
  * ───────────────────────────────────────────────────────────────────────── */
-function OperatorContractPrices({ contracts, plans, partners, onCreatePlan }) {
+const contractKey = (partnerId, number) => `${partnerId}|${number?.trim() ?? ''}`;
+
+function OperatorContractPrices({ contracts, plans, partners, onCreatePlan, onOpenPlan, canEdit,
+  openedContracts, onToggleContract, pinnedContract, onSearchChange, summaryRef }) {
+  const [search, setSearch] = useState('');
+  const [shownSlice, setShownSlice] = useState(null);
+  const needle = search.trim().toLocaleLowerCase('ru-RU');
+  const matchesSearch = (c) => [c.number, c.account?.name].some((v) => v?.toLocaleLowerCase('ru-RU').includes(needle));
+  const visible = contracts.filter((c) => matchesSearch(c) || contractKey(c.partnerId, c.number) === pinnedContract);
+  const pinnedOutsideSearch = visible.some((c) => !matchesSearch(c));
   const customerName = (partner, code) =>
     (partner?.customers ?? []).find((c) => c.code === code)?.name ?? code ?? 'Все авиакомпании';
   const sliceLabel = (partner, s) =>
@@ -1524,14 +1633,25 @@ function OperatorContractPrices({ contracts, plans, partners, onCreatePlan }) {
       .filter(Boolean)
       .join(' · ');
 
+  if (!contracts.length) return <div className={classes.emptyState}>
+    <div className={classes.emptyTitle}>Договоров пока нет</div>
+    <div className={classes.emptyText}>Договоры появятся после синхронизации с Kars Avia.</div>
+  </div>;
+
   return (
     <div className={classes.sectionCard}>
-      <div className={classes.sectionTitle}>Цены по договору с партнёром</div>
-      <div className={classes.emptyHint}>
-        Договоры ведёт Kars Avia; цены берутся из её реестра и здесь только
-        показываются. Тариф по договору цены не вводит — он их берёт.
+      <div className={classes.contractRegistryHead}>
+        <div className={classes.emptyHint}>Выберите договор и условия. Цены обновляются из реестра Kars Avia.</div>
+        {(contracts.length > 3 || search) && <input className={classes.input} type="search" aria-label="Поиск договора по номеру или юрлицу" placeholder="Номер договора или юрлицо" value={search} onChange={(e) => {
+          setSearch(e.target.value);
+          onSearchChange();
+        }} />}
       </div>
-      {contracts.map((c) => {
+      {pinnedOutsideSearch && <div className={classes.contractNotice}>Договор открыт из тарифа. Поисковый запрос сохранён.</div>}
+      {visible.length === 0 && <div className={classes.contractNotice}>Договоры не найдены. Измените поисковый запрос.</div>}
+      {visible.map((c) => {
+        const key = contractKey(c.partnerId, c.number);
+        const isOpen = openedContracts.get(key) ?? Boolean(c.isPrimary || contracts.length === 1);
         const partner = partners.find((p) => p.id === c.partnerId) ?? null;
         const sliceOfPlan = (s) =>
           planForSlice(
@@ -1546,43 +1666,65 @@ function OperatorContractPrices({ contracts, plans, partners, onCreatePlan }) {
             c.number,
           );
         return (
-          <div key={c.partnerId + '|' + c.number} className={classes.contractGroup}>
-            <div className={classes.contractGroupHead}>
+          <details key={key} className={classes.contractGroup} open={isOpen}>
+            <summary ref={key === pinnedContract ? summaryRef : undefined} className={classes.contractGroupHead} onClick={(event) => {
+              event.preventDefault();
+              onToggleContract(key, !isOpen);
+            }}>
               <b>Договор {c.number}</b>
               {c.account && <span>{c.account.name}</span>}
               <span>
                 {c.signedAt ? 'с ' + fmtDay(c.signedAt) : ''}
                 {c.expiresAt ? ' по ' + fmtDay(c.expiresAt) : ''}
               </span>
-              <span>приложений: {c.documents}</span>
-              {c.isPrimary && <span>рабочий</span>}
-              {c.state === 'ARCHIVED' && <span>архив</span>}
-            </div>
+              <span>{c.documents} документов</span>
+              {c.isPrimary && <span className={classes.rowChip}>Рабочий</span>}
+              {c.state === 'ARCHIVED' && <span className={classes.rowChip}>Архив</span>}
+              <span className={classes.contractState}>{c.hasPrices ? 'Цены доступны' : 'Ждёт цен'}</span>
+            </summary>
             {!c.hasPrices ? (
-              <div className={classes.emptyHint}>
-                Цен нет — приложение к договору ещё не пришло. Тариф завести можно:
-                он начнёт работать, когда цены придут.
+              <div className={classes.contractEmpty}>
+                <div className={classes.emptyHint}>{contractAvailabilityText(c)}</div>
+                {canEdit && <button className={classes.btnGhost} onClick={() => onCreatePlan(c, null)}>Создать тариф по договору</button>}
               </div>
             ) : (
               <ul className={classes.sliceList}>
                 {c.slices.map((s) => {
                   const plan = sliceOfPlan(s);
+                  const sliceKey = [key, s.customer, s.guestKind, s.mealPlan].join('|');
+                  const previewForm = {
+                    partnerId: c.partnerId, operatorContract: c.number,
+                    partnerAccountId: partner?.accounts?.find((a) => a.code === c.account?.code)?.id ?? '',
+                    partnerCustomerId: partner?.customers?.find((a) => a.code === s.customer)?.id ?? '',
+                    guestKind: s.guestKind ?? '', mealPlan: s.mealPlan,
+                  };
+                  const missingDirectory = (s.customer && !previewForm.partnerCustomerId) || (c.account && !previewForm.partnerAccountId);
                   return (
                     <li key={s.customer + '|' + s.guestKind + '|' + s.mealPlan}>
+                      <div className={classes.sliceSummary}>
                       <span>{sliceLabel(partner, s)}</span>
+                      <div className={classes.sliceActions}>
+                      <button className={classes.btnGhost} disabled={Boolean(missingDirectory)} aria-expanded={shownSlice === sliceKey} onClick={() => setShownSlice(shownSlice === sliceKey ? null : sliceKey)}>{shownSlice === sliceKey ? 'Скрыть цены' : 'Посмотреть цены'}</button>
                       {plan ? (
-                        <span className={classes.sliceOk}>тариф «{plan.name}»</span>
-                      ) : (
-                        <button className={classes.btnGhost} onClick={() => onCreatePlan(c, s)}>
+                        <>
+                          <span className={classes.sliceOk}>{plan.name}</span>
+                          <button type="button" className={classes.btnGhost} onClick={() => onOpenPlan(plan.id)}>Открыть тариф</button>
+                        </>
+                      ) : canEdit && (
+                        <button className={classes.btnGhost} disabled={Boolean(missingDirectory)} onClick={() => onCreatePlan(c, s)}>
                           Завести тариф
                         </button>
                       )}
+                      </div>
+                      </div>
+                      {missingDirectory && <div className={classes.fieldHint}>Для проверки цен диспетчеру нужно обновить справочник партнёра.</div>}
+                      {shownSlice === sliceKey && <div className={classes.slicePreview}><ContractTariffPreview form={previewForm} /></div>}
                     </li>
                   );
                 })}
               </ul>
             )}
-          </div>
+          </details>
         );
       })}
     </div>
@@ -1593,18 +1735,30 @@ function OperatorContractPrices({ contracts, plans, partners, onCreatePlan }) {
 // Tariffs (main)
 // ─────────────────────────────────────────────────────────────────────────────
 
+const SECTION_LABELS = { plans: 'Тарифы', contracts: 'Договоры партнёра' };
+const EMPTY_CONTRACTS = [];
+
 function Tariffs() {
-  const { data: plans = [], isLoading } = useRatePlans();
-  const { data: roomTypes = [] } = useRoomTypes();
+  const { hasPermission } = useAuth();
+  const canEdit = hasPermission('rate.update');
+  const planQuery = useRatePlans();
+  const roomQuery = useTariffRoomTypes();
+  const { data: plans = [], isLoading } = planQuery;
+  const { data: roomTypes = [] } = roomQuery;
   const createPlan = useCreateRatePlan();
   const updatePlan = useUpdateRatePlan();
   const deletePlan = useDeleteRatePlan();
 
   /* Договоры из реестра Kars Avia: договор без цен тоже в списке — по нему
      тариф заводится и ждёт приложения. */
-  const { data: contracts = [] } = useContracts();
-  const { data: partners = [] } = usePartners();
+  const contractQuery = useContracts();
+  const partnerQuery = usePartners();
+  const { data: contracts = EMPTY_CONTRACTS } = contractQuery;
+  const { data: partners = [] } = partnerQuery;
 
+  const [activeSection, setActiveSection] = useState('plans');
+  const [openedContracts, setOpenedContracts] = useState(() => new Map());
+  const [pinnedContract, setPinnedContract] = useState(null);
   const [selectedPlanId, setSelectedPlanId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState(null);
@@ -1613,11 +1767,84 @@ function Tariffs() {
   const [prefill, setPrefill] = useState(null);
   const [formError, setFormError] = useState(null);
 
-  const selectedPlan = plans.find(p => p.id === selectedPlanId) ?? plans[0] ?? null;
+  const tabId = useId();
+  const scrollRoot = useRef(null);
+  const tabs = useRef({});
+  const planHeading = useRef(null);
+  const contractSummary = useRef(null);
+  const scrollPositions = useRef({ plans: 0, contracts: 0 });
+  const navigation = useRef(null);
 
-  const openNew  = () => { setFormError(null); setFormData(null); setPrefill(null); setShowForm(true); };
-  const openEdit = (plan) => { setFormError(null); setFormData(plan); setPrefill(null); setShowForm(true); };
+  const selectedPlan = plans.find(p => p.id === selectedPlanId) ?? plans[0] ?? null;
+  const selectedContract = selectedPlan?.forOperator && selectedPlan.partnerId && selectedPlan.operatorContract?.trim()
+    ? contracts.find((c) => contractKey(c.partnerId, c.number) === contractKey(selectedPlan.partnerId, selectedPlan.operatorContract))
+    : null;
+
+  // Начальное раскрытие определяется при появлении договора. Поздние
+  // изменения состава реестра не закрывают уже открытый предпросмотр.
+  useLayoutEffect(() => {
+    setOpenedContracts((current) => {
+      let next = current;
+      for (const c of contracts) {
+        const key = contractKey(c.partnerId, c.number);
+        if (next.has(key)) continue;
+        if (next === current) next = new Map(current);
+        next.set(key, Boolean(c.isPrimary || contracts.length === 1));
+      }
+      return next;
+    });
+  }, [contracts]);
+
+  const switchSection = (section, focus = 'tab') => {
+    if (section === activeSection) {
+      if (focus === 'tab') tabs.current[section]?.focus({ preventScroll: true });
+      return;
+    }
+    scrollPositions.current[activeSection] = scrollRoot.current?.scrollTop ?? 0;
+    navigation.current = focus;
+    setActiveSection(section);
+  };
+
+  useLayoutEffect(() => {
+    const root = scrollRoot.current;
+    const focus = navigation.current;
+    if (!root || !focus) return;
+    navigation.current = null;
+    const target = focus === 'contract' ? contractSummary.current : focus === 'plan' ? planHeading.current : null;
+    if (target) {
+      const top = target.getBoundingClientRect().top - root.getBoundingClientRect().top;
+      root.scrollTop = Math.max(0, root.scrollTop + top - 12);
+      target.focus({ preventScroll: true });
+    } else {
+      root.scrollTop = scrollPositions.current[activeSection];
+      tabs.current[activeSection]?.focus({ preventScroll: true });
+    }
+  }, [activeSection]);
+
+  const handleTabKey = (event) => {
+    const other = activeSection === 'plans' ? 'contracts' : 'plans';
+    const next = { ArrowLeft: other, ArrowRight: other, Home: 'plans', End: 'contracts' }[event.key];
+    if (typeof next !== 'string') return;
+    event.preventDefault();
+    switchSection(next);
+  };
+
+  const setContractOpen = (key, open) => setOpenedContracts((current) => new Map(current).set(key, open));
+  const openContract = (contract) => {
+    const key = contractKey(contract.partnerId, contract.number);
+    setPinnedContract(key);
+    setContractOpen(key, true);
+    switchSection('contracts', 'contract');
+  };
+  const openPlan = (id) => {
+    setSelectedPlanId(id);
+    switchSection('plans', 'plan');
+  };
+
+  const openNew  = () => { if (!canEdit) return; setFormError(null); setFormData(null); setPrefill(null); setShowForm(true); };
+  const openEdit = (plan) => { if (!canEdit) return; setFormError(null); setFormData(plan); setPrefill(null); setShowForm(true); };
   const openForSlice = (contract, slice) => {
+    if (!canEdit) return;
     setFormError(null);
     setFormData(null);
     setPrefill({ contract, slice });
@@ -1629,11 +1856,11 @@ function Tariffs() {
   const payloadOf = (form) => ({
     code: form.code,
     name: form.name,
-    description: form.description || undefined,
+    description: form.description || null,
     mealPlan: form.mealPlan,
     isActive: form.isActive,
     forOperator: form.forOperator,
-    parentRatePlanId: form.forOperator ? null : (form.parentRatePlanId || undefined),
+    parentRatePlanId: form.forOperator ? null : (form.parentRatePlanId || null),
     priceModifierType: !form.forOperator && form.parentRatePlanId ? form.priceModifierType : undefined,
     priceModifierValue:
       !form.forOperator && form.parentRatePlanId ? (form.priceModifierValue ?? 0) : undefined,
@@ -1649,6 +1876,7 @@ function Tariffs() {
   });
 
   const handleSave = async (form) => {
+    if (!canEdit) return false;
     setFormError(null);
     /* id в форме — уже созданный тариф (свой тариф создаётся до шагов «Цены» и
        «Сезоны»): сохранение после этого — правка, а не второй тариф. */
@@ -1657,18 +1885,17 @@ function Tariffs() {
       if (planId) {
         const updated = await updatePlan.mutateAsync({ id: planId, payload: payloadOf(form) });
         setShowForm(false);
+        openPlan(updated?.id ?? planId);
         return updated ?? true;
       } else if (form.forOperator) {
         const created = await createPlan.mutateAsync(payloadOf(form));
         setShowForm(false);
-        setSelectedPlanId(created.id);
+        openPlan(created.id);
         return created;
       } else {
         /* Свой тариф: он нужен, чтобы показать шаги «Цены» и «Сезоны» в этом же
            окне. Возвращаем его форме — она сама перейдёт к ним. */
-        const created = await createPlan.mutateAsync(payloadOf(form));
-        setSelectedPlanId(created.id);
-        return created;
+        return await createPlan.mutateAsync(payloadOf(form));
       }
     } catch (err) {
       const msg = err?.response?.data?.message;
@@ -1677,19 +1904,15 @@ function Tariffs() {
   };
 
   const handleDelete = async (id) => {
-    try {
-      await deletePlan.mutateAsync(id);
-      setShowForm(false);
-      if (selectedPlanId === id) setSelectedPlanId(null);
-    } catch (err) {
-      const msg = err?.response?.data?.message;
-      setFormError(Array.isArray(msg) ? msg.join(', ') : (msg ?? err.message ?? 'Ошибка'));
-    }
+    if (!canEdit) return;
+    await deletePlan.mutateAsync(id);
+    setShowForm(false);
+    if (selectedPlanId === id) setSelectedPlanId(null);
   };
 
   const isSaving = createPlan.isPending || updatePlan.isPending || deletePlan.isPending;
 
-  if (isLoading) {
+  if (isLoading || contractQuery.isLoading || partnerQuery.isLoading || roomQuery.isLoading) {
     return (
       <div className={classes.root}>
         <div className={classes.pageHeader}><div className={classes.pageTitle}>Тарифы</div></div>
@@ -1698,18 +1921,52 @@ function Tariffs() {
     );
   }
 
+  const failedQueries = [planQuery, contractQuery, partnerQuery, roomQuery].filter((q) => q.isError);
+  const retryQueries = () => Promise.all(failedQueries.map((q) => q.refetch()));
+  if (failedQueries.some((q) => q.data == null)) {
+    return <div className={classes.root}><div className={classes.pageTitle}>Тарифы</div>
+      <ContractPriceNotice title="Не удалось загрузить тарифы и договоры" onRetry={retryQueries}>
+        Повторите загрузку. Ошибка соединения не означает, что договоров нет.
+      </ContractPriceNotice>
+    </div>;
+  }
+
   return (
     <div className={classes.root}>
       <div className={classes.pageHeader}>
-        <div className={classes.pageTitle}>Тарифы</div>
-        <button className={classes.btnAdd} onClick={openNew}>
-          <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-          Новый план
-        </button>
+        <div><h1 className={classes.pageTitle}>Тарифы</h1>
+          <div className={classes.pageSubtitle}>Цены гостиницы и условия размещения по договорам партнёров</div>
+        </div>
       </div>
 
+      <div className={classes.sectionNavigation}>
+        <div className={classes.sectionTabs} role="tablist" aria-label="Разделы тарифов">
+          {Object.entries(SECTION_LABELS).map(([section, label]) => (
+            <button key={section} ref={(node) => { tabs.current[section] = node; }} type="button"
+              id={`${tabId}-${section}-tab`} role="tab" aria-selected={activeSection === section}
+              aria-controls={`${tabId}-${section}-panel`} tabIndex={activeSection === section ? 0 : -1}
+              className={classes.sectionTab} onClick={() => switchSection(section)} onKeyDown={handleTabKey}>
+              {label}<span className={classes.countBadge}>{section === 'plans' ? plans.length : contracts.length}</span>
+            </button>
+          ))}
+        </div>
+        {activeSection === 'plans' && canEdit && (
+          <button type="button" className={classes.btnAdd} onClick={openNew}>
+            <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            Новый тариф
+          </button>
+        )}
+      </div>
+
+      <div ref={scrollRoot} className={classes.contentScroll}>
+      {failedQueries.length > 0 && <ContractPriceNotice title="Не удалось обновить данные" onRetry={retryQueries}>
+        Показаны последние загруженные данные. Введённые значения в мастере сохранены на экране.
+      </ContractPriceNotice>}
+
+      <section id={`${tabId}-plans-panel`} role="tabpanel" aria-labelledby={`${tabId}-plans-tab`}
+        className={classes.sectionPanel} hidden={activeSection !== 'plans'}>
       {plans.length === 0 && (
         <div className={classes.emptyState}>
           <div className={classes.emptyIcon}>
@@ -1717,13 +1974,13 @@ function Tariffs() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 11h.01M12 11h.01M15 11h.01M4 5h16a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V7a2 2 0 012-2z" />
             </svg>
           </div>
-          <div className={classes.emptyTitle}>Нет тарифных планов</div>
+          <div className={classes.emptyTitle}>{canEdit ? 'Создайте первый тариф' : 'Тарифов пока нет'}</div>
           <div className={classes.emptyText}>
             {contracts.length
-              ? 'Договоры уже пришли — тариф по ним заводится кнопкой у среза ниже.'
-              : 'Свои тарифы гостиница заводит сама. Корпоративные появятся, когда Kars Avia заведёт договор с вами.'}
+              ? (canEdit ? 'Создайте свой тариф или подготовьте тариф по договору.' : 'Договоры гостиницы доступны в соседней вкладке.')
+              : (canEdit ? 'Создайте собственный тариф с ценами гостиницы.' : 'Здесь появятся тарифы гостиницы.')}
           </div>
-          <button className={classes.btnAdd} onClick={openNew}>Создать план</button>
+          {contracts.length > 0 && <button type="button" className={classes.btnGhost} onClick={() => switchSection('contracts')}>Перейти к договорам</button>}
         </div>
       )}
 
@@ -1732,53 +1989,67 @@ function Tariffs() {
           <div className={classes.planTabsWrapper}>
             <div className={classes.planTabs}>
               {plans.map(p => (
-                <div
+                <button
+                  type="button" aria-pressed={selectedPlan?.id === p.id}
                   key={p.id}
                   className={`${classes.planTab} ${selectedPlan?.id === p.id ? classes.planTabActive : ''}`}
                   onClick={() => setSelectedPlanId(p.id)}
                 >
                   <div className={classes.planTabHead}>
                     <span className={classes.planTabName}>{p.name}</span>
-                    {p.parentRatePlanId && <span className={classes.planTabInherits}>Inherited</span>}
+                    {p.parentRatePlanId && <span className={classes.planTabInherits}>Наследует цены</span>}
                     {p.forOperator && (
                       <span className={classes.planTabCorp}>
                         {partners.find((x) => x.id === p.partnerId)?.name ?? 'Партнёр'}
                       </span>
                     )}
-                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: p.isActive ? '#22C55E' : '#D1D5DB', flexShrink: 0, marginLeft: 'auto' }} />
+                    {!p.isActive && <span className={classes.rowChip}>Неактивен</span>}
                   </div>
                   <div className={classes.planTabMeta}>{p.code} · {MEAL_PLAN_LABELS[p.mealPlan] ?? p.mealPlan}</div>
-                </div>
+                </button>
               ))}
-              <button
+              {canEdit && <button
                 style={{ alignSelf: 'center', marginLeft: 4, background: 'none', border: '1px dashed #CBD5E1', borderRadius: 10, padding: '8px 14px', cursor: 'pointer', color: '#94A3B8', fontSize: 13, fontFamily: 'inherit' }}
                 onClick={openNew}
-              >+ Добавить</button>
+              >+ Добавить</button>}
             </div>
           </div>
 
           {selectedPlan && (
             <PlanPanel
+              canEdit={canEdit}
               key={selectedPlan.id}
               plan={selectedPlan}
               roomTypes={roomTypes}
               partners={partners}
               onEditPlan={() => openEdit(selectedPlan)}
+              onOpenContract={selectedContract ? () => openContract(selectedContract) : undefined}
+              headingRef={planHeading}
             />
           )}
         </>
       )}
+      </section>
 
-      {contracts.length > 0 && (
+      <section id={`${tabId}-contracts-panel`} role="tabpanel" aria-labelledby={`${tabId}-contracts-tab`}
+        className={classes.sectionPanel} hidden={activeSection !== 'contracts'}>
         <OperatorContractPrices
+          canEdit={canEdit}
           contracts={contracts}
           plans={plans}
           partners={partners}
           onCreatePlan={openForSlice}
+          onOpenPlan={openPlan}
+          openedContracts={openedContracts}
+          onToggleContract={setContractOpen}
+          pinnedContract={pinnedContract}
+          onSearchChange={() => setPinnedContract(null)}
+          summaryRef={contractSummary}
         />
-      )}
+      </section>
+      </div>
 
-      {showForm && (
+      {canEdit && showForm && (
         <RatePlanForm
           plan={formData}
           prefill={prefill}

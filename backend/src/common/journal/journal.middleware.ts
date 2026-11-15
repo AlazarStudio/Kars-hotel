@@ -60,14 +60,25 @@ function filesOf(req: JournalRequest) {
   if (req.file) list.push(req.file);
   const f = req.files;
   if (Array.isArray(f)) list.push(...f);
-  else if (f && typeof f === 'object') for (const v of Object.values(f)) if (Array.isArray(v)) list.push(...v);
-  return list.map((x) => ({ field: x.fieldname, name: x.originalname, size: x.size, type: x.mimetype }));
+  else if (f && typeof f === 'object')
+    for (const v of Object.values(f)) if (Array.isArray(v)) list.push(...v);
+  return list.map((x) => ({
+    field: x.fieldname,
+    name: x.originalname,
+    size: x.size,
+    type: x.mimetype,
+  }));
 }
 
 const hasKeys = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as object).length > 0;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function journalRowOf(req: JournalRequest, res: Response, startedAt: number, error: string | undefined): JournalRow {
+export function journalRowOf(
+  req: JournalRequest,
+  res: Response,
+  startedAt: number,
+  error: string | undefined,
+): JournalRow {
   const path = (req.originalUrl || req.url).split('?')[0];
   const user = req.user;
   const body = req.body as Record<string, unknown> | undefined;
@@ -110,7 +121,8 @@ export function journalMiddleware(journal: JournalService) {
     };
     res.on('close', () => {
       try {
-        if (shouldJournal(req, res)) journal.push(journalRowOf(req as JournalRequest, res, startedAt, error));
+        if (shouldJournal(req, res))
+          journal.push(journalRowOf(req as JournalRequest, res, startedAt, error));
       } catch {
         /* журнал не должен ронять ответ */
       }

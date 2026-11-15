@@ -8,10 +8,27 @@ import { ReservationsService } from './reservations.service';
  * пролезло в тело запроса. */
 
 const CUR = {
-  id: 'r1', room_id: 'room', room_type_id: 'rt', check_in: new Date('2026-10-21'), check_out: new Date('2026-10-24'),
-  version: 1, guest_name: 'Морозова И.В.', phone: null, email: null, adults: 1, children: 0, status: 'CONFIRMED',
-  source: 'CORPORATE', notes: null, total_price: null, rate_plan_id: null, place_number: 1, channel_managed: true,
-  arrival_at: '2026-10-21T03:30', departure_at: '2026-10-24T10:40', flight: 'S7 178',
+  id: 'r1',
+  room_id: 'room',
+  room_type_id: 'rt',
+  check_in: new Date('2026-10-21'),
+  check_out: new Date('2026-10-24'),
+  version: 1,
+  guest_name: 'Морозова И.В.',
+  phone: null,
+  email: null,
+  adults: 1,
+  children: 0,
+  status: 'CONFIRMED',
+  source: 'CORPORATE',
+  notes: null,
+  total_price: null,
+  rate_plan_id: null,
+  place_number: 1,
+  channel_managed: true,
+  arrival_at: '2026-10-21T03:30',
+  departure_at: '2026-10-24T10:40',
+  flight: 'S7 178',
 };
 
 type Call = { sql: string; strings: string[]; values: unknown[] };
@@ -24,9 +41,12 @@ function make() {
     $queryRaw: jest.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
       const sql = strings.join('?');
       calls.push({ sql, strings: [...strings], values });
-      if (sql.includes('UPDATE reservation SET')) return [{ id: 'r1', version: 2, status: 'CONFIRMED' }];
-      if (sql.includes('INSERT INTO reservation')) return [{ id: 'r1', status: 'CONFIRMED', version: 1, place_number: 1 }];
-      if (sql.includes('FROM room r')) return [{ id: 'room', room_type_id: 'rt', capacity: 2, multi_place: false }];
+      if (sql.includes('UPDATE reservation SET'))
+        return [{ id: 'r1', version: 2, status: 'CONFIRMED' }];
+      if (sql.includes('INSERT INTO reservation'))
+        return [{ id: 'r1', status: 'CONFIRMED', version: 1, place_number: 1 }];
+      if (sql.includes('FROM room r'))
+        return [{ id: 'room', room_type_id: 'rt', capacity: 2, multi_place: false }];
       return [CUR];
     }),
   };
@@ -59,14 +79,25 @@ function assigned(calls: Call[]): Record<string, unknown> {
 
 const asOwner = <T>(fn: () => Promise<T>) =>
   TenantContext.run(
-    { tenantId: 't1', userId: 'u1', roleCode: 'OWNER', permissions: [], isSuperAdmin: false } as never,
+    {
+      tenantId: 't1',
+      userId: 'u1',
+      roleCode: 'OWNER',
+      permissions: [],
+      isSuperAdmin: false,
+    } as never,
     fn,
   );
 
 describe('время брони партнёра в PMS', () => {
   it('партнёр прислал новый прилёт — пишется; не присланное остаётся', async () => {
     const { svc, calls } = make();
-    await asOwner(() => svc.update('r1', { version: 1 } as never, { fromChannel: true, stay: { arrivalAt: '2026-10-21T05:30' } }));
+    await asOwner(() =>
+      svc.update('r1', { version: 1 } as never, {
+        fromChannel: true,
+        stay: { arrivalAt: '2026-10-21T05:30' },
+      }),
+    );
     expect(assigned(calls)).toMatchObject({
       arrival_at: '2026-10-21T05:30',
       departure_at: '2026-10-24T10:40',
@@ -76,19 +107,28 @@ describe('время брони партнёра в PMS', () => {
 
   it('null — стирает', async () => {
     const { svc, calls } = make();
-    await asOwner(() => svc.update('r1', { version: 1 } as never, { fromChannel: true, stay: { flight: null } }));
+    await asOwner(() =>
+      svc.update('r1', { version: 1 } as never, { fromChannel: true, stay: { flight: null } }),
+    );
     expect(assigned(calls)).toMatchObject({ flight: null, arrival_at: '2026-10-21T03:30' });
   });
 
   it('кабинет гостиницы время НЕ трогает, даже если поле пролезло в тело', async () => {
     const { svc, calls } = make();
-    await asOwner(() => svc.update('r1', { version: 1, arrivalAt: '2026-10-21T09:00', flight: 'XX 1' } as never));
+    await asOwner(() =>
+      svc.update('r1', { version: 1, arrivalAt: '2026-10-21T09:00', flight: 'XX 1' } as never),
+    );
     expect(assigned(calls)).toMatchObject({ arrival_at: '2026-10-21T03:30', flight: 'S7 178' });
   });
 
   it('журнал правки называет, как сдвинулся прилёт', async () => {
     const { svc, audit } = make();
-    await asOwner(() => svc.update('r1', { version: 1 } as never, { fromChannel: true, stay: { arrivalAt: '2026-10-21T05:30' } }));
+    await asOwner(() =>
+      svc.update('r1', { version: 1 } as never, {
+        fromChannel: true,
+        stay: { arrivalAt: '2026-10-21T05:30' },
+      }),
+    );
     expect(audit[0].diff.before).toMatchObject({ arrivalAt: '2026-10-21T03:30' });
     expect(audit[0].diff.after).toMatchObject({ arrivalAt: '2026-10-21T05:30' });
     expect(audit[0].diff.before).not.toHaveProperty('flight');
@@ -98,7 +138,13 @@ describe('время брони партнёра в PMS', () => {
     const { svc, calls } = make();
     await asOwner(() =>
       svc.create(
-        { roomId: 'room', guestName: 'Гость', checkIn: '2026-10-21', checkOut: '2026-10-24', adults: 1 } as never,
+        {
+          roomId: 'room',
+          guestName: 'Гость',
+          checkIn: '2026-10-21',
+          checkOut: '2026-10-24',
+          adults: 1,
+        } as never,
         { arrivalAt: '2026-10-22T02:00', flight: 'S7 178' },
       ),
     );
@@ -110,7 +156,13 @@ describe('время брони партнёра в PMS', () => {
   it('своя бронь гостиницы — времени нет, пишется пусто, а не «undefined»', async () => {
     const { svc, calls } = make();
     await asOwner(() =>
-      svc.create({ roomId: 'room', guestName: 'Гость', checkIn: '2026-10-21', checkOut: '2026-10-24', adults: 1 } as never),
+      svc.create({
+        roomId: 'room',
+        guestName: 'Гость',
+        checkIn: '2026-10-21',
+        checkOut: '2026-10-24',
+        adults: 1,
+      } as never),
     );
     const insert = calls.find((c) => c.sql.includes('INSERT INTO reservation'));
     expect(insert?.values).not.toContain(undefined);

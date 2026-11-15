@@ -50,14 +50,19 @@ const LIVE_ONLY = { _count: { select: { rooms: { where: { archivedAt: null } } }
 describe('Удаление категории номеров', () => {
   beforeEach(() => {
     jest.spyOn(TenantContext, 'getTenantIdOrThrow').mockReturnValue('t1');
-    jest.spyOn(TenantContext, 'get').mockReturnValue({ tenantId: 't1', userId: 'u-hotel' } as never);
+    jest
+      .spyOn(TenantContext, 'get')
+      .mockReturnValue({ tenantId: 't1', userId: 'u-hotel' } as never);
   });
   afterEach(() => jest.restoreAllMocks());
 
   it('номера считаются без удалённых в архив', async () => {
     const { svc, tx } = setup(STD);
     await svc.remove('cat');
-    expect(tx.roomType.findUnique).toHaveBeenCalledWith({ where: { id: 'cat' }, include: LIVE_ONLY });
+    expect(tx.roomType.findUnique).toHaveBeenCalledWith({
+      where: { id: 'cat' },
+      include: LIVE_ONLY,
+    });
   });
 
   it('без живых номеров — в архив: строка НЕ стирается, категория выключена, код освобождён', async () => {

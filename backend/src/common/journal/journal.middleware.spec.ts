@@ -17,20 +17,85 @@ describe('журнал действий PMS: какие запросы пишу�
   });
   it('открытие экрана — НЕ пишется; выгрузка файла — пишется', () => {
     expect(shouldJournal(req('GET', '/api/reservations'), res())).toBe(false);
-    expect(shouldJournal(req('GET', '/api/folio/1/pdf'), res('attachment; filename=a.pdf'))).toBe(true);
+    expect(shouldJournal(req('GET', '/api/folio/1/pdf'), res('attachment; filename=a.pdf'))).toBe(
+      true,
+    );
   });
 });
 
 describe('журнал действий PMS: строка запроса', () => {
   it('кто правил бронь и что прислал; пароль на входе скрыт', () => {
-    const u = { userId: '11111111-1111-1111-1111-111111111111', tenantId: '22222222-2222-2222-2222-222222222222', email: 'd@h.ru' };
-    const row = journalRowOf(req('PATCH', '/api/reservations/1', { adults: 2 }, { user: u, headers: { 'x-client-action': 'a1' } }), res(undefined, 403), Date.now(), 'нельзя');
-    expect(row).toMatchObject({ userId: u.userId, tenantId: u.tenantId, email: 'd@h.ru', actionId: 'a1', status: 403, error: 'нельзя', body: { adults: 2 } });
-    const login = journalRowOf(req('POST', '/api/auth/login', { email: 'a@b.ru', password: 'x' }), res(undefined, 401), Date.now(), undefined);
+    const u = {
+      userId: '11111111-1111-1111-1111-111111111111',
+      tenantId: '22222222-2222-2222-2222-222222222222',
+      email: 'd@h.ru',
+    };
+    const row = journalRowOf(
+      req(
+        'PATCH',
+        '/api/reservations/1',
+        { adults: 2 },
+        { user: u, headers: { 'x-client-action': 'a1' } },
+      ),
+      res(undefined, 403),
+      Date.now(),
+      'нельзя',
+    );
+    expect(row).toMatchObject({
+      userId: u.userId,
+      tenantId: u.tenantId,
+      email: 'd@h.ru',
+      actionId: 'a1',
+      status: 403,
+      error: 'нельзя',
+      body: { adults: 2 },
+    });
+    const login = journalRowOf(
+      req('POST', '/api/auth/login', { email: 'a@b.ru', password: 'x' }),
+      res(undefined, 401),
+      Date.now(),
+      undefined,
+    );
     expect(login.body).toEqual({ email: 'a@b.ru', password: '***' });
   });
   it('партнёр — по ключу, без пользователя', () => {
-    const row = journalRowOf(req('POST', '/api/connect/v1/hotels/h/reservations', {}, { partner: { partnerId: 'kars-avia' }, user: { userId: '', tenantId: '' } }), res(), Date.now(), undefined);
+    const row = journalRowOf(
+      req(
+        'POST',
+        '/api/connect/v1/hotels/h/reservations',
+        {},
+        { partner: { partnerId: 'kars-avia' }, user: { userId: '', tenantId: '' } },
+      ),
+      res(),
+      Date.now(),
+      undefined,
+    );
     expect(row).toMatchObject({ partnerId: 'kars-avia', userId: null, tenantId: null });
+  });
+
+  it.each([
+    [204, '/api/connect/v1/hotels/imperiya/reports-key?source=avia'],
+    [400, '/API/CONNECT/V1/HOTELS/other-hotel/REPORTS-KEY/?source=avia'],
+  ])('ключ отчётов скрыт в новой строке при статусе %i', (status, originalUrl) => {
+    const row = journalRowOf(
+      req(
+        'PUT',
+        '/rewritten-path',
+        { key: 'fixture-report-key', other: 'kept' },
+        {
+          originalUrl,
+          query: { key: 'fixture-query-key' },
+        },
+      ),
+      res(undefined, status),
+      Date.now(),
+      status >= 400 ? 'invalid request' : undefined,
+    );
+    expect(row).toMatchObject({
+      path: originalUrl.split('?')[0],
+      status,
+      body: { key: '***', other: 'kept' },
+      query: { key: '***' },
+    });
   });
 });

@@ -5,7 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PartnerWebhookService } from '../connectivity/partner-webhook.service';
-import { contractNightRub, contractVatRate } from '../contracts/contract-price';
+import { contractPriceView } from '../contracts/contract-price-view';
+import { contractNumberKey } from '../contracts/contract-identity';
 import { ContractsService } from '../contracts/contracts.service';
 import { PlanSliceSource } from '../contracts/slice';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -20,6 +21,7 @@ import {
 import { TenantContext } from '../../common/context/tenant-context';
 import { CreateRatePlanDto } from './dto/create-rate-plan.dto';
 import { UpdateRatePlanDto } from './dto/update-rate-plan.dto';
+import { ContractPricePreviewDto } from './dto/contract-price-preview.dto';
 import {
   ContractPriceDoc,
   PlanPriceRow,
@@ -48,7 +50,9 @@ function mealData(dto: {
     ...(dto.mealPriceLunch !== undefined ? { mealPriceLunch: dto.mealPriceLunch } : {}),
     ...(dto.mealPriceDinner !== undefined ? { mealPriceDinner: dto.mealPriceDinner } : {}),
     ...(dto.mealPricePerDay !== undefined ? { mealPricePerDay: dto.mealPricePerDay } : {}),
-    ...(dto.allInclusiveNote !== undefined ? { allInclusiveNote: dto.allInclusiveNote?.trim() || null } : {}),
+    ...(dto.allInclusiveNote !== undefined
+      ? { allInclusiveNote: dto.allInclusiveNote?.trim() || null }
+      : {}),
   };
 }
 
@@ -82,6 +86,16 @@ export class RatePlansService {
     return this.withOperatorStatus(plans);
   }
 
+  async roomTypes() {
+    return this.prisma.forTenant((tx) =>
+      tx.roomType.findMany({
+        where: { archivedAt: null },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+        select: { id: true, name: true, maxOccupancy: true, basePrice: true },
+      }),
+    );
+  }
+
   async get(id: string) {
     const rp = await this.prisma.forTenant((tx) =>
       tx.ratePlan.findUnique({
@@ -98,8 +112,13 @@ export class RatePlansService {
 
   async create(dto: CreateRatePlanDto) {
     const scope = await this.partnerScope(dto, null);
-    this.assertOperatorPlanStandsAlone(scope.partnerId != null, dto.parentRatePlanId);
-    await this.assertUniquePartnerScope(scope, dto.mealPlan ?? 'NONE', dto.isActive ?? true);
+    await this.assertValidParent(scope.partnerId != null, dto.parentRatePlanId);
+    await this.assertUniquePartnerScope(
+      scope,
+      dto.mealPlan ?? 'NONE',
+      dto.isActive ?? true,
+      contractNumberKey(dto.operatorContract) || null,
+    );
     try {
       const created = await this.prisma.forTenant((tx) =>
         tx.ratePlan.create({
@@ -120,7 +139,7 @@ export class RatePlansService {
             isActive: dto.isActive ?? true,
             ...scope,
             forOperator: scope.partnerId != null,
-            operatorContract: dto.operatorContract ?? null,
+            operatorContract: contractNumberKey(dto.operatorContract) || null,
           },
           include: { parentRatePlan: { select: { id: true, code: true, name: true } } },
         }),
@@ -149,19 +168,24 @@ export class RatePlansService {
           partnerCustomerId: true,
           guestKind: true,
           vatRate: true,
+          operatorContract: true,
         },
       }),
     );
     if (!before) throw new NotFoundException('Тариф не найден');
     const scope = await this.partnerScope(dto, before);
-    this.assertOperatorPlanStandsAlone(
+    await this.assertValidParent(
       scope.partnerId != null,
       dto.parentRatePlanId === undefined ? before.parentRatePlanId : dto.parentRatePlanId,
+      id,
     );
     await this.assertUniquePartnerScope(
       scope,
       dto.mealPlan ?? before.mealPlan,
       dto.isActive ?? before.isActive,
+      contractNumberKey(
+        dto.operatorContract === undefined ? before.operatorContract : dto.operatorContract,
+      ) || null,
       id,
     );
     try {
@@ -186,7 +210,9 @@ export class RatePlansService {
             ...scope,
             forOperator: scope.partnerId != null,
             operatorContract:
-              dto.operatorContract === undefined ? undefined : dto.operatorContract,
+              dto.operatorContract === undefined
+                ? undefined
+                : contractNumberKey(dto.operatorContract) || null,
           },
         }),
       );
@@ -228,12 +254,8 @@ export class RatePlansService {
     return this.withOperatorStatus(plans, day);
   }
 
-  /* КОРПОРАТИВНЫЕ ТАРИФЫ ПАРТНЁРА ДЛЯ СВЕРКИ (29.09.2026).
-   *
-   * Все тарифы партнёра у гостиницы: условия (юрлицо, заказчик, вид брони —
-   * кодами партнёра и названиями), НДС, статус и цены по категориям и числу
-   * гостей. Партнёр сверяет каждый тариф со «срезом» своего договора, и видеть
-   * обязан те же цифры, что считает PMS. */
+  /* Готовность по сетке договора на день гостиницы. Прежние поля сохраняются
+     для совместимости с потребителями API. */
   async partnerTariffs(partnerId: string) {
     const plans = await this.prisma.forTenant((tx) =>
       tx.ratePlan.findMany({
@@ -246,8 +268,9 @@ export class RatePlansService {
       }),
     );
     if (!plans.length) return [];
+    const { today, timezone } = await this.tenantCalendar();
     const [decorated, docs, roomTypes, prices] = await Promise.all([
-      this.withOperatorStatus(plans),
+      this.withOperatorStatus(plans, today),
       this.contractDocs(),
       this.prisma.forTenant((tx) =>
         tx.roomType.findMany({
@@ -263,7 +286,11 @@ export class RatePlansService {
       const categories = roomTypes.map((rt) => {
         const standard = rows
           .filter((r) => r.kind === 'STANDARD' && r.roomTypeId === rt.id)
-          .map((r) => ({ occupancy: r.occupancy ?? 0, price: Number(r.price), currency: r.currency }))
+          .map((r) => ({
+            occupancy: r.occupancy ?? 0,
+            price: Number(r.price),
+            currency: r.currency,
+          }))
           .sort((a, b) => a.occupancy - b.occupancy);
         const others = rows.filter((r) => r.kind !== 'STANDARD' && r.roomTypeId === rt.id);
         const amounts = others.map((r) => Number(r.price));
@@ -293,6 +320,9 @@ export class RatePlansService {
         },
         vatRate: plan.vatRate != null ? Number(plan.vatRate) : null,
         status: plan.operatorStatus,
+        ...(plan.operatorStatus
+          ? { priceSource: 'CONTRACT' as const, asOf: { day: today, timezone } }
+          : {}),
         fingerprint: plan.fingerprint,
         reviewedAt: plan.reviewedAt,
         reviewedBy: plan.reviewedBy,
@@ -354,13 +384,73 @@ export class RatePlansService {
      сетка по категориям и числу гостей. Считается тем же правилом, что и
      расчёт брони, — иначе экран и счёт разошлись бы молча. */
   async contractPrices(id: string, from?: string, to?: string) {
-    const plan = await this.prisma.forTenant((tx) =>
-      tx.ratePlan.findUnique({ where: { id } }),
-    );
+    const plan = await this.prisma.forTenant((tx) => tx.ratePlan.findUnique({ where: { id } }));
     if (!plan) throw new NotFoundException('Тариф не найден');
     if (!plan.forOperator) {
       throw new BadRequestException('Это не корпоративный тариф оператора');
     }
+    return this.contractPriceResponse(plan, from, to);
+  }
+
+  async previewContractPrices(dto: ContractPricePreviewDto) {
+    // Use the same ownership checks as saving, without creating a tariff.
+    try {
+      await this.partnerScope(dto, null);
+    } catch (error) {
+      if ((error as { getStatus?: () => number }).getStatus?.() === 409) {
+        throw new BadRequestException('Партнёр или условия договора недоступны');
+      }
+      throw error;
+    }
+    return this.contractPriceResponse(
+      {
+        partnerId: dto.partnerId,
+        operatorContract: contractNumberKey(dto.operatorContract),
+        partnerAccountId: dto.partnerAccountId ?? null,
+        partnerCustomerId: dto.partnerCustomerId ?? null,
+        guestKind: dto.guestKind ?? null,
+        mealPlan: dto.mealPlan,
+      },
+      dto.from,
+      dto.to,
+    );
+  }
+
+  private async tenantCalendar() {
+    const tenant = await this.prisma.forTenant((tx) =>
+      tx.tenant.findUnique({
+        where: { id: TenantContext.getTenantIdOrThrow() },
+        select: { timezone: true },
+      }),
+    );
+    if (!tenant) throw new NotFoundException('Гостиница не найдена');
+    const timezone = tenant.timezone;
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date());
+    const part = (kind: string) => parts.find((p) => p.type === kind)!.value;
+    return { today: `${part('year')}-${part('month')}-${part('day')}`, timezone };
+  }
+
+  private async contractPriceResponse(plan: PlanSliceSource, from?: string, to?: string) {
+    const calendar = await this.tenantCalendar();
+    const dayFrom = from ?? calendar.today;
+    const dayTo = to ?? dayFrom;
+    const validDay = (day: string) =>
+      /^\d{4}-\d{2}-\d{2}$/.test(day) &&
+      Number.isFinite(new Date(`${day}T00:00:00.000Z`).getTime()) &&
+      new Date(`${day}T00:00:00.000Z`).toISOString().slice(0, 10) === day;
+    if (!validDay(dayFrom) || !validDay(dayTo) || dayTo < dayFrom) {
+      throw new BadRequestException('Укажите корректный период цен договора');
+    }
+    const count = (Date.parse(dayTo) - Date.parse(dayFrom)) / 86_400_000 + 1;
+    if (count > 120) throw new BadRequestException('Период цен договора — не больше 120 дней');
+    const days = Array.from({ length: count }, (_, i) =>
+      new Date(Date.parse(dayFrom) + i * 86_400_000).toISOString().slice(0, 10),
+    );
 
     const roomTypes = await this.prisma.forTenant((tx) =>
       tx.roomType.findMany({
@@ -371,79 +461,21 @@ export class RatePlansService {
     );
     const { slice, unknownCustomer } = await this.contracts.sliceOf(plan);
 
-    const today = new Date().toISOString().slice(0, 10);
-    const dayFrom = from ?? today;
-    const dayTo = to ?? dayFrom;
-    const days: string[] = [];
-    for (
-      let d = new Date(`${dayFrom}T00:00:00.000Z`);
-      d <= new Date(`${dayTo}T00:00:00.000Z`) && days.length < 120;
-      d = new Date(d.getTime() + 86_400_000)
-    ) {
-      days.push(d.toISOString().slice(0, 10));
-    }
-
     const categories = roomTypes.map((rt) => ({
       categoryId: rt.id,
       name: rt.name,
       capacity: rt.maxOccupancy,
     }));
-    /* hasSlice — экран отличает «нет среза» от «срез есть, сеток нет»: иначе оба печатают «Авиа не прислала приложение». */
-    if (!slice) {
-      return {
-        contractNumber: plan.operatorContract,
-        hasSlice: false,
-        unknownCustomer,
-        periods: [] as string[],
-        categories,
-        nights: [] as { day: string; prices: { categoryId: string; occupancy: number; price: string }[] }[],
-        vatRate: null as number | null,
-      };
-    }
-
-    const docs = await this.contracts.docsFor(slice.partnerId);
-    /* Периоды — по тем же документам, что берёт правило цены (contract-price,
-       ownDocs): юрлицо среза обязано совпасть. Иначе выбор периода предложил
-       бы ДС другого юрлица, а цена по ней не считалась бы. */
-    const periods = [
-      ...new Set(
-        docs
-          .filter(
-            (d) =>
-              d.service === 'ACCOMMODATION' &&
-              d.contractNumber === slice.contractNumber &&
-              (!slice.accountCode || !d.accountCode || d.accountCode === slice.accountCode),
-          )
-          .flatMap((d) => (d.fill ?? []).map((g) => String(g.from).slice(0, 10))),
-      ),
-    ].sort();
-
-    const nights = days
-      .map((day) => ({
-        day,
-        prices: roomTypes.flatMap((rt) => {
-          const rows: { categoryId: string; occupancy: number; price: string }[] = [];
-          for (let g = 1; g <= Math.max(1, rt.maxOccupancy ?? 1); g++) {
-            const rub = contractNightRub(docs, slice, rt.id, g, day);
-            if (rub != null) rows.push({ categoryId: rt.id, occupancy: g, price: rub });
-          }
-          return rows;
-        }),
-      }))
-      .filter((n) => n.prices.length > 0);
-
-    return {
+    const docs = slice ? await this.contracts.docsFor(slice.partnerId) : [];
+    return contractPriceView({
       contractNumber: plan.operatorContract,
-      hasSlice: true,
-      unknownCustomer: false,
-      periods,
+      slice,
+      unknownCustomer,
+      docs,
       categories,
-      nights,
-      /* НДС — документа ЗАПРОШЕННОГО окна (11.11.2026): при двух ДС с разными
-         ставками «сегодняшняя» показывала бы отелю не ту ставку, а если
-         документ периода сегодня не покрывает — ещё и «без НДС». */
-      vatRate: contractVatRate(docs, slice, dayFrom),
-    };
+      days,
+      ...calendar,
+    });
   }
 
   /* ЗАПИСЬ ВЕРДИКТА ЖИВЁТ ЗДЕСЬ, рядом с правилом.
@@ -462,9 +494,7 @@ export class RatePlansService {
       notes?: unknown;
     },
   ) {
-    const plan = await this.prisma.forTenant((tx) =>
-      tx.ratePlan.findUnique({ where: { id } }),
-    );
+    const plan = await this.prisma.forTenant((tx) => tx.ratePlan.findUnique({ where: { id } }));
     if (!plan) throw new NotFoundException('Тариф не найден');
     if (!plan.forOperator) {
       throw new ConflictException('Это не корпоративный тариф оператора');
@@ -552,9 +582,15 @@ export class RatePlansService {
 
     const scope = {
       partnerId,
-      partnerAccountId: partnerId ? (pick('partnerAccountId', dto.partnerAccountId) as string | null) : null,
-      partnerCustomerId: partnerId ? (pick('partnerCustomerId', dto.partnerCustomerId) as string | null) : null,
-      guestKind: partnerId ? (pick('guestKind', dto.guestKind) as 'CREW' | 'DISRUPTION' | null) : null,
+      partnerAccountId: partnerId
+        ? (pick('partnerAccountId', dto.partnerAccountId) as string | null)
+        : null,
+      partnerCustomerId: partnerId
+        ? (pick('partnerCustomerId', dto.partnerCustomerId) as string | null)
+        : null,
+      guestKind: partnerId
+        ? (pick('guestKind', dto.guestKind) as 'CREW' | 'DISRUPTION' | null)
+        : null,
       vatRate: partnerId
         ? (() => {
             const v = pick('vatRate', dto.vatRate);
@@ -603,6 +639,7 @@ export class RatePlansService {
     },
     mealPlan: string,
     isActive: boolean,
+    operatorContract: string | null,
     exceptId?: string,
   ) {
     if (!scope.partnerId || !isActive) return;
@@ -610,6 +647,7 @@ export class RatePlansService {
       tx.ratePlan.findFirst({
         where: {
           partnerId: scope.partnerId,
+          operatorContract,
           partnerAccountId: scope.partnerAccountId,
           partnerCustomerId: scope.partnerCustomerId,
           guestKind: scope.guestKind,
@@ -628,20 +666,43 @@ export class RatePlansService {
     }
   }
 
-  /** Корпоративный тариф не наследуется — см. миграцию и правило статуса. */
-  private assertOperatorPlanStandsAlone(forOperator: boolean, parentId?: string | null) {
+  /** История собственных цен корпоративного тарифа не должна стать базой другого тарифа. */
+  private async assertValidParent(forOperator: boolean, parentId?: string | null, id?: string) {
     if (forOperator && parentId) {
       throw new ConflictException(
-        'Корпоративный тариф не может наследовать цены: правка родителя меняла бы ' +
-          'подтверждённые цифры молча. Скопируйте ставки и правьте их здесь.',
+        'Корпоративный тариф получает цены только из договора и не может наследовать их.',
       );
     }
+    await this.prisma.forTenant(async (tx) => {
+      if (
+        forOperator &&
+        id &&
+        (await tx.ratePlan.findFirst({ where: { parentRatePlanId: id }, select: { id: true } }))
+      ) {
+        throw new ConflictException(
+          'У тарифа есть наследники. Сначала отключите у них наследование цен.',
+        );
+      }
+      const seen = new Set(id ? [id] : []);
+      let parent = parentId;
+      while (parent) {
+        if (seen.has(parent))
+          throw new ConflictException('Цепочка наследования тарифов не может содержать цикл');
+        seen.add(parent);
+        const row = await tx.ratePlan.findUnique({
+          where: { id: parent },
+          select: { forOperator: true, partnerId: true, parentRatePlanId: true },
+        });
+        if (!row) throw new NotFoundException('Базовый тариф не найден');
+        if (row.forOperator || row.partnerId)
+          throw new ConflictException('Корпоративный тариф нельзя использовать как базовый');
+        parent = row.parentRatePlanId;
+      }
+    });
   }
 
   private async contractDocs(): Promise<ContractPriceDoc[]> {
-    const rows = await this.prisma.forTenant((tx) =>
-      tx.partnerContractPrice.findMany(),
-    );
+    const rows = await this.prisma.forTenant((tx) => tx.partnerContractPrice.findMany());
     return rows.map((r) => ({
       partnerId: r.partnerId,
       contractNumber: r.contractNumber,
@@ -684,7 +745,13 @@ export class RatePlansService {
         }),
         tx.standardRate.findMany({
           where: { ratePlanId: { in: ids } },
-          select: { ratePlanId: true, roomTypeId: true, price: true, currency: true, occupancy: true },
+          select: {
+            ratePlanId: true,
+            roomTypeId: true,
+            price: true,
+            currency: true,
+            occupancy: true,
+          },
         }),
       ]),
     );
@@ -745,15 +812,16 @@ export class RatePlansService {
        не передают ничего и получают сегодняшний. Иначе новый годовой договор
        с сеткой из будущего делал бы тариф невидимым ровно на те ночи, которые
        он уже умеет посчитать. */
-    day = new Date().toISOString().slice(0, 10),
+    day?: string,
   ): Promise<(T & { operatorStatus: TariffStatus | null; fingerprint: string | null })[]> {
     const corporate = plans.filter((p) => p.forOperator);
     if (!corporate.length) {
       return plans.map((p) => ({ ...p, operatorStatus: null, fingerprint: null }));
     }
+    const requestedDay = day ?? (await this.tenantCalendar()).today;
     const [docs, states] = await Promise.all([
       this.contractDocs(),
-      this.contracts.priceStates(corporate, day),
+      this.contracts.priceStates(corporate, requestedDay),
     ]);
     return plans.map((p) => {
       if (!p.forOperator) return { ...p, operatorStatus: null, fingerprint: null };

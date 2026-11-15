@@ -130,7 +130,7 @@ export class CreateRatePlanDto {
   @ApiPropertyOptional({ description: 'Номер договора с оператором, который тариф воплощает' })
   @IsOptional()
   @IsString()
-  @MaxLength(64)
+  @MaxLength(120)
   operatorContract?: string | null;
 
   /* Корпоративный тариф партнёра и условия применения (29.09.2026). Пустое
@@ -145,7 +145,11 @@ export class CreateRatePlanDto {
   @IsUUID()
   partnerAccountId?: string | null;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'Заказчик партнёра (авиакомпания)' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'Заказчик партнёра (авиакомпания)',
+  })
   @IsOptional()
   @IsUUID()
   partnerCustomerId?: string | null;

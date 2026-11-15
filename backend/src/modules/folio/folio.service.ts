@@ -38,7 +38,7 @@ export class FolioService {
         data: {
           tenantId,
           folioId: folio.id,
-          type: dto.type as any,
+          type: dto.type as Prisma.FolioChargeCreateInput['type'],
           description: dto.description,
           quantity: dto.quantity,
           unitPrice: dto.unitPrice,
@@ -66,8 +66,8 @@ export class FolioService {
         data: {
           tenantId,
           folioId: folio.id,
-          type: (dto.type ?? 'PAYMENT') as any,
-          method: dto.method as any,
+          type: (dto.type ?? 'PAYMENT') as Prisma.PaymentCreateInput['type'],
+          method: dto.method as Prisma.PaymentCreateInput['method'],
           amount: dto.amount,
           note: dto.note ?? null,
           receivedBy: userId,
@@ -80,7 +80,15 @@ export class FolioService {
       entity: 'folio',
       entityId: reservationId,
       action: 'payment.add',
-      diff: { before: {}, after: { paymentId: payment.id, type: payment.type, method: dto.method, amount: dto.amount } },
+      diff: {
+        before: {},
+        after: {
+          paymentId: payment.id,
+          type: payment.type,
+          method: dto.method,
+          amount: dto.amount,
+        },
+      },
     });
     return payment;
   }
@@ -146,9 +154,11 @@ export class FolioService {
     return tx.folio.create({ data: { tenantId: reservation.tenantId, reservationId } });
   }
 
-  private withBalance(folio: any) {
-    const totalCharged = folio.charges.reduce((s: number, c: any) => s + Number(c.total), 0);
-    const totalPaid = folio.payments.reduce((s: number, p: any) => {
+  private withBalance(
+    folio: Prisma.FolioGetPayload<{ include: { charges: true; payments: true } }>,
+  ) {
+    const totalCharged = folio.charges.reduce((s, c) => s + Number(c.total), 0);
+    const totalPaid = folio.payments.reduce((s, p) => {
       return p.type === 'REFUND' ? s - Number(p.amount) : s + Number(p.amount);
     }, 0);
     const balance = totalCharged - totalPaid;

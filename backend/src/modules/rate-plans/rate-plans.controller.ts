@@ -13,6 +13,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RatePlansService } from './rate-plans.service';
 import { CreateRatePlanDto } from './dto/create-rate-plan.dto';
 import { UpdateRatePlanDto } from './dto/update-rate-plan.dto';
+import { ContractPricePreviewDto, ContractPriceQueryDto } from './dto/contract-price-preview.dto';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 
 @ApiTags('rate-plans')
@@ -28,6 +29,13 @@ export class RatePlansController {
     return this.service.list();
   }
 
+  @Get('room-types')
+  @RequirePermissions('rate.read')
+  @ApiOperation({ summary: 'Minimal room categories for tariff management' })
+  roomTypes() {
+    return this.service.roomTypes();
+  }
+
   /* Объявлен ДО ':id' намеренно: иначе путь съест параметрический маршрут и
      ответит 400 на нечисловой uuid. */
   @Get('operator-tariff')
@@ -37,15 +45,21 @@ export class RatePlansController {
     return this.service.operatorTariff();
   }
 
+  @Post('contract-prices/preview')
+  @RequirePermissions('rate.read')
+  @ApiOperation({ summary: 'Preview contract prices for draft tariff conditions (read-only)' })
+  previewContractPrices(@Body() dto: ContractPricePreviewDto) {
+    return this.service.previewContractPrices(dto);
+  }
+
   @Get(':id/contract-prices')
   @RequirePermissions('rate.read')
   @ApiOperation({ summary: 'Contract prices of a corporate tariff (read-only)' })
   contractPrices(
     @Param('id', new ParseUUIDPipe()) id: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
+    @Query() query: ContractPriceQueryDto,
   ) {
-    return this.service.contractPrices(id, from, to);
+    return this.service.contractPrices(id, query.from, query.to);
   }
 
   @Get(':id')

@@ -35,7 +35,10 @@ export class LoginThrottle {
     for (const [key, max] of keys) {
       if (Number((await this.store.get(key)) ?? 0) >= max) {
         const left = Math.max(1, Math.ceil((await this.store.ttl(key)) / 60));
-        throw new HttpException(`Слишком много неудачных попыток. Попробуйте через ${left} мин.`, HttpStatus.TOO_MANY_REQUESTS);
+        throw new HttpException(
+          `Слишком много неудачных попыток. Попробуйте через ${left} мин.`,
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
       }
     }
   }

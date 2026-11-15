@@ -71,15 +71,18 @@ describe('Удаление номера «в архив»', () => {
     });
   });
 
-  it.each([1, 2, 5])('с действующими бронями (%i) — 409, номер НЕ трогается, журнал не пишется', async (n) => {
-    const { svc, tx, prisma } = setup({ live: n });
-    const err = await svc.archive('room-1').catch((e) => e);
-    expect(err).toBeInstanceOf(ConflictException);
-    expect(err.message).toContain('№61 (2)');
-    expect(err.message).toContain(`${n} действующ`);
-    expect(tx.room.update).not.toHaveBeenCalled();
-    expect(prisma.writeAuditLog).not.toHaveBeenCalled();
-  });
+  it.each([1, 2, 5])(
+    'с действующими бронями (%i) — 409, номер НЕ трогается, журнал не пишется',
+    async (n) => {
+      const { svc, tx, prisma } = setup({ live: n });
+      const err = await svc.archive('room-1').catch((e) => e);
+      expect(err).toBeInstanceOf(ConflictException);
+      expect(err.message).toContain('№61 (2)');
+      expect(err.message).toContain(`${n} действующ`);
+      expect(tx.room.update).not.toHaveBeenCalled();
+      expect(prisma.writeAuditLog).not.toHaveBeenCalled();
+    },
+  );
 
   it('уже в архиве — тот же ответ, без второй правки и записи', async () => {
     const at = new Date('2026-10-25T20:00:00Z');
@@ -103,7 +106,13 @@ describe('Восстановление номера из архива', () => {
   it('снимает пометку и включает номер, в журнал — кто удалял', async () => {
     const at = new Date('2026-10-25T20:00:00Z');
     const { svc, tx, prisma } = setup({
-      room: { number: '61', isActive: false, archivedAt: at, archivedBy: 'u-disp', roomType: LIVE_TYPE },
+      room: {
+        number: '61',
+        isActive: false,
+        archivedAt: at,
+        archivedBy: 'u-disp',
+        roomType: LIVE_TYPE,
+      },
     });
     await svc.restore('room-1');
     expect(tx.roomType.update).not.toHaveBeenCalled();
@@ -114,7 +123,9 @@ describe('Восстановление номера из архива', () => {
     expect(prisma.writeAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'restore',
-        diff: expect.objectContaining({ before: expect.objectContaining({ archivedBy: 'u-disp' }) }),
+        diff: expect.objectContaining({
+          before: expect.objectContaining({ archivedBy: 'u-disp' }),
+        }),
       }),
     );
   });
@@ -128,7 +139,11 @@ describe('Восстановление номера из архива', () => {
 
   /* 27.10.2026: категория номера удалена. Без её возврата номер встал бы вне
      номерного фонда, а завести такой номер заново не даёт архивный тёзка. */
-  const ARCHIVED_TYPE = { id: 'cat', code: 'STD~mh8x2k', archivedAt: new Date('2026-10-27T10:00:00Z') };
+  const ARCHIVED_TYPE = {
+    id: 'cat',
+    code: 'STD~mh8x2k',
+    archivedAt: new Date('2026-10-27T10:00:00Z'),
+  };
 
   it('категория удалена — возвращается вместе с номером, с прежним кодом', async () => {
     const { svc, tx, prisma } = setup({
@@ -145,7 +160,9 @@ describe('Восстановление номера из архива', () => {
     expect(tx.room.update).toHaveBeenCalled();
     expect(prisma.writeAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({
-        diff: expect.objectContaining({ after: expect.objectContaining({ roomTypeRestored: 'cat' }) }),
+        diff: expect.objectContaining({
+          after: expect.objectContaining({ roomTypeRestored: 'cat' }),
+        }),
       }),
     );
   });
@@ -180,7 +197,9 @@ describe('Архивный номер в фонде и правке', () => {
 
   it('архивный НЕ правится (иначе вернулся бы в продажу мимо «Восстановить»)', async () => {
     const { svc, tx } = setup({ room: { number: '61', isActive: false, archivedAt: new Date() } });
-    await expect(svc.update('room-1', { isActive: true })).rejects.toBeInstanceOf(ConflictException);
+    await expect(svc.update('room-1', { isActive: true })).rejects.toBeInstanceOf(
+      ConflictException,
+    );
     expect(tx.room.update).not.toHaveBeenCalled();
   });
 });

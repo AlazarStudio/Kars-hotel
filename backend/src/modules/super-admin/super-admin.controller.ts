@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { Request, Response } from 'express';
 import { PlatformOperatorGuard, SuperAdminGuard } from './super-admin.guard';
 import { SuperAdminService } from './super-admin.service';
@@ -104,7 +115,11 @@ export class SuperAdminController {
 
   @Post('tenants/:id/destroy')
   @UseGuards(SuperAdminGuard)
-  destroyTenant(@Param('id') id: string, @Body() body: { confirmSlug?: string }, @Req() req: Request) {
+  destroyTenant(
+    @Param('id') id: string,
+    @Body() body: { confirmSlug?: string },
+    @Req() req: Request,
+  ) {
     const user = req.user as AuthenticatedRequestUser;
     return this.exit.destroy(id, body?.confirmSlug, user.userId);
   }
@@ -150,7 +165,7 @@ export class SuperAdminController {
   @Patch('settings/password')
   @UseGuards(SuperAdminGuard)
   changePassword(@Req() req: Request, @Body() body: { password: string }) {
-    const user = (req as any).user;
+    const user = req.user as AuthenticatedRequestUser;
     return this.svc.changeAdminPassword(user.userId, body.password);
   }
 

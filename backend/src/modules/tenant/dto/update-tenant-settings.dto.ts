@@ -198,14 +198,20 @@ export class UpdateTenantSettingsDto {
   /* Сроки хранения ПДн (152-ФЗ, решение 21; план 13.9): гостиница вправе
      СОКРАТИТЬ системные — 30 дн. для отмены и неявки, 92 дн. для телефона и
      почты гостя; удлинить нельзя. null — вернуть системный. */
-  @ApiPropertyOptional({ description: 'Отмена/неявка без начислений: дней от заезда (1–30)', nullable: true })
+  @ApiPropertyOptional({
+    description: 'Отмена/неявка без начислений: дней от заезда (1–30)',
+    nullable: true,
+  })
   @IsOptional()
   @IsInt()
   @Min(1)
   @Max(30)
   retentionCancelledDays?: number | null;
 
-  @ApiPropertyOptional({ description: 'Телефон и почта гостя: дней от выезда (1–92)', nullable: true })
+  @ApiPropertyOptional({
+    description: 'Телефон и почта гостя: дней от выезда (1–92)',
+    nullable: true,
+  })
   @IsOptional()
   @IsInt()
   @Min(1)

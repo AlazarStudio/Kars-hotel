@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { contractNumberKey } from '../contracts/contract-identity';
 
 /* РЕЕСТР ДОГОВОРОВ В СТРОКИ ТАБЛИЦЫ (11.11.2026).
  *
@@ -40,7 +41,7 @@ export function contractRows(
   const seen = new Set<string>();
   const now = new Date();
   return input.map((c) => {
-    const number = c.number.trim();
+    const number = contractNumberKey(c.number);
     if (!number) throw new BadRequestException('Номер договора пуст');
     if (seen.has(number)) {
       throw new BadRequestException(`Договор «${number}» в наборе дважды`);

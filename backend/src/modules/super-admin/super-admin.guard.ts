@@ -18,14 +18,16 @@ import { AuthenticatedRequestUser } from '../auth/strategies/jwt.strategy';
  */
 const PLATFORM_DENIED = {
   code: 'PLATFORM_ACCESS_REQUIRED',
-  message: 'Заводить и менять гостиницы может администратор платформы или диспетчер Kars Avia. Проверьте, под какой учёткой вы вошли.',
+  message:
+    'Заводить и менять гостиницы может администратор платформы или диспетчер Kars Avia. Проверьте, под какой учёткой вы вошли.',
 };
 
 /* Диспетчер внутри гостиницы — не платформенный оператор: сначала выйти из
    режима «от имени», иначе действия пойдут в чужую гостиницу (решение 25.10.2026). */
 const IMPERSONATION_DENIED = {
   code: 'PLATFORM_ACCESS_WHILE_IMPERSONATING',
-  message: 'Вы работаете от имени гостиницы. Выйдите из режима «от имени», чтобы заводить и менять гостиницы.',
+  message:
+    'Вы работаете от имени гостиницы. Выйдите из режима «от имени», чтобы заводить и менять гостиницы.',
 };
 
 const SUPER_ADMIN_DENIED = {
@@ -36,7 +38,9 @@ const SUPER_ADMIN_DENIED = {
 @Injectable()
 export class PlatformOperatorGuard implements CanActivate {
   canActivate(ctx: ExecutionContext): boolean {
-    const user = ctx.switchToHttp().getRequest<Request>().user as AuthenticatedRequestUser | undefined;
+    const user = ctx.switchToHttp().getRequest<Request>().user as
+      | AuthenticatedRequestUser
+      | undefined;
     if (user?.isSuperAdmin || (user?.isDispatcher && !user.impersonatedBy)) return true;
     throw new ForbiddenException(user?.impersonatedBy ? IMPERSONATION_DENIED : PLATFORM_DENIED);
   }

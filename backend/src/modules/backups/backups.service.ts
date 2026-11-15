@@ -63,15 +63,18 @@ export class BackupsService {
   async saveConfig(raw: BackupConfigPatch) {
     const data: BackupConfigPatch = {};
     if (raw.atHour !== undefined) {
-      if (!Number.isInteger(raw.atHour) || raw.atHour < 0 || raw.atHour > 23) throw new BadRequestException('atHour: 0–23');
+      if (!Number.isInteger(raw.atHour) || raw.atHour < 0 || raw.atHour > 23)
+        throw new BadRequestException('atHour: 0–23');
       data.atHour = raw.atHour;
     }
     if (raw.everyHours !== undefined) {
-      if (!EVERY_HOURS.includes(raw.everyHours)) throw new BadRequestException(`everyHours: ${EVERY_HOURS.join(', ')}`);
+      if (!EVERY_HOURS.includes(raw.everyHours))
+        throw new BadRequestException(`everyHours: ${EVERY_HOURS.join(', ')}`);
       data.everyHours = raw.everyHours;
     }
     if (raw.keepDays !== undefined) {
-      if (!Number.isInteger(raw.keepDays) || raw.keepDays < 1 || raw.keepDays > 365) throw new BadRequestException('keepDays: 1–365');
+      if (!Number.isInteger(raw.keepDays) || raw.keepDays < 1 || raw.keepDays > 365)
+        throw new BadRequestException('keepDays: 1–365');
       data.keepDays = raw.keepDays;
     }
     if (raw.mailTo !== undefined) {
@@ -84,14 +87,22 @@ export class BackupsService {
       if (v && !AGE_RE.test(v)) throw new BadRequestException('ageRecipient: age1…');
       data.ageRecipient = v;
     }
-    await this.prisma.admin.backupConfig.upsert({ where: { id: 1 }, update: data, create: { id: 1, ...data } });
+    await this.prisma.admin.backupConfig.upsert({
+      where: { id: 1 },
+      update: data,
+      create: { id: 1, ...data },
+    });
     return this.state();
   }
 
   /** «Сделать копию сейчас»: служба увидит отметку в течение минуты. */
   async requestRun() {
     const now = new Date();
-    await this.prisma.admin.backupConfig.upsert({ where: { id: 1 }, update: { runRequestedAt: now }, create: { id: 1, runRequestedAt: now } });
+    await this.prisma.admin.backupConfig.upsert({
+      where: { id: 1 },
+      update: { runRequestedAt: now },
+      create: { id: 1, runRequestedAt: now },
+    });
     return this.state();
   }
 }

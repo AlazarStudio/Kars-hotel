@@ -40,7 +40,10 @@ export function isoDay(d: Date): string {
  *     выставить не ту сумму;
  *   - число не известно (старые вызовы): «на любое число», иначе на самое
  *     малое заполненное — как было, пока цена была одна. */
-function pickByOccupancy<T extends { occupancy?: number }>(rows: T[], occupancy?: number): T | null {
+function pickByOccupancy<T extends { occupancy?: number }>(
+  rows: T[],
+  occupancy?: number,
+): T | null {
   const occ = (r: T) => r.occupancy ?? 0;
   if (occupancy != null && occupancy > 0) {
     return rows.find((r) => occ(r) === occupancy) ?? rows.find((r) => occ(r) === 0) ?? null;
@@ -93,12 +96,16 @@ export class BaselineResolver {
       if (covering.length) {
         const top = covering[0];
         const sameWindow = covering.filter(
-          (s) => s.dateFrom === top.dateFrom && s.dateTo === top.dateTo && s.sortOrder === top.sortOrder,
+          (s) =>
+            s.dateFrom === top.dateFrom && s.dateTo === top.dateTo && s.sortOrder === top.sortOrder,
         );
         const hit = pickByOccupancy(sameWindow, occupancy);
         if (hit) return hit.price;
       }
     }
-    return pickByOccupancy(this.standardByKey.get(key(ratePlanId, roomTypeId)) ?? [], occupancy)?.price ?? null;
+    return (
+      pickByOccupancy(this.standardByKey.get(key(ratePlanId, roomTypeId)) ?? [], occupancy)
+        ?.price ?? null
+    );
   }
 }

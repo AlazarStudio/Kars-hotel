@@ -25,13 +25,75 @@ const doc = (over: Record<string, unknown> = {}) => ({
   accountName: 'Ани Групп Аэро',
   service: 'ACCOMMODATION',
   receivedAt: new Date('2026-11-10T10:00:00.000Z'),
-  fill: null,
+  fill: [
+    {
+      from: '2026-01-01',
+      slices: [
+        {
+          customer: null,
+          guestKind: null,
+          mealPlan: 'BB',
+          cells: [{ categoryId: 'rt1', occupancy: 1, price: 300000 }],
+        },
+      ],
+    },
+  ],
   ...over,
 });
 
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
 describe('mergeContractList', () => {
+  it('separates received documents, grids and usable accommodation prices', () => {
+    const [empty] = mergeContractList([reg()], [doc({ fill: null })]);
+    expect(empty).toMatchObject({
+      documents: 1,
+      hasDocuments: true,
+      hasGrids: false,
+      hasPrices: false,
+    });
+    const fill = [
+      {
+        from: '2026-01-01',
+        slices: [
+          {
+            customer: null,
+            guestKind: null,
+            mealPlan: 'BB',
+            cells: [{ categoryId: 'rt1', occupancy: 1, price: 0 }],
+          },
+        ],
+      },
+    ];
+    const [meal] = mergeContractList([reg()], [doc({ service: 'MEAL', fill })]);
+    expect(meal).toMatchObject({ hasPrices: false, hasGrids: false, slices: [] });
+    const [priced] = mergeContractList([reg()], [doc({ fill })]);
+    expect(priced).toMatchObject({ hasPrices: true, hasGrids: true });
+    const [invalid] = mergeContractList(
+      [reg()],
+      [
+        doc({
+          fill: [
+            {
+              ...fill[0],
+              slices: [
+                { ...fill[0].slices[0], cells: [{ categoryId: 'rt1', occupancy: 0, price: -1 }] },
+              ],
+            },
+          ],
+        }),
+      ],
+    );
+    expect(invalid.hasPrices).toBe(false);
+  });
+
+  it('returns one normalized contract identity for legacy documents and registry rows', () => {
+    expect(
+      mergeContractList([reg({ number: ' 205 ' })], [doc({ contractNumber: '205 ' })]),
+    ).toEqual([expect.objectContaining({ number: '205' })]);
+    expect(mergeContractList([], [doc({ contractNumber: '205 ' })])[0].number).toBe('205');
+  });
+
   it('договор без приложения виден: цен нет, но договор есть', () => {
     const [row] = mergeContractList([reg({ sheetsCount: 0 })], []);
     expect(row).toMatchObject({ number: '205', documents: 0, hasPrices: false });
@@ -119,7 +181,7 @@ describe('mergeContractList', () => {
   });
 
   it('без сеток срезов нет, а не пустой срез', () => {
-    const [row] = mergeContractList([reg()], [doc()]);
+    const [row] = mergeContractList([reg()], [doc({ fill: null })]);
     expect(row.slices).toEqual([]);
   });
 

@@ -133,12 +133,13 @@ function fixture(
   };
   const prisma = { forTenant: jest.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)) };
   const redis = { raw: { get: jest.fn(async () => null), set: jest.fn(async () => 'OK') } };
-  const contracts = { slicesFor: jest.fn(async () => opts.slices ?? new Map<string, SliceEntry>()) };
+  const contracts = {
+    slicesFor: jest.fn(async () => opts.slices ?? new Map<string, SliceEntry>()),
+  };
   const service = new AvailabilityService(prisma as never, redis as never, contracts as never);
   const run = (basePrice: number | undefined, guests: number | undefined) =>
-    TenantContext.run(
-      { tenantId: TENANT, userId: 'u', roleCode: 'ADMIN', permissions: [] },
-      () => service.priceByPlan(CATEGORY, CHECK_IN, CHECK_OUT, basePrice, guests),
+    TenantContext.run({ tenantId: TENANT, userId: 'u', roleCode: 'ADMIN', permissions: [] }, () =>
+      service.priceByPlan(CATEGORY, CHECK_IN, CHECK_OUT, basePrice, guests),
     );
   const price = (basePrice?: number) => run(basePrice, 2);
   const priceWithoutGuests = (basePrice?: number) => run(basePrice, undefined);
@@ -146,6 +147,30 @@ function fixture(
 }
 
 describe('priceByPlan — цена корпоративного тарифа из договора', () => {
+  it('preserves VAT per night across an amendment and has no misleading stay-wide rate', async () => {
+    const base = doc('2026-12-01', 0);
+    const amendment = doc(null, 22);
+    amendment.amendmentNumber = '1';
+    amendment.validFrom = '2026-12-02';
+    amendment.fill![0].from = '2026-12-02';
+    const { price } = fixture({
+      plans: [PARTNER_PLAN],
+      slices: new Map([
+        ['corp', { slice: SLICE, unknownCustomer: false, docs: [base, amendment] }],
+      ]),
+    });
+    const [offer] = await price();
+    expect(offer).toMatchObject({
+      total: '15000.00',
+      vatRate: null,
+      vatMixed: true,
+      perNight: [
+        { date: '2026-12-01', price: '5000.00', vatRate: '0' },
+        { date: '2026-12-02', price: '5000.00', vatRate: '22' },
+        { date: '2026-12-03', price: '5000.00', vatRate: '22' },
+      ],
+    });
+  });
   it('drops a partner plan when the contract has no price, despite its own rows', async () => {
     /* Риск: раньше тариф партнёра считался по своим строкам или базовой цене
        категории — то есть по копии, от которой уходили. Договор без цены
@@ -248,7 +273,9 @@ describe('priceByPlan — цена корпоративного тарифа и�
        чужой НДС. Нет ставки в документе — нет и числа. */
     const { price } = fixture({
       plans: [PARTNER_PLAN],
-      slices: new Map([['corp', { slice: SLICE, unknownCustomer: false, docs: [doc(null, null)] }]]),
+      slices: new Map([
+        ['corp', { slice: SLICE, unknownCustomer: false, docs: [doc(null, null)] }],
+      ]),
     });
     const [corp] = await price(100);
     expect(corp.vatRate).toBeNull();

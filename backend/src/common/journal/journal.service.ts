@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { isReportsKeyPath, redactForJournal } from './journal-redact';
 
 /* Журнал действий: запись — пачками, мимо запроса.
  *
@@ -91,15 +92,25 @@ export class JournalService implements OnModuleDestroy {
     }
     if (and.length) where.AND = and;
     const take = Math.min(Math.max(Number(f.take) || 100, 1), 500);
-    const rows = await this.prisma.admin.actionJournal.findMany({ where, orderBy: [{ at: 'desc' }, { id: 'desc' }], take });
+    const rows = await this.prisma.admin.actionJournal.findMany({
+      where,
+      orderBy: [{ at: 'desc' }, { id: 'desc' }],
+      take,
+    });
     const userIds = [...new Set(rows.map((r) => r.userId).filter((x): x is string => !!x))];
     const tenantIds = [...new Set(rows.map((r) => r.tenantId).filter((x): x is string => !!x))];
     const [users, tenants] = await Promise.all([
       userIds.length
-        ? this.prisma.admin.user.findMany({ where: { id: { in: userIds } }, select: { id: true, fullName: true } })
+        ? this.prisma.admin.user.findMany({
+            where: { id: { in: userIds } },
+            select: { id: true, fullName: true },
+          })
         : [],
       tenantIds.length
-        ? this.prisma.admin.tenant.findMany({ where: { id: { in: tenantIds } }, select: { id: true, name: true } })
+        ? this.prisma.admin.tenant.findMany({
+            where: { id: { in: tenantIds } },
+            select: { id: true, name: true },
+          })
         : [],
     ]);
     const userName = new Map(users.map((u) => [u.id, u.fullName]));
@@ -107,6 +118,9 @@ export class JournalService implements OnModuleDestroy {
     return {
       items: rows.map((r) => ({
         ...r,
+        ...(r.path && isReportsKeyPath(r.path)
+          ? { body: redactForJournal(r.body, r.path), query: redactForJournal(r.query, r.path) }
+          : {}),
         userName: r.userId ? (userName.get(r.userId) ?? null) : null,
         tenantName: r.tenantId ? (tenantName.get(r.tenantId) ?? null) : null,
       })),

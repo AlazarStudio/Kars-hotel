@@ -86,7 +86,8 @@ export class TenantController {
   @ApiOperation({ summary: 'Accept the current offer version (owner only)' })
   acceptOffer(
     @CurrentUser() user: AuthenticatedRequestUser,
-    @Body() dto: { version?: number; incidentContact?: { name?: string; phone?: string; email?: string } },
+    @Body()
+    dto: { version?: number; incidentContact?: { name?: string; phone?: string; email?: string } },
     @Req() req: Request,
   ) {
     return this.offer.accept(user, dto, req.ip, req.headers['user-agent']);

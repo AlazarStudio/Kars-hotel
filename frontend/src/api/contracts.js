@@ -18,3 +18,9 @@ export async function fetchContractPrices(planId, from, to) {
   const { data } = await api.get(url, { params: { from, to } });
   return data;
 }
+
+/** Предпросмотр нового тарифа тем же серверным правилом, без создания записи. */
+export async function previewContractPrices(conditions, from, to) {
+  const { data } = await api.post('/rate-plans/contract-prices/preview', { ...conditions, from, to });
+  return data;
+}

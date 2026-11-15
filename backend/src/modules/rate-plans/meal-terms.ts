@@ -47,13 +47,14 @@ export function mealTermsOf(p: MealTermsInput) {
     /** true — питание в цене номера (или его нет вовсе). */
     included,
     /** Цена на гостя за приём пищи (рубли); только входящие в вариант. */
-    perMeal: included || p.mealPricePerDay != null
-      ? null
-      : {
-          ...(meals.includes('breakfast') ? { breakfast: p.mealPriceBreakfast } : {}),
-          ...(meals.includes('lunch') ? { lunch: p.mealPriceLunch } : {}),
-          ...(meals.includes('dinner') ? { dinner: p.mealPriceDinner } : {}),
-        },
+    perMeal:
+      included || p.mealPricePerDay != null
+        ? null
+        : {
+            ...(meals.includes('breakfast') ? { breakfast: p.mealPriceBreakfast } : {}),
+            ...(meals.includes('lunch') ? { lunch: p.mealPriceLunch } : {}),
+            ...(meals.includes('dinner') ? { dinner: p.mealPriceDinner } : {}),
+          },
     /** Одной суммой за сутки на гостя (рубли). */
     perDay: included ? null : p.mealPricePerDay,
     allInclusiveNote: p.mealPlan === 'AI' ? p.allInclusiveNote : null,

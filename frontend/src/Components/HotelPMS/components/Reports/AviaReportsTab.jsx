@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import classes from './Reports.module.css';
+import form from '../../shared/Form.module.css';
 import { downloadAviaReport, listAviaReports } from '../../../../api/aviaReports';
 
 /**
@@ -70,38 +71,40 @@ export default function AviaReportsTab() {
   };
 
   return (
-    <div className={classes.section}>
-      <div className={classes.sectionTitle} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <span style={{ marginRight: 'auto' }}>Отчёты Kars Avia</span>
-        {[
-          [false, 'Текущие'],
-          [true, 'Архив'],
-        ].map(([v, label]) => (
-          <button key={label} onClick={() => setArchive(v)} style={{ ...toggleStyle, ...(archive === v ? toggleOn : null) }}>
-            {label}
-          </button>
-        ))}
+    <section className={classes.section}>
+      <div className={`${classes.sectionTitle} ${classes.sectionHeader}`}>
+        <h2 className={classes.sectionHeading}>Выпущенные отчёты Kars Avia</h2>
+        <div className={classes.segmented} role="group" aria-label="Выпущенные отчёты">
+          {[
+            [false, 'Текущие'],
+            [true, 'Архив'],
+          ].map(([v, label]) => (
+            <button type="button" key={label} className={classes.segment} aria-pressed={archive === v} onClick={() => setArchive(v)}>
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
-      {error && <div style={errorStyle}>{error}</div>}
-      <div className={classes.table}>
-        <div className={classes.tableHead} style={{ gridTemplateColumns: '56px 3fr 2fr 2fr 120px' }}>
+      {error && <div className={classes.sectionBody}><div className={form.alert} role="alert">{error}</div></div>}
+      {items === null && !error && <div className={classes.fapEmpty} role="status">Загрузка…</div>}
+      {items !== null && shown.length === 0 && (!error || items.length > 0) && (
+        <div className={classes.fapEmpty}>
+          <b className={classes.emptyHeading}>Отчётов пока нет</b>
+          {archive
+            ? 'В архиве пусто. Сюда попадают отчёты старше двух декад и убранные вручную.'
+            : 'Здесь появятся выпущенные отчёты по вашей гостинице.'}
+        </div>
+      )}
+      {shown.length > 0 && <div className={classes.table}>
+        <div className={`${classes.tableHead} ${classes.aviaTableGrid}`}>
           <div className={classes.th}>№</div>
           <div className={classes.th}>Гостиница</div>
           <div className={classes.th}>Дата формирования</div>
           <div className={classes.th}>Период</div>
           <div className={classes.th} />
         </div>
-        {items === null && <div style={emptyStyle}>Загрузка…</div>}
-        {items !== null && shown.length === 0 && (
-          <div style={emptyStyle}>
-            <b style={{ display: 'block', color: '#334155', marginBottom: 4 }}>Отчётов пока нет</b>
-            {archive
-              ? 'В архиве пусто. Сюда попадают отчёты старше двух декад и убранные вручную.'
-              : 'Здесь появятся выпущенные отчёты по вашей гостинице.'}
-          </div>
-        )}
         {shown.map((r, i) => (
-          <div key={r.id} className={classes.tableRow} style={{ gridTemplateColumns: '56px 3fr 2fr 2fr 120px' }}>
+          <div key={r.id} className={`${classes.tableRow} ${classes.aviaTableGrid}`}>
             <div className={classes.td}>{i + 1}</div>
             <div className={classes.td} title={r.title || r.name}>
               {shortTitle(r.title) || r.title || r.name || '—'}
@@ -111,34 +114,18 @@ export default function AviaReportsTab() {
               {dayUtc(r.startDate)} - {dayUtc(r.endDate)}
             </div>
             <div className={classes.td}>
-              <button onClick={() => download(r)} style={linkBtn}>
+              <button type="button" onClick={() => download(r)} className={form.btnSecondary}>
                 Скачать
               </button>
             </div>
           </div>
         ))}
-      </div>
+      </div>}
       {shown.length > 0 && (
-        <div style={{ padding: '10px 4px', color: '#8896AB', fontSize: 12 }}>
+        <div className={classes.tableFooter}>
           Всего {shown.length} {reportsWord(shown.length)}
         </div>
       )}
-    </div>
+    </section>
   );
 }
-
-const toggleStyle = {
-  background: 'none',
-  border: '1px solid #D8E2F0',
-  borderRadius: 6,
-  padding: '5px 12px',
-  cursor: 'pointer',
-  fontSize: 12,
-  color: '#475569',
-  fontFamily: 'inherit',
-  fontWeight: 600,
-};
-const toggleOn = { color: '#1E88E5', borderColor: '#1E88E5' };
-const linkBtn = { ...toggleStyle, color: '#1E88E5' };
-const emptyStyle = { padding: '24px 20px', color: '#8896AB', fontSize: 13 };
-const errorStyle = { padding: '10px 16px', background: '#FEF2F2', color: '#DC2626', borderRadius: 8, margin: '8px 0', fontSize: 13 };

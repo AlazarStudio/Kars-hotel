@@ -1,5 +1,11 @@
-import { BadGatewayException,
-  BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
 /**
@@ -22,6 +28,39 @@ export interface AviaReport {
   endDate: string;
   createdAt: string;
   archived: boolean;
+}
+
+export interface SquadronSummary {
+  id: string;
+  hotelId: string;
+  hotelName: string;
+  startDate: string;
+  endDate: string;
+  status: 'SUBMITTED' | 'RETURNED' | 'ACCEPTED';
+  version: number;
+  submissionId: string;
+  totalKopecks: number;
+  submittedAt: string;
+  reviewedAt: string | null;
+  returnReason: string | null;
+}
+
+export interface SquadronRow {
+  reservationId: string;
+  roomNumber: string;
+  guestCount: number;
+  stayStart: string;
+  stayEnd: string;
+  nights: number;
+  accommodationKopecks: number;
+  mealKopecks: number;
+  breakfastCount: number;
+  lunchCount: number;
+  dinnerCount: number;
+}
+
+export interface SquadronDetail extends SquadronSummary {
+  rows: (SquadronRow & { requestNumber: string })[];
 }
 
 @Injectable()
@@ -50,8 +89,71 @@ export class AviaReportsService {
   /** Ключ гостиницы — его присылает Kars Avia при подключении кабинета. */
   private async keyOf(tenantId: string): Promise<string> {
     const row = await this.prisma.admin.aviaReportsKey.findUnique({ where: { tenantId } });
-    if (!row) throw new ServiceUnavailableException('Kars Avia ещё не подключила отчёты для гостиницы');
+    if (!row)
+      throw new ServiceUnavailableException('Kars Avia ещё не подключила отчёты для гостиницы');
     return row.key;
+  }
+
+  async squadronPartnerId(tenantId: string): Promise<string> {
+    const row = await this.prisma.admin.aviaReportsKey.findUnique({ where: { tenantId } });
+    if (!row?.partnerId) {
+      throw new ServiceUnavailableException('Для отчётов Kars Avia не настроен партнёр гостиницы');
+    }
+    return row.partnerId;
+  }
+
+  private async squadronCall<T>(tenantId: string, path: string, body?: unknown): Promise<T> {
+    if (!this.base) throw new ServiceUnavailableException('Связь с Kars Avia не настроена');
+    const slug = await this.slugOf(tenantId);
+    const key = await this.keyOf(tenantId);
+    let res: Response;
+    try {
+      res = await fetch(`${this.base}/squadron${path}?hotelId=${encodeURIComponent(slug)}`, {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: body === undefined
+          ? { 'X-Hotel-Key': key }
+          : { 'Content-Type': 'application/json', 'X-Hotel-Key': key },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        redirect: 'error',
+        signal: AbortSignal.timeout(AviaReportsService.TIMEOUT_MS),
+      });
+    } catch {
+      throw new BadGatewayException('Kars Avia не отвечает');
+    }
+    if (res.status === 401 || res.status === 403) {
+      throw new ServiceUnavailableException('Ключ отчётов Kars Avia недействителен. Обратитесь к диспетчеру');
+    }
+    if ([400, 404, 409].includes(res.status)) {
+      const data = (await res.json().catch(() => null)) as { message?: unknown } | null;
+      const message = typeof data?.message === 'string' ? data.message : null;
+      if (res.status === 400) throw new BadRequestException(message ?? 'Kars Avia не приняла данные');
+      if (res.status === 404) throw new NotFoundException(message ?? 'Отчёт не найден');
+      throw new ConflictException(message ?? 'Данные или статус отчёта изменились. Обновите отчёт');
+    }
+    if (!res.ok) throw new BadGatewayException('Kars Avia временно недоступна');
+    try {
+      return (await res.json()) as T;
+    } catch {
+      throw new BadGatewayException('Kars Avia вернула некорректный ответ');
+    }
+  }
+
+  squadronList(tenantId: string): Promise<SquadronSummary[]> {
+    return this.squadronCall(tenantId, '');
+  }
+
+  squadronDetail(tenantId: string, id: string): Promise<SquadronDetail> {
+    return this.squadronCall(tenantId, `/${encodeURIComponent(id)}`);
+  }
+
+  squadronMatch(tenantId: string, reservationIds: string[]): Promise<{ reservationId: string; requestNumber: string }[]> {
+    return this.squadronCall(tenantId, '/match', { reservationIds });
+  }
+
+  squadronSubmit(tenantId: string, payload: {
+    startDate: string; endDate: string; version: number; submissionId: string; rows: SquadronRow[];
+  }): Promise<SquadronDetail> {
+    return this.squadronCall(tenantId, '', payload);
   }
 
   private async call(path: string, tenantId: string): Promise<Response> {
@@ -114,12 +216,25 @@ export class AviaReportsService {
     });
   }
 
-  fapInvoice(tenantId: string, fapHotelId: string, file: { buffer: Buffer; originalname: string }, amount: string, number?: string) {
+  fapInvoice(
+    tenantId: string,
+    fapHotelId: string,
+    file: { buffer: Buffer; originalname: string },
+    amount: string,
+    number?: string,
+  ) {
     const form = new FormData();
-    form.append('file', new Blob([new Uint8Array(file.buffer)], { type: 'application/pdf' }), file.originalname);
+    form.append(
+      'file',
+      new Blob([new Uint8Array(file.buffer)], { type: 'application/pdf' }),
+      file.originalname,
+    );
     form.append('amount', amount);
     if (number) form.append('number', number);
-    return this.send(`/${encodeURIComponent(fapHotelId)}/invoice`, tenantId, { method: 'POST', body: form });
+    return this.send(`/${encodeURIComponent(fapHotelId)}/invoice`, tenantId, {
+      method: 'POST',
+      body: form,
+    });
   }
 
   async list(tenantId: string): Promise<AviaReport[]> {

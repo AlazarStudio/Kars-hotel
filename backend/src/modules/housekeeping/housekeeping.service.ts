@@ -8,7 +8,7 @@ export class HousekeepingService {
   constructor(private readonly prisma: PrismaService) {}
 
   async listTasks(status?: string) {
-    const tenantId = TenantContext.getTenantIdOrThrow();
+    TenantContext.getTenantIdOrThrow();
     return this.prisma.forTenant(async (tx) => {
       if (status) {
         return tx.$queryRaw<
@@ -72,7 +72,7 @@ export class HousekeepingService {
     });
   }
 
-  async createTask(dto: CreateTaskDto, userId: string) {
+  async createTask(dto: CreateTaskDto, _userId: string) {
     const tenantId = TenantContext.getTenantIdOrThrow();
     return this.prisma.forTenant(async (tx) => {
       const [task] = await tx.$queryRaw<{ id: string }[]>`
@@ -120,7 +120,7 @@ export class HousekeepingService {
   }
 
   async assignTask(taskId: string, dto: AssignTaskDto) {
-    const tenantId = TenantContext.getTenantIdOrThrow();
+    TenantContext.getTenantIdOrThrow();
     return this.prisma.forTenant(async (tx) => {
       const rows = await tx.$queryRaw<{ id: string }[]>`
         UPDATE housekeeping_task
@@ -137,8 +137,8 @@ export class HousekeepingService {
     });
   }
 
-  async completeTask(taskId: string, userId: string) {
-    const tenantId = TenantContext.getTenantIdOrThrow();
+  async completeTask(taskId: string, _userId: string) {
+    TenantContext.getTenantIdOrThrow();
     return this.prisma.forTenant(async (tx) => {
       const rows = await tx.$queryRaw<{ id: string; room_id: string }[]>`
         UPDATE housekeeping_task

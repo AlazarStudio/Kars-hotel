@@ -181,9 +181,14 @@ export class AuthController {
 
   @Public()
   @Post('hotel/:tenantId/refresh')
-  @ApiOperation({ summary: 'Rotate the hotel refresh token of a Kars Avia SSO session in that hotel' })
+  @ApiOperation({
+    summary: 'Rotate the hotel refresh token of a Kars Avia SSO session in that hotel',
+  })
   @ApiResponse({ status: 201 })
-  @ApiResponse({ status: 401, description: 'No refresh token of this hotel, or it belongs to another session' })
+  @ApiResponse({
+    status: 401,
+    description: 'No refresh token of this hotel, or it belongs to another session',
+  })
   async refreshHotel(
     @Param('tenantId', ParseUUIDPipe) tenantId: string,
     @Req() req: Request,
@@ -214,7 +219,9 @@ export class AuthController {
   @Public()
   @Post('hotel/:tenantId/logout')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Revoke the hotel refresh token of a Kars Avia SSO session in that hotel' })
+  @ApiOperation({
+    summary: 'Revoke the hotel refresh token of a Kars Avia SSO session in that hotel',
+  })
   async logoutHotel(
     @Param('tenantId', ParseUUIDPipe) tenantId: string,
     @Req() req: Request,
@@ -287,7 +294,12 @@ export class AuthController {
     res.cookie(REFRESH_COOKIE, token, AuthController.cookieOptions(ttlSeconds, '/api/auth'));
   }
 
-  private setHotelRefreshCookie(res: Response, tenantId: string, token: string, ttlSeconds: number) {
+  private setHotelRefreshCookie(
+    res: Response,
+    tenantId: string,
+    token: string,
+    ttlSeconds: number,
+  ) {
     res.cookie(
       HOTEL_REFRESH_COOKIE,
       token,

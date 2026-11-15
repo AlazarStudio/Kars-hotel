@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Post, Put, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Put,
+  Res,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
@@ -42,9 +52,19 @@ export class AviaReportsController {
   @Put('fap/:id')
   @RequirePermissions('avia-report.access')
   @ApiOperation({ summary: 'Send the hotel report of a FAP request to Kars Avia' })
-  async fapSave(@CurrentUser() user: AuthenticatedRequestUser, @Param('id') id: string, @Body() body: { rows: unknown[] }) {
+  async fapSave(
+    @CurrentUser() user: AuthenticatedRequestUser,
+    @Param('id') id: string,
+    @Body() body: { rows: unknown[] },
+  ) {
     const saved = await this.reports.fapSave(user.tenantId, id, body.rows);
-    await this.prisma.writeAuditLog({ tenantId: user.tenantId, userId: user.userId, entity: 'avia_report', entityId: id, action: 'send' });
+    await this.prisma.writeAuditLog({
+      tenantId: user.tenantId,
+      userId: user.userId,
+      entity: 'avia_report',
+      entityId: id,
+      action: 'send',
+    });
     return saved;
   }
 
@@ -59,14 +79,24 @@ export class AviaReportsController {
     @Body() body: { amount: string; number?: string },
   ) {
     const saved = await this.reports.fapInvoice(user.tenantId, id, file, body.amount, body.number);
-    await this.prisma.writeAuditLog({ tenantId: user.tenantId, userId: user.userId, entity: 'avia_report', entityId: id, action: 'invoice' });
+    await this.prisma.writeAuditLog({
+      tenantId: user.tenantId,
+      userId: user.userId,
+      entity: 'avia_report',
+      entityId: id,
+      action: 'invoice',
+    });
     return saved;
   }
 
   @Get(':id/file')
   @RequirePermissions('avia-report.access')
   @ApiOperation({ summary: 'Download an issued report (xlsx)' })
-  async file(@CurrentUser() user: AuthenticatedRequestUser, @Param('id') id: string, @Res() res: Response) {
+  async file(
+    @CurrentUser() user: AuthenticatedRequestUser,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
     const { buffer, name } = await this.reports.file(user.tenantId, id);
     // Скачивание отчёта с ФИО гостей — в журнал гостиницы (план 13.5).
     await this.prisma.writeAuditLog({
@@ -76,7 +106,10 @@ export class AviaReportsController {
       entityId: id,
       action: 'download',
     });
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
     res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
     res.send(buffer);
   }

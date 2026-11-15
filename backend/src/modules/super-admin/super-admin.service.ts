@@ -51,7 +51,12 @@ export class SuperAdminService {
     const key = dto.feature;
     const ids = [...new Set(dto.tenantIds)];
     const changed = await this.prisma.admin.tenant.findMany({
-      where: { id: { in: ids }, slug: { not: 'platform' }, archivedAt: null, [key]: { not: dto.enabled } },
+      where: {
+        id: { in: ids },
+        slug: { not: 'platform' },
+        archivedAt: null,
+        [key]: { not: dto.enabled },
+      },
       select: { id: true },
     });
     if (changed.length > 0) {
@@ -113,7 +118,10 @@ export class SuperAdminService {
    * удалить сразу (броней нет) или только по акту, и можно ли менять валюту.
    */
   async tenantSummary(id: string) {
-    const t = await this.prisma.admin.tenant.findUnique({ where: { id }, select: { id: true, slug: true } });
+    const t = await this.prisma.admin.tenant.findUnique({
+      where: { id },
+      select: { id: true, slug: true },
+    });
     if (!t || t.slug === 'platform') throw new NotFoundException('Гостиница не найдена');
     const [reservations, liveReservations, rooms, roomTypes, users] = await Promise.all([
       this.prisma.admin.reservation.count({ where: { tenantId: id } }),
@@ -175,7 +183,9 @@ export class SuperAdminService {
         where: { slug: { not: 'platform' } },
         select: { id: true, name: true, city: true, isActive: true, archivedAt: true },
       });
-      const duplicates = all.filter((t) => norm(t.name) === norm(name) && norm(t.city) === norm(city));
+      const duplicates = all.filter(
+        (t) => norm(t.name) === norm(name) && norm(t.city) === norm(city),
+      );
       if (duplicates.length > 0) {
         throw new ConflictException({
           statusCode: 409,
@@ -256,7 +266,8 @@ export class SuperAdminService {
     const next: Record<string, unknown> = {};
     if (dto.name !== undefined) {
       const name = dto.name.trim();
-      if (name.length < 2) throw new BadRequestException('Название гостиницы — не короче 2 символов');
+      if (name.length < 2)
+        throw new BadRequestException('Название гостиницы — не короче 2 символов');
       next.name = name;
     }
     for (const k of ['city', 'address', 'phone'] as const) {
@@ -292,7 +303,9 @@ export class SuperAdminService {
         entityId: id,
         action: 'admin.update',
         diff: {
-          before: Object.fromEntries(changed.map((k) => [k, (tenant as Record<string, unknown>)[k] ?? null])),
+          before: Object.fromEntries(
+            changed.map((k) => [k, (tenant as Record<string, unknown>)[k] ?? null]),
+          ),
           after: data,
         } as never,
       },
@@ -344,7 +357,10 @@ export class SuperAdminService {
           entity: 'tenant',
           entityId: id,
           action: 'admin.archive',
-          diff: { before: { isActive: tenant.isActive, archivedAt: null }, after: { isActive: false, archivedAt } },
+          diff: {
+            before: { isActive: tenant.isActive, archivedAt: null },
+            after: { isActive: false, archivedAt },
+          },
         },
       });
     });
@@ -428,7 +444,12 @@ export class SuperAdminService {
      тоже: её не видят авиакомпании, а диспетчер как раз и доделывает её
      карточку (решение владельца Kars Avia 22.10.2026). Суперадмин — в любую
      действующую. */
-  async impersonate(tenantId: string, actor: AuthenticatedRequestUser, ip?: string, userAgent?: string) {
+  async impersonate(
+    tenantId: string,
+    actor: AuthenticatedRequestUser,
+    ip?: string,
+    userAgent?: string,
+  ) {
     if (!actor.isSuperAdmin) {
       const t = await this.prisma.admin.tenant.findUnique({
         where: { id: tenantId },
@@ -471,7 +492,9 @@ export class SuperAdminService {
   async getStats() {
     const [totalTenants, activeTenants, totalUsers] = await Promise.all([
       this.prisma.admin.tenant.count({ where: { slug: { not: 'platform' }, archivedAt: null } }),
-      this.prisma.admin.tenant.count({ where: { isActive: true, slug: { not: 'platform' }, archivedAt: null } }),
+      this.prisma.admin.tenant.count({
+        where: { isActive: true, slug: { not: 'platform' }, archivedAt: null },
+      }),
       this.prisma.admin.user.count({ where: { tenant: { slug: { not: 'platform' } } } }),
     ]);
 
@@ -514,7 +537,9 @@ function assertTimezone(tz: string | undefined) {
 }
 
 /** Учётка владельца — все три поля или ни одного. */
-function ownerOf(dto: CreateTenantDto): { fullName: string; email: string; password: string } | null {
+function ownerOf(
+  dto: CreateTenantDto,
+): { fullName: string; email: string; password: string } | null {
   const fullName = clean(dto.ownerFullName);
   const email = clean(dto.ownerEmail);
   const password = dto.ownerPassword ?? '';

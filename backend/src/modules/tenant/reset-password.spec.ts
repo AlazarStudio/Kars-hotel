@@ -9,7 +9,15 @@ function service(role: string) {
   const update = jest.fn();
   const prisma = {
     admin: {
-      user: { findFirst: jest.fn(async () => ({ id: 'u1', email: 's@h.ru', isActive: true, role: { code: role } })), update },
+      user: {
+        findFirst: jest.fn(async () => ({
+          id: 'u1',
+          email: 's@h.ru',
+          isActive: true,
+          role: { code: role },
+        })),
+        update,
+      },
       refreshToken: { updateMany },
       $transaction: jest.fn(async (ops: unknown[]) => ops),
     },
@@ -25,7 +33,10 @@ describe('TenantService.resetPassword', () => {
     const { svc, prisma, updateMany } = service('FRONT_DESK');
     const res = await svc.resetPassword('t1', 'u1', 'owner1');
     expect(res.temporaryPassword).toMatch(/^[0-9a-f]{16}$/);
-    expect(updateMany).toHaveBeenCalledWith({ where: { userId: 'u1', revokedAt: null }, data: { revokedAt: expect.any(Date) } });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { userId: 'u1', revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
     const audit = JSON.stringify((prisma.writeAuditLog as jest.Mock).mock.calls);
     expect(audit).toContain('password.reset');
     expect(audit).not.toContain(res.temporaryPassword);

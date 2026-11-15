@@ -1,9 +1,4 @@
-import {
-  ConflictException,
-  GoneException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { createHash, randomBytes } from 'node:crypto';
 import { seedDefaultRoles } from './tenant-roles';
@@ -57,7 +52,11 @@ export class OwnerInviteService {
       }),
     ]);
     const inviteView = invite
-      ? { email: invite.email, expiresAt: invite.expiresAt.toISOString(), createdAt: invite.createdAt.toISOString() }
+      ? {
+          email: invite.email,
+          expiresAt: invite.expiresAt.toISOString(),
+          createdAt: invite.createdAt.toISOString(),
+        }
       : null;
     if (lastUser?.lastLoginAt) {
       return { state: 'OWN', lastLoginAt: lastUser.lastLoginAt.toISOString(), invite: inviteView };
@@ -90,7 +89,14 @@ export class OwnerInviteService {
         data: { usedAt: new Date(), revoked: true },
       }),
       this.prisma.admin.ownerInvite.create({
-        data: { tenantId, email, fullName: dto.fullName.trim(), tokenHash: hash(token), expiresAt, partnerId },
+        data: {
+          tenantId,
+          email,
+          fullName: dto.fullName.trim(),
+          tokenHash: hash(token),
+          expiresAt,
+          partnerId,
+        },
       }),
     ]);
     return { token, email, expiresAt: expiresAt.toISOString() };
@@ -114,7 +120,10 @@ export class OwnerInviteService {
   /* Принять приглашение: владелец задаёт пароль, заводится учётка с ролью
      «Владелец» этой гостиницы, ссылка гаснет. Одной транзакцией — чтобы
      одна ссылка не завела двух владельцев при двойном нажатии. */
-  async accept(token: string, password: string): Promise<{ userId: string; tenantId: string; email: string }> {
+  async accept(
+    token: string,
+    password: string,
+  ): Promise<{ userId: string; tenantId: string; email: string }> {
     const invite = await this.valid(token);
     const passwordHash = await bcrypt.hash(password, 10);
     return this.prisma.admin.$transaction(async (tx) => {
@@ -133,7 +142,8 @@ export class OwnerInviteService {
         select: { id: true },
       });
       const roleId = role?.id ?? (await seedDefaultRoles(tx, invite.tenantId))[RoleCode.OWNER];
-      if (!roleId) throw new ConflictException('У гостиницы нет роли «Владелец» — обратитесь в поддержку');
+      if (!roleId)
+        throw new ConflictException('У гостиницы нет роли «Владелец» — обратитесь в поддержку');
       const user = await tx.user.create({
         data: {
           tenantId: invite.tenantId,
@@ -158,12 +168,17 @@ export class OwnerInviteService {
   }
 
   private async valid(token: string) {
-    const invite = await this.prisma.admin.ownerInvite.findUnique({ where: { tokenHash: hash(token) } });
+    const invite = await this.prisma.admin.ownerInvite.findUnique({
+      where: { tokenHash: hash(token) },
+    });
     if (!invite) throw new NotFoundException('Приглашение не найдено');
     if (invite.usedAt) {
-      throw new GoneException(invite.revoked ? 'Приглашение заменено новым' : 'Приглашение уже использовано');
+      throw new GoneException(
+        invite.revoked ? 'Приглашение заменено новым' : 'Приглашение уже использовано',
+      );
     }
-    if (invite.expiresAt < new Date()) throw new GoneException('Срок приглашения истёк — попросите новое');
+    if (invite.expiresAt < new Date())
+      throw new GoneException('Срок приглашения истёк — попросите новое');
     return invite;
   }
 }

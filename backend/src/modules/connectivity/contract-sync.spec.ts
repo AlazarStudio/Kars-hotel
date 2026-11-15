@@ -23,7 +23,18 @@ const ONE: ConnectContractSummaryDto = {
   sheets: 1,
 };
 
-function build(opts: { keys?: jest.Mock } = {}) {
+function build(
+  opts: {
+    keys?: jest.Mock;
+    existing?: Array<{
+      id: string;
+      contractNumber: string;
+      amendmentNumber: string | null;
+      service: string;
+      validFrom: Date;
+    }>;
+  } = {},
+) {
   const created: { data: Row[] }[] = [];
   const tx = {
     partnerContract: {
@@ -34,7 +45,11 @@ function build(opts: { keys?: jest.Mock } = {}) {
       }),
     },
     partnerContractPrice: {
-      findMany: jest.fn(async () => []),
+      findMany: jest.fn(async () => opts.existing ?? []),
+      findFirst: jest.fn(
+        async ({ where }: { where: { contractNumber: string } }) =>
+          opts.existing?.find((r) => r.contractNumber === where.contractNumber) ?? null,
+      ),
       deleteMany: jest.fn(async () => ({ count: 0 })),
       create: jest.fn(async () => ({})),
       update: jest.fn(async () => ({})),
@@ -42,6 +57,7 @@ function build(opts: { keys?: jest.Mock } = {}) {
   };
   const prisma = {
     admin: {
+      partnerContractPrice: tx.partnerContractPrice,
       tenant: {
         findUnique: jest.fn(async () => ({ id: 't1', isActive: true, slug: 'hotel' })),
       },
@@ -72,6 +88,114 @@ function build(opts: { keys?: jest.Mock } = {}) {
 }
 
 describe('syncContractPrices — реестр договоров в зеркале', () => {
+  it('normalizes legacy identity on single-document ingestion too', async () => {
+    const { service, tx } = build({
+      existing: [
+        {
+          id: 'legacy',
+          contractNumber: '205 ',
+          amendmentNumber: null,
+          service: 'ACCOMMODATION',
+          validFrom: new Date('2026-01-01'),
+        },
+      ],
+    });
+    await service.putContractPrices(
+      'hotel',
+      { contractNumber: '205', service: 'ACCOMMODATION', validFrom: '2026-01-01', rows: [] },
+      'p1',
+    );
+    expect(tx.partnerContractPrice.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'legacy' },
+        data: expect.objectContaining({ tenantId: 't1', partnerId: 'p1', contractNumber: '205' }),
+      }),
+    );
+    expect(tx.partnerContractPrice.create).not.toHaveBeenCalled();
+  });
+
+  it('updates a legacy document after normalizing its number instead of creating a duplicate', async () => {
+    const { service, tx } = build({
+      existing: [
+        {
+          id: 'legacy',
+          contractNumber: '205 ',
+          amendmentNumber: null,
+          service: 'ACCOMMODATION',
+          validFrom: new Date('2026-01-01'),
+        },
+      ],
+    });
+    await service.syncContractPrices(
+      'hotel',
+      [{ contractNumber: '205', service: 'ACCOMMODATION', validFrom: '2026-01-01', rows: [] }],
+      'p1',
+    );
+    expect(tx.partnerContractPrice.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'legacy' },
+        data: expect.objectContaining({ contractNumber: '205' }),
+      }),
+    );
+    expect(tx.partnerContractPrice.create).not.toHaveBeenCalled();
+  });
+
+  it('removes an old whitespace duplicate before updating the canonical document', async () => {
+    const base = {
+      amendmentNumber: null,
+      service: 'ACCOMMODATION',
+      validFrom: new Date('2026-01-01'),
+    };
+    const { service, tx } = build({
+      existing: [
+        { ...base, id: 'canonical', contractNumber: '205' },
+        { ...base, id: 'legacy', contractNumber: ' 205 ' },
+      ],
+    });
+    await service.syncContractPrices(
+      'hotel',
+      [{ contractNumber: '205', service: 'ACCOMMODATION', validFrom: '2026-01-01', rows: [] }],
+      'p1',
+    );
+    expect(tx.partnerContractPrice.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: ['legacy'] } },
+    });
+    expect(tx.partnerContractPrice.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'canonical' } }),
+    );
+  });
+
+  it('rejects ambiguous duplicate document keys after normalization before changing any rows', async () => {
+    const { service, tx } = build();
+    const doc = {
+      contractNumber: '205',
+      service: 'ACCOMMODATION' as const,
+      validFrom: '2026-01-01',
+      rows: [],
+    };
+    await expect(
+      service.syncContractPrices('hotel', [doc, { ...doc, contractNumber: '205 ' }], 'p1'),
+    ).rejects.toThrow('дважды');
+    expect(tx.partnerContractPrice.deleteMany).not.toHaveBeenCalled();
+    expect(tx.partnerContractPrice.create).not.toHaveBeenCalled();
+  });
+
+  it('stores the same normalized number for registry and price documents', async () => {
+    const { service, tx } = build();
+    await service.syncContractPrices(
+      'hotel',
+      [{ contractNumber: ' 205 ', service: 'ACCOMMODATION', validFrom: '2026-01-01', rows: [] }],
+      'p1',
+      [{ ...ONE, number: ' 205 ' }],
+    );
+    expect(tx.partnerContractPrice.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ contractNumber: '205' }) }),
+    );
+    expect(tx.partnerContract.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ number: '205' })],
+    });
+  });
+
   it('leaves the registry alone when contracts field is absent', async () => {
     const { service, tx } = build();
     /* Старая Авиа: поля нет. Реестр, который уже лежит в ПМС, не трогаем —

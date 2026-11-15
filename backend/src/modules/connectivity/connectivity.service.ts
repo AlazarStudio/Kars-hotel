@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
@@ -33,6 +34,7 @@ import {
 } from './dto/connect-contract-prices.dto';
 import { ReviewCorporateTariffDto } from './dto/review-corporate-tariff.dto';
 import { contractRows } from './contract-registry';
+import { contractNumberKey } from '../contracts/contract-identity';
 import { offerPlanIds } from './offer-plans';
 import { RatePlansService } from '../rate-plans/rate-plans.service';
 import { slugifyHotelName } from '../auth/slug.util';
@@ -401,13 +403,14 @@ export class ConnectivityService {
         name: string;
         mealPlan: string;
         nights: number;
-        perNight: Array<{ date: string; price: number | null }>;
+        perNight: Array<{ date: string; price: number | null; vatRate: number | null }>;
         total: number | null;
         nightlyFrom: number | null;
         /** Тот самый корпоративный тариф — оператор платит по нему. */
         forOperator: boolean;
         /** НДС тарифа партнёра, %; цены тарифа партнёра — без НДС. */
         vatRate: number | null;
+        vatMixed: boolean;
       };
       type OfferRoom = {
         id: string;
@@ -473,7 +476,7 @@ export class ConnectivityService {
         if (!avail.days.length) continue;
 
         const roomsAvailable = Math.min(...avail.days.map((d) => d.available));
-        if (roomsAvailable < 1 || !avail.bookable) continue;
+        if (roomsAvailable < 1) continue;
 
         // Per-rate-plan offers (TravelLine-style): each plan gets a per-night
         // breakdown + total via the shared resolution chain (override → season
@@ -490,9 +493,16 @@ export class ConnectivityService {
            оператор увидел бы тариф «по договору» там, где priceByPlan ничего не
            посчитал, а цена молча пришла бы из своих строк отеля. */
         const offered = offerPlanIds(applying, planPrices);
-        const ratePlans: OfferRatePlan[] = planPrices
+        const eligible = planPrices
           // Свои тарифы отеля — всем; тариф партнёра — выбранный, применимый И посчитанный на эти ночи.
-          .filter((p) => p.partnerId == null || offered.has(p.ratePlanId))
+          .filter((p) => p.partnerId == null || offered.has(p.ratePlanId));
+        const availabilityByPlan = await Promise.all(
+          eligible.map((p) =>
+            this.availability.check(rt.id, dto.checkIn, dto.checkOut, p.ratePlanId),
+          ),
+        );
+        const ratePlans: OfferRatePlan[] = eligible
+          .filter((_p, index) => availabilityByPlan[index].bookable)
           .map((p) => ({
             ratePlanId: p.ratePlanId,
             code: p.code,
@@ -502,12 +512,17 @@ export class ConnectivityService {
             perNight: p.perNight.map((n) => ({
               date: n.date,
               price: n.price != null ? Number(n.price) : null,
+              vatRate: n.vatRate != null ? Number(n.vatRate) : null,
             })),
             total: p.total != null ? Number(p.total) : null,
             nightlyFrom: p.nightlyFrom != null ? Number(p.nightlyFrom) : null,
             forOperator: offered.has(p.ratePlanId),
             vatRate: p.vatRate != null ? Number(p.vatRate) : null,
+            vatMixed: p.vatMixed === true,
           }));
+        // Нельзя обойти ограничения закрытых тарифов запасной ценой категории.
+        if (eligible.length > 0 && ratePlans.length === 0) continue;
+        if (eligible.length === 0 && !avail.bookable) continue;
 
         /* Опорная ночная цена: договорная — только у реально предложенного
            корпоративного тарифа (список уже пересечён с ценой), иначе самая
@@ -689,6 +704,22 @@ export class ConnectivityService {
         totalPrice = match.total != null ? Number(match.total) : undefined;
       }
 
+      const candidates = ratePlanId
+        ? [ratePlanId]
+        : planPrices
+            .filter((p) => p.partnerId == null || applying.some((a) => a.id === p.ratePlanId))
+            .map((p) => p.ratePlanId);
+      const checks = await Promise.all(
+        (candidates.length ? candidates : [undefined]).map((id) =>
+          this.availability.check(dto.categoryId, dto.checkIn, dto.checkOut, id, { fresh: true }),
+        ),
+      );
+      if (!checks.some((check) => check.restrictionsAllowed)) {
+        throw new ConflictException(
+          'Booking is unavailable for these dates or rate-plan restrictions',
+        );
+      }
+
       // Partner pinned a specific room → validate it belongs to the category and
       // still has a free place; otherwise auto-assign any free room (back-compat).
       let roomId: string | null;
@@ -760,11 +791,17 @@ export class ConnectivityService {
       // Код доказывает отказ этого POST до INSERT. Lookup/auth/ошибки после
       // COMMIT остаются неопределёнными: партнёр должен сохранить исходный ключ.
       const failure = error as { getStatus?: () => number; getResponse?: () => unknown } | null;
-      if (channel.idempotency && preflightStarted && !createEntered
-        && typeof failure?.getStatus === 'function' && [400, 404, 409].includes(failure.getStatus())
-        && typeof failure.getResponse === 'function') {
+      if (
+        channel.idempotency &&
+        preflightStarted &&
+        !createEntered &&
+        typeof failure?.getStatus === 'function' &&
+        [400, 404, 409].includes(failure.getStatus()) &&
+        typeof failure.getResponse === 'function'
+      ) {
         const body = failure.getResponse();
-        if (body && typeof body === 'object') Object.assign(body, { code: RESERVATION_CREATE_REJECTED_CODE });
+        if (body && typeof body === 'object')
+          Object.assign(body, { code: RESERVATION_CREATE_REJECTED_CODE });
       }
       throw error;
     });
@@ -809,7 +846,12 @@ export class ConnectivityService {
    * не сопоставить ни с одной заявкой, и править их снаружи он не вправе.
    * Признак тот же, по которому работает отмена: `channelManaged`.
    */
-  async updateReservation(slug: string, id: string, dto: ConnectUpdateReservationDto, partnerId: string) {
+  async updateReservation(
+    slug: string,
+    id: string,
+    dto: ConnectUpdateReservationDto,
+    partnerId: string,
+  ) {
     const tenant = await this.resolveTenant(slug);
     /* Заодно убеждаемся, что бронь принадлежит ЭТОЙ гостинице: RLS не пустит
        к чужой, и `getReservation` бросит «не найдено» раньше правки. */
@@ -828,22 +870,26 @@ export class ConnectivityService {
     }
 
     await this.runAsTenant(tenant.id, () =>
-      this.reservations.update(id, {
-        // Версию партнёр может не знать — тогда работаем от текущей.
-        version: dto.version ?? row.version,
-        checkIn: dto.checkIn,
-        checkOut: dto.checkOut,
-        roomId: dto.roomId,
-        guestName: dto.guestName,
-        phone: dto.phone,
-        email: dto.email,
-        adults: dto.adults,
-        children: dto.children,
-        notes: dto.comment,
-      } as never, {
-        fromChannel: true,
-        stay: { arrivalAt: dto.arrivalAt, departureAt: dto.departureAt, flight: dto.flight },
-      }),
+      this.reservations.update(
+        id,
+        {
+          // Версию партнёр может не знать — тогда работаем от текущей.
+          version: dto.version ?? row.version,
+          checkIn: dto.checkIn,
+          checkOut: dto.checkOut,
+          roomId: dto.roomId,
+          guestName: dto.guestName,
+          phone: dto.phone,
+          email: dto.email,
+          adults: dto.adults,
+          children: dto.children,
+          notes: dto.comment,
+        } as never,
+        {
+          fromChannel: true,
+          stay: { arrivalAt: dto.arrivalAt, departureAt: dto.departureAt, flight: dto.flight },
+        },
+      ),
     );
 
     const after = await this.getReservation(slug, id, partnerId);
@@ -1092,10 +1138,12 @@ export class ConnectivityService {
    */
   async putContractPrices(slug: string, dto: ConnectContractPricesDto, partnerId: string) {
     const tenant = await this.resolveTenant(slug);
+    if (!contractNumberKey(dto.contractNumber))
+      throw new BadRequestException('Номер договора пуст');
     const key = {
       tenantId: tenant.id,
       partnerId,
-      contractNumber: dto.contractNumber,
+      contractNumber: contractNumberKey(dto.contractNumber),
       amendmentNumber: dto.amendmentNumber ?? null,
       service: dto.service,
       // Сезоны одного документа — разные листы (30.09.2026).
@@ -1117,18 +1165,29 @@ export class ConnectivityService {
        ДС) через upsert не найти вовсе. Уникальность при этом обеспечена
        индексом с NULLS NOT DISTINCT, поэтому гонка двух зеркал упрётся в
        базу, а не создаст дубль. */
-    const existing = await this.prisma.admin.partnerContractPrice.findFirst({
-      where: key,
-      select: { id: true },
-    });
-    if (existing) {
-      await this.prisma.admin.partnerContractPrice.update({
-        where: { id: existing.id },
-        data,
+    await this.prisma.admin.$transaction(async (tx) => {
+      // Legacy numbers can contain surrounding whitespace; compare by the
+      // same identity as the registry without rewriting unrelated documents.
+      const { contractNumber, ...documentScope } = key;
+      const candidates = await tx.partnerContractPrice.findMany({
+        where: documentScope,
+        select: { id: true, contractNumber: true },
       });
-    } else {
-      await this.prisma.admin.partnerContractPrice.create({ data });
-    }
+      const matching = candidates
+        .filter((r) => contractNumberKey(r.contractNumber) === contractNumber)
+        .sort(
+          (a, b) =>
+            Number(b.contractNumber === contractNumber) -
+            Number(a.contractNumber === contractNumber),
+        );
+      const [existing, ...duplicates] = matching;
+      if (duplicates.length)
+        await tx.partnerContractPrice.deleteMany({
+          where: { id: { in: duplicates.map((r) => r.id) } },
+        });
+      if (existing) await tx.partnerContractPrice.update({ where: { id: existing.id }, data });
+      else await tx.partnerContractPrice.create({ data });
+    });
     return { ok: true as const };
   }
 
@@ -1155,7 +1214,8 @@ export class ConnectivityService {
       amendmentNumber?: string | null;
       service: string;
       validFrom: string | Date;
-    }) => `${d.contractNumber}|${d.amendmentNumber ?? ''}|${d.service}|${dayOf(d.validFrom)}`;
+    }) =>
+      `${contractNumberKey(d.contractNumber)}|${d.amendmentNumber ?? ''}|${d.service}|${dayOf(d.validFrom)}`;
 
     const result = await this.prisma.admin.$transaction(async (tx) => {
       // Только документы ЭТОГО партнёра: набор одного не стирает договоры другого.
@@ -1169,21 +1229,34 @@ export class ConnectivityService {
           validFrom: true,
         },
       });
-      const incoming = new Map(documents.map((d) => [keyOf(d), d]));
-
-      const stale = existing.filter((e) => !incoming.has(keyOf(e)));
+      const incoming = new Map<string, ConnectContractPricesDto>();
+      for (const doc of documents) {
+        if (!contractNumberKey(doc.contractNumber))
+          throw new BadRequestException('Номер договора пуст');
+        const key = keyOf(doc);
+        if (incoming.has(key)) throw new BadRequestException('Документ договора в наборе дважды');
+        incoming.set(key, doc);
+      }
+      const byKey = new Map<string, string>();
+      for (const entry of [...existing].sort(
+        (a, b) =>
+          Number(b.contractNumber === contractNumberKey(b.contractNumber)) -
+          Number(a.contractNumber === contractNumberKey(a.contractNumber)),
+      )) {
+        if (!byKey.has(keyOf(entry))) byKey.set(keyOf(entry), entry.id);
+      }
+      const stale = existing.filter((e) => !incoming.has(keyOf(e)) || byKey.get(keyOf(e)) !== e.id);
       if (stale.length) {
         await tx.partnerContractPrice.deleteMany({
           where: { id: { in: stale.map((e) => e.id) } },
         });
       }
 
-      const byKey = new Map(existing.map((e) => [keyOf(e), e.id]));
       for (const [key, dto] of incoming) {
         const data = {
           tenantId: tenant.id,
           partnerId,
-          contractNumber: dto.contractNumber,
+          contractNumber: contractNumberKey(dto.contractNumber),
           amendmentNumber: dto.amendmentNumber ?? null,
           service: dto.service,
           validFrom: new Date(dto.validFrom),
@@ -1312,16 +1385,68 @@ export class ConnectivityService {
   async setUpgradeWish(slug: string, id: string, want: boolean, partnerId: string) {
     const tenant = await this.resolveTenant(slug);
     await this.getReservation(slug, id, partnerId);
-    await this.prisma.forTenantExplicit(tenant.id, (tx) => tx.reservation.update({ where: { id }, data: { upgradeWish: want } }));
+    await this.prisma.forTenantExplicit(tenant.id, (tx) =>
+      tx.reservation.update({ where: { id }, data: { upgradeWish: want } }),
+    );
+  }
+
+  private async requireAviaReportsPartner(partnerId: string): Promise<void> {
+    if (!partnerId) throw new ForbiddenException('Partner access denied');
+    const partner = await this.prisma.admin.partner.findUnique({
+      where: { code: 'kars-avia' },
+      select: { id: true, isActive: true },
+    });
+    if (!partner || !partner.isActive || partner.id !== partnerId)
+      throw new ForbiddenException('Partner access denied');
+  }
+
+  async listReportKeys(partnerId: string) {
+    await this.requireAviaReportsPartner(partnerId);
+    const hotels = await this.prisma.admin.tenant.findMany({
+      where: { isActive: true, archivedAt: null, slug: { not: ConnectivityService.PLATFORM_SLUG } },
+      select: { id: true, slug: true },
+      orderBy: { slug: 'asc' },
+    });
+    let keys: Array<{ tenantId: string; key: string }> = [];
+    if (hotels.length) {
+      try {
+        keys = await this.prisma.admin.aviaReportsKey.findMany({
+          where: { partnerId, tenantId: { in: hotels.map((hotel) => hotel.id) } },
+          select: { tenantId: true, key: true },
+        });
+      } catch {
+        this.logger.error('Could not read report keys');
+        throw new InternalServerErrorException();
+      }
+    }
+    const keyByTenant = new Map(keys.map((row) => [row.tenantId, row.key]));
+    return {
+      journalRedacted: true as const,
+      hotels: hotels.map((hotel) => {
+        const key = keyByTenant.get(hotel.id);
+        return {
+          slug: hotel.slug,
+          fingerprint:
+            key === undefined ? null : createHash('sha256').update(key, 'utf8').digest('hex'),
+        };
+      }),
+    };
   }
 
   async setReportsKey(slug: string, key: string, partnerId: string) {
+    await this.requireAviaReportsPartner(partnerId);
     const tenant = await this.resolveTenant(slug);
-    await this.prisma.admin.aviaReportsKey.upsert({
-      where: { tenantId: tenant.id },
-      create: { tenantId: tenant.id, key, partnerId },
-      update: { key, partnerId },
-    });
+    if (tenant.archivedAt) throw new NotFoundException(`Hotel '${slug}' not found`);
+    try {
+      await this.prisma.admin.aviaReportsKey.upsert({
+        where: { tenantId: tenant.id },
+        create: { tenantId: tenant.id, key, partnerId },
+        update: { key, partnerId },
+      });
+    } catch {
+      this.logger.error('Could not save report key');
+      throw new InternalServerErrorException();
+    }
   }
 
   /** Все корпоративные тарифы партнёра у гостиницы — для его сверки. */
@@ -1458,7 +1583,9 @@ export class ConnectivityService {
     guests = 1,
   ): Promise<string> {
     return this.prisma.forTenantExplicit(tenantId, async (tx) => {
-      const rows = await tx.$queryRaw<Array<{ id: string; room_type_id: string; capacity: number }>>`
+      const rows = await tx.$queryRaw<
+        Array<{ id: string; room_type_id: string; capacity: number }>
+      >`
         SELECT r.id, r.room_type_id, r.capacity
         FROM room r
         WHERE r.id = ${roomId}::uuid
@@ -1607,9 +1734,7 @@ export class ConnectivityService {
       // Фото в базе — ключи; партнёру — адреса этого стенда (StorageService).
       logoUrl: t.logoUrl ? this.storage.toUrl(t.logoUrl) : null,
       // Hotel hero gallery shown as a slider on partner sites; first = cover.
-      photos: Array.isArray(t.galleryPhotos)
-        ? this.storage.toUrls(t.galleryPhotos)
-        : [],
+      photos: Array.isArray(t.galleryPhotos) ? this.storage.toUrls(t.galleryPhotos) : [],
       /* В2/В4 · профиль для каталога партнёра. Незаполненное отдаём как
        * отсутствующее (undefined), а не нулём: карточка опустит поле, а не
        * покажет «0 звёзд» и «0 мест» — выдуманное значение хуже пустого. */

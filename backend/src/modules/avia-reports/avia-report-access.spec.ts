@@ -20,9 +20,24 @@ describe('Журнал — адрес и устройство из запрос�
     const prisma = Object.create(PrismaService.prototype) as PrismaService;
     Object.assign(prisma, { admin: { auditLog: { create } }, logger: { error: jest.fn() } });
     await TenantContext.run(
-      { tenantId: 't', userId: 'u', roleCode: 'OWNER', permissions: [], ip: '10.1.2.3', userAgent: 'Browser/1' },
-      () => prisma.writeAuditLog({ tenantId: 't', entity: 'reservation', entityId: 'r', action: 'view' }),
+      {
+        tenantId: 't',
+        userId: 'u',
+        roleCode: 'OWNER',
+        permissions: [],
+        ip: '10.1.2.3',
+        userAgent: 'Browser/1',
+      },
+      () =>
+        prisma.writeAuditLog({
+          tenantId: 't',
+          entity: 'reservation',
+          entityId: 'r',
+          action: 'view',
+        }),
     );
-    expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({ ip: '10.1.2.3', userAgent: 'Browser/1' }) });
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ ip: '10.1.2.3', userAgent: 'Browser/1' }),
+    });
   });
 });

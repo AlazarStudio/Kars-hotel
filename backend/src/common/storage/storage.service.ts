@@ -139,7 +139,9 @@ export class StorageService implements OnModuleInit {
     if (own) return own;
     try {
       const path = decodeURIComponent(new URL(v).pathname);
-      const m = path.match(new RegExp(`^(?:.*/)?${this.bucket}/((?:${OWN_PREFIXES.join('|')})/.+)$`));
+      const m = path.match(
+        new RegExp(`^(?:.*/)?${this.bucket}/((?:${OWN_PREFIXES.join('|')})/.+)$`),
+      );
       if (m) return m[1];
     } catch {
       /* не адрес — хранится как есть */

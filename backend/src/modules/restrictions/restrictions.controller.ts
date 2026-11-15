@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { RedisService } from '../../common/redis/redis.service';
 import { TenantContext } from '../../common/context/tenant-context';
 import { RestrictionsService } from './restrictions.service';
 import { CheckRestrictionsDto } from './dto/check-restrictions.dto';
@@ -25,6 +26,7 @@ export class RestrictionsController {
   constructor(
     private readonly service: RestrictionsService,
     private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
   ) {}
 
   @Get()
@@ -62,10 +64,10 @@ export class RestrictionsController {
   @RequirePermissions('rate.update')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Create or update a restriction row for one date' })
-  upsert(@Body() dto: UpsertRestrictionDto) {
+  async upsert(@Body() dto: UpsertRestrictionDto) {
     const tenantId = TenantContext.getTenantIdOrThrow();
     const dateObj = new Date(`${dto.date}T00:00:00.000Z`);
-    return this.prisma.forTenant(async (tx) => {
+    const saved = await this.prisma.forTenant(async (tx) => {
       // The (tenantId, ratePlanId, roomTypeId, date) composite is unique — Prisma handles null in unique
       // poorly, so we hand-roll the upsert.
       const existing = await tx.restriction.findFirst({
@@ -101,6 +103,8 @@ export class RestrictionsController {
         },
       });
     });
+    await this.invalidate(saved.roomTypeId);
+    return saved;
   }
 
   @Post('check')
@@ -119,7 +123,16 @@ export class RestrictionsController {
   @Delete(':id')
   @RequirePermissions('rate.update')
   @ApiOperation({ summary: 'Remove a restriction row' })
-  remove(@Param('id', new ParseUUIDPipe()) id: string) {
-    return this.prisma.forTenant((tx) => tx.restriction.delete({ where: { id } }));
+  async remove(@Param('id', new ParseUUIDPipe()) id: string) {
+    const saved = await this.prisma.forTenant((tx) => tx.restriction.delete({ where: { id } }));
+    await this.invalidate(saved.roomTypeId);
+    return saved;
+  }
+
+  private async invalidate(roomTypeId: string) {
+    const keys = await this.redis.raw.keys(
+      `avail:${TenantContext.getTenantIdOrThrow()}:${roomTypeId}:*`,
+    );
+    if (keys.length) await this.redis.raw.del(...keys);
   }
 }

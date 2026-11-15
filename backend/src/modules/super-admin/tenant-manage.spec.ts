@@ -334,7 +334,14 @@ describe('Удаление гостиницы «в архив»', () => {
   function archiveService(opts: { tenant?: object | null; live?: number } = {}) {
     const tenant =
       opts.tenant === undefined
-        ? { id: 't1', slug: 'h1', name: 'Отель', isActive: true, archivedAt: null, archivedBy: null }
+        ? {
+            id: 't1',
+            slug: 'h1',
+            name: 'Отель',
+            isActive: true,
+            archivedAt: null,
+            archivedBy: null,
+          }
         : opts.tenant;
     const tx = {
       reservation: { count: jest.fn(async () => opts.live ?? 0) },
@@ -349,7 +356,9 @@ describe('Удаление гостиницы «в архив»', () => {
       },
       auditLog: { create: jest.fn(async () => ({})) },
       $transaction: jest.fn(async (arg: unknown) =>
-        typeof arg === 'function' ? (arg as (t: typeof tx) => unknown)(tx) : Promise.all(arg as unknown[]),
+        typeof arg === 'function'
+          ? (arg as (t: typeof tx) => unknown)(tx)
+          : Promise.all(arg as unknown[]),
       ),
       $executeRawUnsafe: jest.fn(),
     };
@@ -402,11 +411,13 @@ describe('Удаление гостиницы «в архив»', () => {
 
   it('платформенная и несуществующая — 404', async () => {
     await expect(
-      archiveService({ tenant: { id: 'p', slug: 'platform', name: 'P', archivedAt: null } }).svc.archiveTenant('p', ACTOR),
+      archiveService({
+        tenant: { id: 'p', slug: 'platform', name: 'P', archivedAt: null },
+      }).svc.archiveTenant('p', ACTOR),
     ).rejects.toBeInstanceOf(NotFoundException);
-    await expect(archiveService({ tenant: null }).svc.archiveTenant('x', ACTOR)).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(
+      archiveService({ tenant: null }).svc.archiveTenant('x', ACTOR),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('восстановление — пометка снята, гостиница включена, в журнал — кто удалял', async () => {
@@ -436,10 +447,19 @@ describe('Удаление гостиницы «в архив»', () => {
   it('архивную НЕ включить «Вкл.» и НЕ править — только «Восстановить»', async () => {
     const at = new Date();
     const { svc, admin } = archiveService({
-      tenant: { id: 't1', slug: 'h1', name: 'Отель', isActive: false, archivedAt: at, currency: 'RUB' },
+      tenant: {
+        id: 't1',
+        slug: 'h1',
+        name: 'Отель',
+        isActive: false,
+        archivedAt: at,
+        currency: 'RUB',
+      },
     });
     await expect(svc.toggleActive('t1')).rejects.toBeInstanceOf(ConflictException);
-    await expect(svc.updateTenant('t1', { name: 'Новое' }, ACTOR)).rejects.toBeInstanceOf(ConflictException);
+    await expect(svc.updateTenant('t1', { name: 'Новое' }, ACTOR)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
     expect(admin.tenant.update).not.toHaveBeenCalled();
   });
 });

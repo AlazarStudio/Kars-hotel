@@ -30,6 +30,7 @@
   font-size: 14px;
   font-family: inherit;
 }
+.pms-pop[inert] { visibility: hidden; }
 .pms-pop-search {
   box-sizing: border-box;
   width: 100%;

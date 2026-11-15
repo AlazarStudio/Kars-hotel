@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { subDays, addDays } from 'date-fns';
+import { subDays } from 'date-fns';
 import { useTimeline } from './useTimeline';
 
 const TODAY = new Date();

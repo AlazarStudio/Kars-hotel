@@ -16,6 +16,7 @@ import formClasses from '../../shared/Form.module.css';
 import Select from '../../shared/Select';
 
 const STATUSES = Object.keys(ROOM_STATUS_CONFIG);
+const EMPTY = [];
 
 const TASK_STATUS_CONFIG = {
   PENDING:     { label: 'Ожидает',   color: '#EF6C00', bg: '#FFF3E0' },
@@ -310,8 +311,8 @@ function RoomsTab() {
   const createTask = useCreateTask();
   const { data: users = [] } = useTenantUsers();
 
-  const rooms = roomsQ.data ?? [];
-  const roomTypes = roomTypesQ.data ?? [];
+  const rooms = roomsQ.data ?? EMPTY;
+  const roomTypes = roomTypesQ.data ?? EMPTY;
   const catNameById = useMemo(
     () => new Map(roomTypes.map((rt) => [rt.id, rt.name])),
     [roomTypes],

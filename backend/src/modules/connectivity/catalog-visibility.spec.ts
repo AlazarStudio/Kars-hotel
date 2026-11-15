@@ -16,11 +16,46 @@ type T = {
   archivedAt: Date | null;
 };
 const TENANTS: T[] = [
-  { id: '1', slug: 'visible', isActive: true, partnerVisible: true, provisional: false, archivedAt: null },
-  { id: '2', slug: 'hidden', isActive: true, partnerVisible: false, provisional: false, archivedAt: null },
-  { id: '3', slug: 'off', isActive: false, partnerVisible: true, provisional: false, archivedAt: null },
-  { id: '4', slug: 'once', isActive: true, partnerVisible: false, provisional: true, archivedAt: null },
-  { id: '5', slug: 'platform', isActive: true, partnerVisible: true, provisional: false, archivedAt: null },
+  {
+    id: '1',
+    slug: 'visible',
+    isActive: true,
+    partnerVisible: true,
+    provisional: false,
+    archivedAt: null,
+  },
+  {
+    id: '2',
+    slug: 'hidden',
+    isActive: true,
+    partnerVisible: false,
+    provisional: false,
+    archivedAt: null,
+  },
+  {
+    id: '3',
+    slug: 'off',
+    isActive: false,
+    partnerVisible: true,
+    provisional: false,
+    archivedAt: null,
+  },
+  {
+    id: '4',
+    slug: 'once',
+    isActive: true,
+    partnerVisible: false,
+    provisional: true,
+    archivedAt: null,
+  },
+  {
+    id: '5',
+    slug: 'platform',
+    isActive: true,
+    partnerVisible: true,
+    provisional: false,
+    archivedAt: null,
+  },
   /* Удалённая «в архив» (25.10.2026): выключена и с пометкой — не отдаётся даже
      по просьбе о выключенных. */
   {
@@ -48,9 +83,16 @@ function service() {
     admin: {
       tenant: {
         findMany: jest.fn(async ({ where }: { where: Record<string, unknown> }) =>
-          TENANTS.filter((t) => matches(t, where)).map((t) => ({ ...t, name: t.slug, country: 'RU' })),
+          TENANTS.filter((t) => matches(t, where)).map((t) => ({
+            ...t,
+            name: t.slug,
+            country: 'RU',
+          })),
         ),
-        findUnique: jest.fn(async ({ where }: { where: { slug: string } }) => TENANTS.find((t) => t.slug === where.slug) ?? null),
+        findUnique: jest.fn(
+          async ({ where }: { where: { slug: string } }) =>
+            TENANTS.find((t) => t.slug === where.slug) ?? null,
+        ),
       },
       roomType: { groupBy: jest.fn(async () => []) },
     },
@@ -76,7 +118,11 @@ describe('Каталог PMS — скрытые и выключенные тол
   });
 
   it('удалённая «в архив» — нет ни с какой просьбой', async () => {
-    const all = await slugs({ includeInactive: true, includeHidden: true, includeProvisional: true });
+    const all = await slugs({
+      includeInactive: true,
+      includeHidden: true,
+      includeProvisional: true,
+    });
     expect(all).not.toContain('gone');
   });
 
@@ -95,7 +141,9 @@ describe('Каталог PMS — скрытые и выключенные тол
   it('выключенная по прямой ссылке — только на чтение карточки', async () => {
     const svc = service() as unknown as { resolveTenant: (s: string, o?: object) => Promise<T> };
     await expect(svc.resolveTenant('off')).rejects.toBeInstanceOf(NotFoundException);
-    await expect(svc.resolveTenant('off', { allowInactive: true })).resolves.toMatchObject({ slug: 'off' });
+    await expect(svc.resolveTenant('off', { allowInactive: true })).resolves.toMatchObject({
+      slug: 'off',
+    });
     await expect(svc.resolveTenant('hidden')).resolves.toMatchObject({ slug: 'hidden' });
   });
 });

@@ -1,4 +1,9 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ReservationStatus, RoomPartnerHold, RoomStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
@@ -110,7 +115,10 @@ export class RoomsService {
          фонде номер ставит в тупик — подсказываем, где он. */
       if (prismaErrorCode(e) === PRISMA_UNIQUE_VIOLATION) {
         const archived = await this.prisma.forTenant((tx) =>
-          tx.room.findFirst({ where: { number: dto.number, archivedAt: { not: null } }, select: { id: true } }),
+          tx.room.findFirst({
+            where: { number: dto.number, archivedAt: { not: null } },
+            select: { id: true },
+          }),
         );
         if (archived) {
           throw new ConflictException(
@@ -405,7 +413,11 @@ export class RoomsService {
           .map(({ id, number }) => ({ id, number })),
         blocked: rooms
           .filter((r) => !r.archivedAt && liveByRoom.has(r.id))
-          .map((r) => ({ id: r.id, number: r.number, liveReservations: liveByRoom.get(r.id) ?? 0 })),
+          .map((r) => ({
+            id: r.id,
+            number: r.number,
+            liveReservations: liveByRoom.get(r.id) ?? 0,
+          })),
         notFound: unique.filter((id) => !found.has(id)),
       };
     });
@@ -475,11 +487,17 @@ export class RoomsService {
         entityId: id,
         action: 'restore',
         diff: {
-          before: { number: result.room.number, archivedAt: result.room.archivedAt, archivedBy: result.room.archivedBy },
+          before: {
+            number: result.room.number,
+            archivedAt: result.room.archivedAt,
+            archivedBy: result.room.archivedBy,
+          },
           after: {
             isActive: true,
             archivedAt: null,
-            ...(result.room.roomType.archivedAt ? { roomTypeRestored: result.room.roomType.id } : {}),
+            ...(result.room.roomType.archivedAt
+              ? { roomTypeRestored: result.room.roomType.id }
+              : {}),
           },
         },
       });

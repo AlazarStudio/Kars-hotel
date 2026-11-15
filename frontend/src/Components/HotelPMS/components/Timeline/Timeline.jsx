@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import {
-  addDays, subDays, startOfMonth, getDate, getMonth, getYear, setMonth, setYear,
+  addDays, subDays, startOfMonth, getMonth, getYear, setMonth, setYear,
   differenceInDays, parseISO, format, isSameDay, getDay,
 } from 'date-fns';
 import { ru } from 'date-fns/locale';
@@ -16,6 +16,7 @@ import { bookingMatches, matchRooms, roomsWithHits } from './timeline-search.js'
 
 const TODAY = new Date();
 TODAY.setHours(0, 0, 0, 0);
+const EMPTY = [];
 
 function Timeline({ multiPlaceEnabled = true }) {
   const [viewStart, setViewStart] = useState(subDays(TODAY, 7));
@@ -24,7 +25,7 @@ function Timeline({ multiPlaceEnabled = true }) {
   // ── Real API data ─────────────────────────────────────────────────────────
   const { data: apiData, loading: apiLoading, error: apiError, reload } = useTimeline(viewStart, daysCount);
 
-  const rooms      = apiData?.rooms      ?? [];
+  const rooms      = apiData?.rooms      ?? EMPTY;
   const categories = apiData?.categories ?? [];
   const [bookings, setBookings] = useState([]);
 
@@ -152,16 +153,6 @@ function Timeline({ multiPlaceEnabled = true }) {
   const roomsWithHit = useMemo(() => roomsWithHits(matchedRoomIds, visibleBookings), [matchedRoomIds, visibleBookings]);
 
   // ── Geometry helpers ──────────────────────────────────────────
-  const getBookingLeft = useCallback((checkIn) => {
-    const d = differenceInDays(parseISO(checkIn), viewStart);
-    return d * dayWidthRef.current;
-  }, [viewStart]);
-
-  const getBookingWidth = useCallback((checkIn, checkOut) => {
-    const dw = dayWidthRef.current;
-    return Math.max(dw, differenceInDays(parseISO(checkOut), parseISO(checkIn)) * dw) - 2;
-  }, []);
-
   const getDayFromClientX = useCallback((clientX) => {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return 0;
@@ -263,7 +254,7 @@ function Timeline({ multiPlaceEnabled = true }) {
     }
   }, [getDayFromClientX]);
 
-  const handleMouseUp = useCallback((e) => {
+  const handleMouseUp = useCallback(() => {
     const drag = dragRef.current;
     dragRef.current = null;
 
@@ -358,7 +349,7 @@ function Timeline({ multiPlaceEnabled = true }) {
       swapBooking,
       type: drag.type,
     });
-  }, [ghostBooking, dayToDate]);
+  }, [ghostBooking, dayToDate, bookings, rooms]);
 
   useEffect(() => {
     const onMove = (e) => handleMouseMove(e);

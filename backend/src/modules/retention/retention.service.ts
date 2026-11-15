@@ -35,7 +35,9 @@ export class RetentionService implements OnModuleInit, OnModuleDestroy {
       const res = await runRetention(this.prisma.admin as never, mode);
       for (const r of res) {
         const total = r.byTenant.reduce((s, x) => s + x.count, 0);
-        this.logger.log(`Сроки ПДн [${mode}] ${r.rule}: ${r.skipped ? 'пропущено (другой экземпляр)' : total}`);
+        this.logger.log(
+          `Сроки ПДн [${mode}] ${r.rule}: ${r.skipped ? 'пропущено (другой экземпляр)' : total}`,
+        );
       }
       return res;
     } catch (e) {

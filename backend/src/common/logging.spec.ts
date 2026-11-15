@@ -6,7 +6,15 @@ import { maskUrl, pinoHttpOptions } from './logging';
 /* 152-ФЗ, Р-51; план 13.6: в бою в журнал не попадают ни заголовки-ключи,
  * ни токен в адресе. Проверка — настоящим pino-http на настоящем запросе. */
 
-const SECRETS = ['SESSIONTOKEN', 'COOKIESECRET', 'PARTNERKEY', 'HOTELKEY', 'HOOKSECRET', 'INVITETOKEN', 'SSOCODE'];
+const SECRETS = [
+  'SESSIONTOKEN',
+  'COOKIESECRET',
+  'PARTNERKEY',
+  'HOTELKEY',
+  'HOOKSECRET',
+  'INVITETOKEN',
+  'SSOCODE',
+];
 
 async function logOf(path: string): Promise<string> {
   let out = '';

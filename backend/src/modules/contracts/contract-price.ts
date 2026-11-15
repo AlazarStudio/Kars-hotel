@@ -1,3 +1,11 @@
+import { contractNumberKey } from './contract-identity';
+
+/** Partner metadata only: never used to select or calculate a price. */
+export const CONTRACT_PRICE_BASES = ['category', 'class', 'kind', 'default-class'] as const;
+export type ContractPriceBasis = (typeof CONTRACT_PRICE_BASES)[number];
+export const isContractPriceBasis = (value: unknown): value is ContractPriceBasis =>
+  CONTRACT_PRICE_BASES.some((basis) => basis === value);
+
 /* ЦЕНА КОРПОРАТИВНОГО ТАРИФА — ИЗ ДОГОВОРА, А НЕ ИЗ ЕГО ПОЛЕЙ (11.11.2026).
  *
  * Реестр договоров Авии — мастер цен: там уже обговорённые с гостиницей
@@ -14,6 +22,7 @@ export interface FillCell {
   categoryId: string;
   occupancy: number;
   price: number;
+  basis?: ContractPriceBasis | null;
 }
 
 export interface FillSlice {
@@ -57,13 +66,13 @@ export interface TariffSlice {
 const day10 = (v: string) => String(v).slice(0, 10);
 
 /** Документы этого договора: свой партнёр, услуга проживания, своё юрлицо. */
-function ownDocs(docs: ContractPriceDoc[], slice: TariffSlice): ContractPriceDoc[] {
-  if (!slice.contractNumber) return [];
+export function ownContractDocs(docs: ContractPriceDoc[], slice: TariffSlice): ContractPriceDoc[] {
+  if (!contractNumberKey(slice.contractNumber)) return [];
   return docs.filter(
     (d) =>
       d.service === 'ACCOMMODATION' &&
       d.partnerId === slice.partnerId &&
-      d.contractNumber === slice.contractNumber &&
+      contractNumberKey(d.contractNumber) === contractNumberKey(slice.contractNumber) &&
       (!slice.accountCode || !d.accountCode || d.accountCode === slice.accountCode),
   );
 }
@@ -80,7 +89,7 @@ function gridAt(
 ): { grid: FillGrid; doc: ContractPriceDoc } | null {
   const d = day10(day);
   let best: { grid: FillGrid; doc: ContractPriceDoc; from: string } | null = null;
-  for (const doc of ownDocs(docs, slice)) {
+  for (const doc of ownContractDocs(docs, slice)) {
     if (day10(doc.validFrom) > d) continue;
     if (doc.validTo && day10(doc.validTo) < d) continue;
     for (const grid of doc.fill ?? []) {
@@ -105,6 +114,58 @@ function pickSlice(grid: FillGrid, slice: TariffSlice): FillSlice | null {
   return forCustomer(slice.customerCode ?? null) ?? (slice.customerCode ? forCustomer(null) : null);
 }
 
+/** Stored legacy JSON is not guaranteed to satisfy today's DTO validation. */
+export function usableFillCell(value: unknown): value is FillCell {
+  if (!value || typeof value !== 'object') return false;
+  const cell = value as Partial<FillCell>;
+  return (
+    typeof cell.categoryId === 'string' &&
+    cell.categoryId.length > 0 &&
+    Number.isInteger(cell.occupancy) &&
+    Number(cell.occupancy) > 0 &&
+    Number.isSafeInteger(cell.price) &&
+    Number(cell.price) >= 0
+  );
+}
+
+export type ContractDayReason =
+  | 'NO_DOCUMENTS'
+  | 'NO_GRIDS'
+  | 'OUTSIDE_CONTRACT'
+  | 'NO_SLICE'
+  | 'NO_PRICES';
+
+/** Shared decision for calculation and read-only price/preview screens. */
+export function contractDayContext(
+  docs: ContractPriceDoc[],
+  slice: TariffSlice,
+  day: string,
+): {
+  doc: ContractPriceDoc | null;
+  grid: FillGrid | null;
+  slice: FillSlice | null;
+  reason: ContractDayReason | null;
+} {
+  const mine = ownContractDocs(docs, slice);
+  if (!mine.length) return { doc: null, grid: null, slice: null, reason: 'NO_DOCUMENTS' };
+  const d = day10(day);
+  const covering = mine.filter(
+    (doc) => day10(doc.validFrom) <= d && (!doc.validTo || day10(doc.validTo) >= d),
+  );
+  if (!covering.length) return { doc: null, grid: null, slice: null, reason: 'OUTSIDE_CONTRACT' };
+  const at = gridAt(mine, slice, day);
+  if (!at) {
+    const doc = [...covering].sort((a, b) => b.validFrom.localeCompare(a.validFrom))[0];
+    return { doc, grid: null, slice: null, reason: 'NO_GRIDS' };
+  }
+  const selected = pickSlice(at.grid, slice);
+  return {
+    ...at,
+    slice: selected,
+    reason: !selected ? 'NO_SLICE' : selected.cells.some(usableFillCell) ? null : 'NO_PRICES',
+  };
+}
+
 /** Цена ночи в копейках; null — цены нет. */
 export function contractNightPrice(
   docs: ContractPriceDoc[],
@@ -113,11 +174,11 @@ export function contractNightPrice(
   guests: number,
   day: string,
 ): number | null {
-  const at = gridAt(docs, slice, day);
-  if (!at) return null;
-  const own = pickSlice(at.grid, slice);
-  if (!own) return null;
-  const cell = own.cells.find((c) => c.categoryId === roomTypeId && c.occupancy === guests);
+  const at = contractDayContext(docs, slice, day);
+  if (!at.slice) return null;
+  const cell = at.slice.cells.find(
+    (c) => usableFillCell(c) && c.categoryId === roomTypeId && c.occupancy === guests,
+  );
   return cell ? cell.price : null;
 }
 
@@ -127,10 +188,7 @@ export function contractHasPriceOn(
   slice: TariffSlice,
   day: string,
 ): boolean {
-  const at = gridAt(docs, slice, day);
-  if (!at) return false;
-  const own = pickSlice(at.grid, slice);
-  return !!own && own.cells.length > 0;
+  return contractDayContext(docs, slice, day).reason === null;
 }
 
 /** НДС договора на день: ставка документа, который дал цены. */

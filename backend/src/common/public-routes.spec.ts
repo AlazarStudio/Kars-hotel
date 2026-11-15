@@ -33,8 +33,9 @@ function controllers(): Array<new (...a: never[]) => unknown> {
       const full = join(dir, name);
       if (statSync(full).isDirectory()) walk(full);
       else if (name.endsWith('.controller.ts')) {
-        for (const exp of Object.values(require(full) as Record<string, unknown>)) {
-          if (typeof exp === 'function' && Reflect.getMetadata('path', exp) !== undefined) out.push(exp as never);
+        for (const exp of Object.values(jest.requireActual<Record<string, unknown>>(full))) {
+          if (typeof exp === 'function' && Reflect.getMetadata('path', exp) !== undefined)
+            out.push(exp as never);
         }
       }
     }
@@ -53,7 +54,8 @@ describe('Открыто без входа — только по списку', 
     for (const name of Object.getOwnPropertyNames(ctl.prototype)) {
       if (name === 'constructor') continue;
       const handler = (ctl.prototype as Record<string, unknown>)[name];
-      if (typeof handler !== 'function' || Reflect.getMetadata('method', handler) === undefined) continue;
+      if (typeof handler !== 'function' || Reflect.getMetadata('method', handler) === undefined)
+        continue;
       const isPublic = classPublic || Reflect.getMetadata(IS_PUBLIC_KEY, handler) === true;
       if (!isPublic) continue;
       const id = `${ctl.name}.${name}`;

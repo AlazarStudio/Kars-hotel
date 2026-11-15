@@ -7,10 +7,6 @@ function ymd(d) {
   return d.toISOString().slice(0, 10);
 }
 
-function startOfMonth(year, month) {
-  return new Date(Date.UTC(year, month, 1));
-}
-
 function daysInMonth(year, month) {
   return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
 }
@@ -32,7 +28,6 @@ export default function RateCalendar({ ratePlan, roomTypes }) {
   const [year, setYear] = useState(today.getUTCFullYear());
   const [month, setMonth] = useState(today.getUTCMonth());
 
-  const first = startOfMonth(year, month);
   const total = daysInMonth(year, month);
   const dates = useMemo(
     () => Array.from({ length: total }, (_, i) => new Date(Date.UTC(year, month, i + 1))),

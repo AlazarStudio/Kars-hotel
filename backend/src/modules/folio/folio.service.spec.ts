@@ -13,7 +13,11 @@ function service(reservation: { id: string; tenantId: string } | null) {
       create: jest.fn(async ({ data }: { data: object }) => ({ id: 'f1', ...data })),
       findUniqueOrThrow: jest.fn(async () => ({ id: 'f1', charges: [], payments: [] })),
     },
-    folioCharge: { create: jest.fn(async ({ data }: { data: object }) => ({ id: 'c1', ...data })), findFirst: jest.fn(async () => null), delete: jest.fn() },
+    folioCharge: {
+      create: jest.fn(async ({ data }: { data: object }) => ({ id: 'c1', ...data })),
+      findFirst: jest.fn(async () => null),
+      delete: jest.fn(),
+    },
     payment: { create: jest.fn() },
   };
   const prisma = {
@@ -24,14 +28,26 @@ function service(reservation: { id: string; tenantId: string } | null) {
 }
 
 describe('FolioService — только своя бронь', () => {
-  beforeEach(() => jest.spyOn(TenantContext, 'getTenantIdOrThrow').mockReturnValue('00000000-0000-0000-0000-00000000000a'));
+  beforeEach(() =>
+    jest
+      .spyOn(TenantContext, 'getTenantIdOrThrow')
+      .mockReturnValue('00000000-0000-0000-0000-00000000000a'),
+  );
   afterEach(() => jest.restoreAllMocks());
 
   it('чужая бронь: 404, счёт не создаётся', async () => {
     const { svc, tx } = service(null);
     await expect(svc.getOrCreate('r-foreign')).rejects.toBeInstanceOf(NotFoundException);
-    await expect(svc.addCharge('r-foreign', { type: 'MANUAL', description: 'x', quantity: 1, unitPrice: 1 } as never, 'u')).rejects.toBeInstanceOf(NotFoundException);
-    await expect(svc.addPayment('r-foreign', { method: 'CASH', amount: 1 } as never, 'u')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(
+      svc.addCharge(
+        'r-foreign',
+        { type: 'MANUAL', description: 'x', quantity: 1, unitPrice: 1 } as never,
+        'u',
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(
+      svc.addPayment('r-foreign', { method: 'CASH', amount: 1 } as never, 'u'),
+    ).rejects.toBeInstanceOf(NotFoundException);
     expect(tx.folio.create).not.toHaveBeenCalled();
     expect(tx.folioCharge.create).not.toHaveBeenCalled();
     expect(tx.payment.create).not.toHaveBeenCalled();
@@ -39,15 +55,25 @@ describe('FolioService — только своя бронь', () => {
 
   it('своя бронь: счёт создаётся на её гостиницу, начисление — в журнал', async () => {
     const { svc, tx, prisma } = service({ id: 'r1', tenantId: 't-own' });
-    await svc.addCharge('r1', { type: 'MANUAL', description: 'x', quantity: 2, unitPrice: 5 } as never, 'u1');
-    expect(tx.folio.create).toHaveBeenCalledWith({ data: { tenantId: 't-own', reservationId: 'r1' } });
-    expect(prisma.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ entity: 'folio', action: 'charge.add', userId: 'u1' }));
+    await svc.addCharge(
+      'r1',
+      { type: 'MANUAL', description: 'x', quantity: 2, unitPrice: 5 } as never,
+      'u1',
+    );
+    expect(tx.folio.create).toHaveBeenCalledWith({
+      data: { tenantId: 't-own', reservationId: 'r1' },
+    });
+    expect(prisma.writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ entity: 'folio', action: 'charge.add', userId: 'u1' }),
+    );
   });
 
   it('строка удаляется только из счёта ЭТОЙ брони', async () => {
     const { svc, tx } = service({ id: 'r1', tenantId: 't-own' });
     await expect(svc.deleteCharge('r1', 'c-other', 'u1')).rejects.toBeInstanceOf(NotFoundException);
-    expect(tx.folioCharge.findFirst).toHaveBeenCalledWith({ where: { id: 'c-other', folio: { reservationId: 'r1' } } });
+    expect(tx.folioCharge.findFirst).toHaveBeenCalledWith({
+      where: { id: 'c-other', folio: { reservationId: 'r1' } },
+    });
     expect(tx.folioCharge.delete).not.toHaveBeenCalled();
   });
 });

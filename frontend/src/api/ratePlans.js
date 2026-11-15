@@ -5,6 +5,11 @@ export async function listRatePlans() {
   return data;
 }
 
+export async function listTariffRoomTypes() {
+  const { data } = await api.get('/rate-plans/room-types');
+  return data;
+}
+
 export async function getRatePlan(id) {
   const { data } = await api.get(`/rate-plans/${id}`);
   return data;

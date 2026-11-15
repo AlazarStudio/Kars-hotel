@@ -138,9 +138,14 @@ function fixture(
        правила, а не подменился «сегодня». */
     statesFor?: (day: string) => Map<string, PriceState>;
     roomTypes?: Array<{ id: string; name: string; maxOccupancy: number | null }>;
+    timezone?: string;
   } = {},
 ) {
   const tx = {
+    tenant: { findUnique: jest.fn(async () => ({ timezone: opts.timezone ?? 'Europe/Moscow' })) },
+    partner: { findUnique: jest.fn(async () => ({ isActive: true })) },
+    partnerAccount: { findUnique: jest.fn(async () => null) },
+    partnerCustomer: { findUnique: jest.fn(async () => null) },
     ratePlan: {
       findMany: jest.fn(async () => opts.plans ?? []),
       findUnique: jest.fn(async () => (opts.plan === undefined ? plan() : opts.plan)),
@@ -161,11 +166,12 @@ function fixture(
   };
   const redis = { raw: { get: jest.fn(), set: jest.fn() } };
   const contracts = {
-    sliceOf: jest.fn(async (_plan: unknown) => opts.slice ?? { slice: null, unknownCustomer: false }),
+    sliceOf: jest.fn(
+      async (_plan: unknown) => opts.slice ?? { slice: null, unknownCustomer: false },
+    ),
     docsFor: jest.fn(async (_partnerId: string) => opts.docs ?? []),
-    priceStates: jest.fn(
-      async (_plans: Array<{ id: string }>, day: string) =>
-        opts.statesFor ? opts.statesFor(day) : (opts.states ?? new Map<string, PriceState>()),
+    priceStates: jest.fn(async (_plans: Array<{ id: string }>, day: string) =>
+      opts.statesFor ? opts.statesFor(day) : (opts.states ?? new Map<string, PriceState>()),
     ),
   };
   const service = new RatePlansService(
@@ -175,24 +181,211 @@ function fixture(
     contracts as never,
   );
   const list = () =>
-    TenantContext.run(
-      { tenantId: TENANT, userId: 'u', roleCode: 'ADMIN', permissions: [] },
-      () => service.list(),
+    TenantContext.run({ tenantId: TENANT, userId: 'u', roleCode: 'ADMIN', permissions: [] }, () =>
+      service.list(),
     );
   const prices = (id = 'corp', from?: string, to?: string) =>
-    TenantContext.run(
-      { tenantId: TENANT, userId: 'u', roleCode: 'ADMIN', permissions: [] },
-      () => service.contractPrices(id, from, to),
+    TenantContext.run({ tenantId: TENANT, userId: 'u', roleCode: 'ADMIN', permissions: [] }, () =>
+      service.contractPrices(id, from, to),
     );
   const partnerPlans = (partnerId = 'p1', day?: string) =>
-    TenantContext.run(
-      { tenantId: TENANT, userId: 'u', roleCode: 'ADMIN', permissions: [] },
-      () => service.partnerPlans(partnerId, day),
+    TenantContext.run({ tenantId: TENANT, userId: 'u', roleCode: 'ADMIN', permissions: [] }, () =>
+      service.partnerPlans(partnerId, day),
     );
   return { service, tx, prisma, webhooks, redis, contracts, list, prices, partnerPlans };
 }
 
 describe('contractPrices — сетка цен договора для экрана', () => {
+  it('returns amendment metadata and distinguishes out-of-contract days from missing cells', async () => {
+    const { prices } = fixture({
+      slice: { slice: SLICE, unknownCustomer: false },
+      docs: [
+        fillDoc({
+          amendmentNumber: '2',
+          validFrom: '2026-12-01',
+          validTo: '2026-12-02',
+          fill: [grid('2026-12-01')],
+        }),
+      ],
+      roomTypes: [ROOM_TYPE, { id: 'unpriced', name: 'Без цены', maxOccupancy: 1 }],
+    });
+    const res = await prices('corp', '2026-11-30', '2026-12-03');
+    expect(res).toMatchObject({
+      periodDetails: [
+        {
+          from: '2026-12-01',
+          to: '2026-12-02',
+          contractNumber: '205',
+          amendmentNumber: '2',
+          validFrom: '2026-12-01',
+          validTo: '2026-12-02',
+          vatRate: 20,
+        },
+      ],
+    });
+    expect(res.nights).toEqual([
+      expect.objectContaining({ day: '2026-11-30', reason: 'OUTSIDE_CONTRACT', prices: [] }),
+      expect.objectContaining({
+        day: '2026-12-01',
+        reason: null,
+        amendmentNumber: '2',
+        missing: [
+          { categoryId: CATEGORY, occupancy: 1, reason: 'NO_OCCUPANCY_PRICE' },
+          { categoryId: 'unpriced', occupancy: 1, reason: 'NO_CATEGORY_PRICE' },
+        ],
+      }),
+      expect.objectContaining({ day: '2026-12-02', reason: null }),
+      expect.objectContaining({ day: '2026-12-03', reason: 'OUTSIDE_CONTRACT', prices: [] }),
+    ]);
+  });
+
+  it('shows missing grids and slice honestly instead of calling them out of contract', async () => {
+    const missingGrid = fixture({
+      slice: { slice: SLICE, unknownCustomer: false },
+      docs: [fillDoc({ fill: null })],
+    });
+    expect((await missingGrid.prices('corp', DAY)).nights).toEqual([
+      expect.objectContaining({ day: DAY, reason: 'NO_GRIDS' }),
+    ]);
+    const missingSlice = fixture({
+      slice: { slice: { ...SLICE, mealPlan: 'HB' }, unknownCustomer: false },
+      docs: [fillDoc()],
+    });
+    expect((await missingSlice.prices('corp', DAY)).nights).toEqual([
+      expect.objectContaining({ day: DAY, reason: 'NO_SLICE' }),
+    ]);
+  });
+
+  it('marks a grid with no prices for this hotel categories as NO_PRICES, preserving missing cells', async () => {
+    const f = fixture({
+      slice: { slice: SLICE, unknownCustomer: false },
+      docs: [fillDoc()],
+      roomTypes: [{ id: 'unpriced', name: 'Новая категория', maxOccupancy: 1 }],
+    });
+    expect((await f.prices('corp', DAY)).nights).toEqual([
+      expect.objectContaining({
+        reason: 'NO_PRICES',
+        prices: [],
+        missing: [{ categoryId: 'unpriced', occupancy: 1, reason: 'NO_CATEGORY_PRICE' }],
+      }),
+    ]);
+  });
+
+  it('splits period metadata at a temporary amendment expiry with the same rule as prices', async () => {
+    const f = fixture({
+      slice: { slice: SLICE, unknownCustomer: false },
+      docs: [
+        fillDoc(),
+        fillDoc({
+          amendmentNumber: '2',
+          validFrom: '2026-12-01',
+          validTo: '2026-12-02',
+          fill: [grid('2026-12-01')],
+        }),
+      ],
+    });
+    const result = await f.prices('corp', '2026-12-01', '2026-12-03');
+    expect(result.periodDetails).toEqual([
+      expect.objectContaining({ from: '2026-01-01', to: '2026-11-30', amendmentNumber: null }),
+      expect.objectContaining({ from: '2026-12-01', to: '2026-12-02', amendmentNumber: '2' }),
+      expect.objectContaining({ from: '2026-12-03', to: null, amendmentNumber: null }),
+    ]);
+    expect(result.nights.map((night) => night.amendmentNumber)).toEqual(['2', '2', null]);
+  });
+
+  it('uses the tenant calendar day at midnight, including default tariff status', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-11-14T22:30:00Z'));
+    try {
+      const { prices, list, contracts } = fixture({
+        plans: [plan()],
+        timezone: 'Europe/Moscow',
+        slice: { slice: SLICE, unknownCustomer: false },
+        docs: [fillDoc()],
+      });
+      const res = await prices();
+      expect(res).toMatchObject({ today: '2026-11-15', timezone: 'Europe/Moscow' });
+      expect(res.nights[0].day).toBe('2026-11-15');
+      await list();
+      expect(contracts.priceStates).toHaveBeenCalledWith(expect.any(Array), '2026-11-15');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('previews a draft with the same response as a saved tariff without writing a tariff', async () => {
+    const f = fixture({ slice: { slice: SLICE, unknownCustomer: false }, docs: [fillDoc()] });
+    const saved = await f.prices('corp', DAY);
+    const previewService = f.service as unknown as {
+      previewContractPrices(input: unknown): Promise<unknown>;
+    };
+    const preview = await TenantContext.run(
+      { tenantId: TENANT, userId: 'u', roleCode: 'ADMIN', permissions: [] },
+      () =>
+        previewService.previewContractPrices({
+          partnerId: 'p1',
+          operatorContract: '205',
+          mealPlan: 'BB',
+          from: DAY,
+        }),
+    );
+    expect(preview).toEqual(saved);
+    expect(f.tx.ratePlan.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a valid draft without price documents previewable and never saves it', async () => {
+    const f = fixture({ slice: { slice: SLICE, unknownCustomer: false } });
+    const result = await TenantContext.run(
+      { tenantId: TENANT, userId: 'u', roleCode: 'ADMIN', permissions: [] },
+      () =>
+        f.service.previewContractPrices({
+          partnerId: 'p1',
+          operatorContract: '205',
+          mealPlan: 'BB',
+          from: DAY,
+        }),
+    );
+    expect(result.nights).toEqual([
+      expect.objectContaining({ reason: 'NO_DOCUMENTS', prices: [] }),
+    ]);
+    expect(f.tx.ratePlan.findUnique).not.toHaveBeenCalled();
+    expect(f.tx.tenant.findUnique).toHaveBeenCalledWith({
+      where: { id: TENANT },
+      select: { timezone: true },
+    });
+  });
+
+  it('rejects an unavailable partner or foreign account before looking at its price documents', async () => {
+    const f = fixture();
+    f.tx.partner.findUnique.mockResolvedValueOnce(null as never);
+    await expect(
+      f.service.previewContractPrices({
+        partnerId: 'foreign',
+        operatorContract: '205',
+        mealPlan: 'BB',
+      }),
+    ).rejects.toThrow('недоступны');
+    await expect(
+      f.service.previewContractPrices({
+        partnerId: 'p1',
+        partnerAccountId: 'foreign-account',
+        operatorContract: '205',
+        mealPlan: 'BB',
+      }),
+    ).rejects.toThrow('недоступны');
+    expect(f.contracts.docsFor).not.toHaveBeenCalled();
+    expect(f.contracts.sliceOf).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['2026-02-30', '2026-03-01'],
+    ['2026-12-02', '2026-12-01'],
+    ['2026-01-01', '2026-12-01'],
+  ])('rejects invalid or oversized price windows %s to %s', async (from, to) => {
+    const f = fixture();
+    await expect(f.prices('corp', from, to)).rejects.toBeInstanceOf(BadRequestException);
+    expect(f.contracts.docsFor).not.toHaveBeenCalled();
+  });
+
   it('свой тариф — не корпоративный: отказ, а не пустая сетка', async () => {
     /* Риск: экран тарифа гостиницы запросит цены договора и получит пусто —
        как будто договор есть, а цен в нём нет. Пустой ответ здесь соврал бы. */
@@ -215,12 +408,12 @@ describe('contractPrices — сетка цен договора для экра�
     expect(res.hasSlice).toBe(false);
     expect(res.unknownCustomer).toBe(true);
     expect(res.periods).toEqual([]);
-    expect(res.nights).toEqual([]);
+    expect(res.nights).toEqual([
+      expect.objectContaining({ prices: [], reason: 'UNKNOWN_CUSTOMER' }),
+    ]);
     expect(res.vatRate).toBeNull();
     expect(res.contractNumber).toBe('205');
-    expect(res.categories).toEqual([
-      { categoryId: CATEGORY, name: 'Двухместный', capacity: 2 },
-    ]);
+    expect(res.categories).toEqual([{ categoryId: CATEGORY, name: 'Двухместный', capacity: 2 }]);
     // Чужие договоры не читаются: цены «для кого-то» не подставляются.
     expect(contracts.docsFor).not.toHaveBeenCalled();
   });
@@ -244,7 +437,11 @@ describe('contractPrices — сетка цен договора для экра�
     expect(res.unknownCustomer).toBe(false);
     expect(res.periods).toEqual(['2026-01-01']);
     expect(res.nights).toEqual([
-      { day: DAY, prices: [{ categoryId: CATEGORY, occupancy: 2, price: '5000.00' }] },
+      expect.objectContaining({
+        day: DAY,
+        reason: null,
+        prices: [{ categoryId: CATEGORY, occupancy: 2, price: '5000.00' }],
+      }),
     ]);
     expect(res.vatRate).toBe(20);
   });
@@ -273,6 +470,37 @@ describe('contractPrices — сетка цен договора для экра�
 });
 
 describe('withOperatorStatus — «применяется» по цене договора, а не по вердикту', () => {
+  it('returns partner tariff readiness for one hotel day and preserves its legacy data', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-11-15T00:30:00Z'));
+    try {
+      const { service, tx, contracts } = fixture({
+        plans: [plan({ reviewVerdict: 'REJECTED', reviewedBy: 'Reviewer' })],
+        contractRows: [rowDoc()],
+        timezone: 'America/New_York',
+        states: new Map([['corp', { hasPrice: true, unknownCustomer: false, vatRate: 20 }]]),
+      });
+      const [tariff] = await TenantContext.run(
+        { tenantId: TENANT, userId: 'u', roleCode: 'ADMIN', permissions: [] },
+        () => service.partnerTariffs('p1'),
+      );
+      expect(tx.ratePlan.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { partnerId: 'p1', isActive: true } }),
+      );
+      expect(tx.tenant.findUnique).toHaveBeenCalledTimes(1);
+      expect(contracts.priceStates).toHaveBeenCalledWith(expect.any(Array), '2026-11-14');
+      expect(tariff).toMatchObject({
+        priceSource: 'CONTRACT',
+        asOf: { day: '2026-11-14', timezone: 'America/New_York' },
+        status: { applies: true },
+        reviewedBy: 'Reviewer',
+        categories: expect.any(Array),
+        fingerprint: expect.any(String),
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('цена на сегодня есть — корпоративный применяется, свой остаётся без статуса', async () => {
     /* applies — шлюз в предложения партнёра (connectivity). Ошибка здесь тихо
        убирает корпоративный тариф из выдачи или, наоборот, пускает в неё
@@ -311,7 +539,7 @@ describe('withOperatorStatus — «применяется» по цене дог
     const [corp] = await list();
     expect(corp.operatorStatus).toEqual({
       state: 'DRAFT',
-      reason: 'Цены договора на сегодня нет',
+      reason: 'Цены договора на выбранную дату нет',
       applies: false,
     });
   });

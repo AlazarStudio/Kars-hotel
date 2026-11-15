@@ -1,20 +1,21 @@
-import React, { useMemo, useState } from 'react';
-import { parseISO, format, isToday, addDays } from 'date-fns';
+import { useMemo, useState } from 'react';
+import { parseISO, format, addDays } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import classes from './Dashboard.module.css';
-import { BOOKING_STATUS, HK_STATUS } from '../../constants';
+import { HK_STATUS } from '../../constants';
 import { useDashboard } from '../../../../hooks/useDashboard';
 import { useMealsForDay } from '../../../../hooks/api/useMeals';
 import { byArrival, stayClock } from '../Timeline/stayTimes';
 
 const TODAY_STR = format(new Date(), 'yyyy-MM-dd');
+const EMPTY = [];
 
 function Dashboard() {
   const { data, loading, error } = useDashboard();
 
-  const bookings   = data?.bookings   ?? [];
-  const rooms      = data?.rooms      ?? [];
-  const categories = data?.categories ?? [];
+  const bookings   = data?.bookings   ?? EMPTY;
+  const rooms      = data?.rooms      ?? EMPTY;
+  const categories = data?.categories ?? EMPTY;
 
   const stats = useMemo(() => {
     // Кого встречать раньше — выше: по времени прибытия из заявки Kars Avia.

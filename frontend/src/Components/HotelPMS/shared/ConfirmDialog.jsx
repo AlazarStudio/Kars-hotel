@@ -43,6 +43,8 @@ export default function ConfirmDialog({
     <Modal
       open={open}
       title={title}
+      role="alertdialog"
+      busy={busy}
       onClose={busy ? undefined : onClose}
       width="sm"
       footer={
@@ -66,7 +68,7 @@ export default function ConfirmDialog({
         </>
       }
     >
-      {error && <div className={formClasses.alert}>{error}</div>}
+      {error && <div className={formClasses.alert} role="alert">{error}</div>}
       <div style={{ fontSize: 14, color: '#374151', lineHeight: 1.5 }}>{message}</div>
     </Modal>
   );

@@ -28,10 +28,13 @@ describe('planDirectorySync — справочник партнёра целик
 
   it('один код дважды в наборе — отказ, а не «последний победил»', () => {
     expect(() =>
-      planDirectorySync([], [
-        { code: 'FV', name: 'Россия' },
-        { code: ' FV ', name: 'Россия 2' },
-      ]),
+      planDirectorySync(
+        [],
+        [
+          { code: 'FV', name: 'Россия' },
+          { code: ' FV ', name: 'Россия 2' },
+        ],
+      ),
     ).toThrow(BadRequestException);
   });
 

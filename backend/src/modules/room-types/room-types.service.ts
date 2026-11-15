@@ -191,7 +191,10 @@ export class RoomTypesService {
   async setPhotos(id: string, photos: string[]): Promise<{ photos: string[] }> {
     const existing = await this.getRaw(id);
     const before = this.readPhotos(existing.photos);
-    const clean = photos.map((p) => String(p).trim()).filter(Boolean).map((p) => this.storage.toStored(p));
+    const clean = photos
+      .map((p) => String(p).trim())
+      .filter(Boolean)
+      .map((p) => this.storage.toStored(p));
     await this.persistPhotos(id, clean);
     const removed = before.filter((p) => !clean.includes(p));
     await Promise.all(removed.map((key) => this.storage.deleteByUrl(key)));
@@ -217,8 +220,6 @@ export class RoomTypesService {
   private currentTenantId(): string {
     // PrismaService.forTenant has already validated the GUC; this is only used
     // to populate the foreign-key column on the row itself.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { TenantContext } = require('../../common/context/tenant-context');
     return TenantContext.getTenantIdOrThrow();
   }
 

@@ -9,7 +9,11 @@ import {
   Min,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { FLIGHT_MAX, LOCAL_DATE_TIME, LOCAL_DATE_TIME_MESSAGE } from '../../reservations/stay-times';
+import {
+  FLIGHT_MAX,
+  LOCAL_DATE_TIME,
+  LOCAL_DATE_TIME_MESSAGE,
+} from '../../reservations/stay-times';
 
 /**
  * Правка брони, созданной партнёром.
@@ -83,12 +87,20 @@ export class ConnectUpdateReservationDto {
 
   /* Прилёт и отъезд по заявке и рейс (24.10.2026) — reservations/stay-times.ts.
      Не прислано — не трогаем, `null` — стираем. */
-  @ApiPropertyOptional({ example: '2026-10-22T02:00', nullable: true, description: 'Прилёт по заявке, местное время' })
+  @ApiPropertyOptional({
+    example: '2026-10-22T02:00',
+    nullable: true,
+    description: 'Прилёт по заявке, местное время',
+  })
   @IsOptional()
   @Matches(LOCAL_DATE_TIME, { message: LOCAL_DATE_TIME_MESSAGE })
   arrivalAt?: string | null;
 
-  @ApiPropertyOptional({ example: '2026-10-24T10:40', nullable: true, description: 'Отъезд по заявке, местное время' })
+  @ApiPropertyOptional({
+    example: '2026-10-24T10:40',
+    nullable: true,
+    description: 'Отъезд по заявке, местное время',
+  })
   @IsOptional()
   @Matches(LOCAL_DATE_TIME, { message: LOCAL_DATE_TIME_MESSAGE })
   departureAt?: string | null;

@@ -6,13 +6,14 @@ import { RedisService } from '../../common/redis/redis.service';
 import { InventoryService } from './inventory.service';
 import { BaselineResolver, isoDay } from '../pricing/rate-resolution';
 import { ContractsService } from '../contracts/contracts.service';
+import { checkRestrictionRules, effectiveRestrictions } from '../restrictions/restriction-rules';
 import {
   ContractPriceDoc,
   TariffSlice,
   contractNightRub,
   contractVatRate,
 } from '../contracts/contract-price';
-import { eachDayOfInterval, parseISO, format, differenceInCalendarDays } from 'date-fns';
+import { eachDayOfInterval, parseISO, format } from 'date-fns';
 
 /** Per-day availability result. */
 export interface DayAvailability {
@@ -24,7 +25,7 @@ export interface DayAvailability {
   stopSell: boolean;
   /** Minimum price across all active rate plans for this date (null = not configured). */
   minPrice: string | null;
-  /** Aggregated restrictions for this date (union of all applicable rules). */
+  /** Effective restrictions for this date; a plan-specific row overrides the general row. */
   restrictions: {
     closed: boolean;
     cta: boolean; // closed to arrival
@@ -41,6 +42,8 @@ export interface AvailabilityResult {
   nights: number;
   /** true if ALL days have available >= 1 and no blocking restrictions. */
   bookable: boolean;
+  /** Fresh booking preflight uses this without rejecting a free place in a shared room. */
+  restrictionsAllowed: boolean;
   days: DayAvailability[];
 }
 
@@ -48,6 +51,7 @@ export interface AvailabilityResult {
 export interface RatePlanNight {
   date: string; // 'YYYY-MM-DD'
   price: string | null; // resolved price for that night (RUB decimal string), null if not configured
+  vatRate: string | null;
 }
 
 /** Priced offer for a single rate plan over a stay period. */
@@ -61,9 +65,9 @@ export interface RatePlanPrice {
   partnerAccountId: string | null;
   partnerCustomerId: string | null;
   guestKind: string | null;
-  /** НДС тарифа партнёра, %; у корпоративного — ставка договора на первую
-   *  ночь (11.11.2026), null — без НДС или не задан. */
+  /** Общая ставка, только если она одинакова во все ночи. */
   vatRate: string | null;
+  vatMixed: boolean;
   nights: number;
   perNight: RatePlanNight[];
   /** Sum of per-night prices when EVERY night is priced; null otherwise. */
@@ -105,6 +109,7 @@ export class AvailabilityService {
     checkIn: string,
     checkOut: string,
     ratePlanId?: string,
+    options: { fresh?: boolean } = {},
   ): Promise<AvailabilityResult> {
     const tenantId = TenantContext.getTenantIdOrThrow();
     const cacheKey =
@@ -112,7 +117,7 @@ export class AvailabilityService {
       (ratePlanId ? `:${ratePlanId}` : '');
 
     // ── Cache hit ────────────────────────────────────────────────────────────
-    const cached = await this.redis.raw.get(cacheKey);
+    const cached = options.fresh ? null : await this.redis.raw.get(cacheKey);
     if (cached) {
       this.logger.debug(`Availability cache hit: ${cacheKey}`);
       return JSON.parse(cached) as AvailabilityResult;
@@ -158,6 +163,7 @@ export class AvailabilityService {
       // catch-all (rate_plan_id IS NULL) rows; otherwise only catch-all rows.
       type RestrictionRow = {
         date: Date;
+        rate_plan_id: string | null;
         closed: boolean;
         cta: boolean;
         ctd: boolean;
@@ -172,7 +178,7 @@ export class AvailabilityService {
 
       const restrictionRows: RestrictionRow[] = ratePlanId
         ? await tx.$queryRaw<RestrictionRow[]>`
-            SELECT date, closed, cta, ctd, stop_sell,
+            SELECT date, rate_plan_id, closed, cta, ctd, stop_sell,
                    min_los, max_los, min_los_arrival, max_los_arrival,
                    min_advance, max_advance
             FROM restriction
@@ -182,7 +188,7 @@ export class AvailabilityService {
               AND (rate_plan_id IS NULL OR rate_plan_id = ${ratePlanId}::uuid)
           `
         : await tx.$queryRaw<RestrictionRow[]>`
-            SELECT date, closed, cta, ctd, stop_sell,
+            SELECT date, rate_plan_id, closed, cta, ctd, stop_sell,
                    min_los, max_los, min_los_arrival, max_los_arrival,
                    min_advance, max_advance
             FROM restriction
@@ -196,35 +202,41 @@ export class AvailabilityService {
       //
       // The price for a (ratePlan × date) resolves as:
       //   per-day Rate row  →  covering season  →  standard price.
-      // We then take the cheapest across all (optionally one) rate plans.
-      // When no standard/season is configured this reduces to the previous
-      // behaviour (MIN over the per-day Rate rows), so the partner contract is
-      // unchanged for hotels that haven't set baseline prices yet.
+      // Take the cheapest across the hotel's own plans (optionally one).
+      // Corporate prices come only from the contract in priceByPlan.
       type DailyRow = { rate_plan_id: string; date: Date; price: string };
       const dailyRows: DailyRow[] = ratePlanId
         ? await tx.$queryRaw<DailyRow[]>`
-            SELECT rate_plan_id, date, MIN(price)::text AS price
-            FROM rate
-            WHERE tenant_id   = ${tenantId}::uuid
-              AND room_type_id = ${roomTypeId}::uuid
-              AND date BETWEEN ${checkInDate}::date AND ${checkOutDate}::date
-              AND rate_plan_id = ${ratePlanId}::uuid
-            GROUP BY rate_plan_id, date
+            SELECT r.rate_plan_id, r.date, MIN(r.price)::text AS price
+            FROM rate r
+            JOIN rate_plan p ON p.id = r.rate_plan_id AND p.tenant_id = r.tenant_id
+            WHERE r.tenant_id = ${tenantId}::uuid
+              AND r.room_type_id = ${roomTypeId}::uuid
+              AND r.date BETWEEN ${checkInDate}::date AND ${checkOutDate}::date
+              AND r.rate_plan_id = ${ratePlanId}::uuid
+              AND p.partner_id IS NULL
+            GROUP BY r.rate_plan_id, r.date
           `
         : await tx.$queryRaw<DailyRow[]>`
-            SELECT rate_plan_id, date, MIN(price)::text AS price
-            FROM rate
-            WHERE tenant_id   = ${tenantId}::uuid
-              AND room_type_id = ${roomTypeId}::uuid
-              AND date BETWEEN ${checkInDate}::date AND ${checkOutDate}::date
-            GROUP BY rate_plan_id, date
+            SELECT r.rate_plan_id, r.date, MIN(r.price)::text AS price
+            FROM rate r
+            JOIN rate_plan p ON p.id = r.rate_plan_id AND p.tenant_id = r.tenant_id
+            WHERE r.tenant_id = ${tenantId}::uuid
+              AND r.room_type_id = ${roomTypeId}::uuid
+              AND r.date BETWEEN ${checkInDate}::date AND ${checkOutDate}::date
+              AND p.partner_id IS NULL
+            GROUP BY r.rate_plan_id, r.date
           `;
 
+      const ownRateScope = {
+        roomTypeId,
+        ratePlanId: ratePlanId || undefined,
+        ratePlan: { tenantId, partnerId: null },
+      };
       const [seasonRows, standardRows] = await Promise.all([
         tx.rateSeason.findMany({
           where: {
-            roomTypeId,
-            ratePlanId: ratePlanId || undefined,
+            ...ownRateScope,
             dateFrom: { lte: checkOutDate },
             dateTo: { gte: checkInDate },
           },
@@ -239,7 +251,7 @@ export class AvailabilityService {
           },
         }),
         tx.standardRate.findMany({
-          where: { roomTypeId, ratePlanId: ratePlanId || undefined },
+          where: ownRateScope,
           select: { ratePlanId: true, roomTypeId: true, price: true, occupancy: true },
         }),
       ]);
@@ -287,7 +299,21 @@ export class AvailabilityService {
 
       // Build lookup maps
       const invByDate = new Map(inventoryRows.map((r) => [format(r.date, 'yyyy-MM-dd'), r]));
-      const resByDate = new Map(restrictionRows.map((r) => [format(r.date, 'yyyy-MM-dd'), r]));
+      const rules = restrictionRows.map((r) => ({
+        date: r.date,
+        ratePlanId: r.rate_plan_id,
+        closed: r.closed,
+        cta: r.cta,
+        ctd: r.ctd,
+        stopSell: r.stop_sell,
+        minLos: r.min_los,
+        maxLos: r.max_los,
+        minLosArrival: r.min_los_arrival,
+        maxLosArrival: r.max_los_arrival,
+        minAdvance: r.min_advance,
+        maxAdvance: r.max_advance,
+      }));
+      const resByDate = effectiveRestrictions(rules);
       const priceByDate = new Map(
         priceRows.map((r) => [format(r.date, 'yyyy-MM-dd'), r.min_price]),
       );
@@ -302,7 +328,7 @@ export class AvailabilityService {
         const totalRooms = inv?.total_rooms ?? roomCount;
         const bookedRooms = inv?.booked_rooms ?? 0;
         const blockedRooms = inv?.blocked_rooms ?? 0;
-        const stopSell = inv?.stop_sell ?? false;
+        const stopSell = (inv?.stop_sell ?? false) || (res?.stopSell ?? false);
         const available = InventoryService.computeAvailable({
           totalRooms,
           bookedRooms,
@@ -311,10 +337,12 @@ export class AvailabilityService {
 
         // Resolve LOS restrictions: per-date rules + arrival-specific rules on checkIn.
         const isArrivalDate = key === checkIn;
-        const minLos = res
-          ? Math.max(res.min_los ?? 0, isArrivalDate ? (res.min_los_arrival ?? 0) : 0) || null
-          : null;
-        const maxLos = res ? (res.max_los ?? res.max_los_arrival ?? null) : null;
+        const minLos =
+          Math.max(res?.minLos ?? 0, isArrivalDate ? (res?.minLosArrival ?? 0) : 0) || null;
+        const maxima = [res?.maxLos, isArrivalDate ? res?.maxLosArrival : null].filter(
+          (n): n is number => n != null,
+        );
+        const maxLos = maxima.length ? Math.min(...maxima) : null;
 
         return {
           date: key,
@@ -326,8 +354,8 @@ export class AvailabilityService {
           minPrice: priceByDate.get(key) ?? null,
           restrictions: {
             closed: res?.closed ?? false,
-            cta: isArrivalDate ? (res?.cta ?? false) : false,
-            ctd: key === format(checkOutDate, 'yyyy-MM-dd') ? (res?.ctd ?? false) : false,
+            cta: isArrivalDate && (res?.cta ?? false),
+            ctd: false,
             minLos,
             maxLos,
           },
@@ -335,15 +363,13 @@ export class AvailabilityService {
       });
 
       // bookable = every night is available AND no blocking restriction applies
-      const bookable = days.every(
-        (d) =>
-          d.available >= 1 &&
-          !d.stopSell &&
-          !d.restrictions.closed &&
-          !(d.restrictions.cta && d.date === checkIn) &&
-          (d.restrictions.minLos === null || nights >= d.restrictions.minLos) &&
-          (d.restrictions.maxLos === null || nights <= d.restrictions.maxLos),
-      );
+      const restrictionsAllowed =
+        checkRestrictionRules(
+          rules,
+          new Date(`${checkIn}T00:00:00Z`),
+          new Date(`${checkOut}T00:00:00Z`),
+        ).allowed && stayDates.every((d) => !invByDate.get(format(d, 'yyyy-MM-dd'))?.stop_sell);
+      const bookable = restrictionsAllowed && days.every((d) => d.available >= 1);
 
       return {
         roomTypeId,
@@ -351,6 +377,7 @@ export class AvailabilityService {
         checkOut,
         nights,
         bookable,
+        restrictionsAllowed,
         days,
       } satisfies AvailabilityResult;
     });
@@ -451,10 +478,7 @@ export class AvailabilityService {
       /* Корпоративный тариф считает по договору, а не по своим строкам
          (11.11.2026): сетки цен приезжают в зеркале договора. Срезы и документы
          сервис читает один раз на партнёра — их единицы. */
-      const contractByPlan = new Map<
-        string,
-        { slice: TariffSlice; docs: ContractPriceDoc[] }
-      >();
+      const contractByPlan = new Map<string, { slice: TariffSlice; docs: ContractPriceDoc[] }>();
       const slices = await this.contracts.slicesFor(ratePlans, tx);
       for (const plan of ratePlans) {
         const entry = slices.get(plan.id);
@@ -530,7 +554,8 @@ export class AvailabilityService {
         if (!list?.length) return null;
         if (guests) {
           // Точное число гостей, иначе цена «на любое» (0) — как у базовых цен.
-          const exact = list.find((x) => x.occupancy === guests) ?? list.find((x) => x.occupancy === 0);
+          const exact =
+            list.find((x) => x.occupancy === guests) ?? list.find((x) => x.occupancy === 0);
           if (exact) return exact.price;
         }
         return list.reduce((m, x) => (x.price.lessThan(m) ? x.price : m), list[0].price);
@@ -561,7 +586,16 @@ export class AvailabilityService {
             eff = daily ?? baseline.resolve(plan.id, roomTypeId, day, guests) ?? baseFallback;
           }
 
-          perNight.push({ date: day, price: eff != null ? eff.toFixed(2) : null });
+          const vat = isPartnerPlan
+            ? corp
+              ? contractVatRate(corp.docs, corp.slice, day)
+              : null
+            : plan.vatRate;
+          perNight.push({
+            date: day,
+            price: eff != null ? eff.toFixed(2) : null,
+            vatRate: vat == null ? null : String(vat),
+          });
 
           if (eff == null) {
             total = null; // a missing night means we cannot quote a full total
@@ -583,25 +617,10 @@ export class AvailabilityService {
           partnerAccountId: plan.partnerAccountId,
           partnerCustomerId: plan.partnerCustomerId,
           guestKind: plan.guestKind,
-          /* НДС корпоративного тарифа — из документа договора (спека §3):
-             поле тарифа у него больше не заполняется, и отдать сюда null
-             значило бы попросить оператора считать по своей ставке. В ответе
-             одно число на весь срок — берём ставку первой ночи; ставка,
-             разная по ночам, сюда не влезает (её отдаёт contractPrices). */
-          vatRate: isPartnerPlan
-            ? corp && stayDates.length
-              ? (() => {
-                  const vat = contractVatRate(
-                    corp.docs,
-                    corp.slice,
-                    format(stayDates[0], 'yyyy-MM-dd'),
-                  );
-                  return vat == null ? null : String(vat);
-                })()
-              : null
-            : plan.vatRate != null
-              ? plan.vatRate.toString()
-              : null,
+          vatRate: perNight.every((n) => n.vatRate === perNight[0].vatRate)
+            ? perNight[0].vatRate
+            : null,
+          vatMixed: perNight.some((n) => n.vatRate !== perNight[0].vatRate),
           nights: stayDates.length,
           perNight,
           total: total.toFixed(2),
@@ -625,6 +644,7 @@ export class AvailabilityService {
       checkOut,
       nights: 0,
       bookable: false,
+      restrictionsAllowed: false,
       days: [],
     };
   }

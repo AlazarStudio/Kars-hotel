@@ -141,6 +141,7 @@ function fixture(opts: {
   rates?: RateRow[];
   standardRates?: StandardRow[];
   occupancy?: number;
+  parents?: PlanRow[];
 }) {
   const tx = {
     roomType: { findUnique: jest.fn(async () => ({ id: ROOM_TYPE, baseOccupancy: 2 })) },
@@ -148,7 +149,9 @@ function fixture(opts: {
        наследование цены сюда не подмешивается. */
     ratePlan: {
       findUnique: jest.fn(async (args: { where: { id: string } }) =>
-        args.where.id === opts.plan.id ? opts.plan : null,
+        args.where.id === opts.plan.id
+          ? opts.plan
+          : (opts.parents?.find((p) => p.id === args.where.id) ?? null),
       ),
     },
     rate: { findMany: jest.fn(async () => opts.rates ?? []) },
@@ -182,6 +185,17 @@ function fixture(opts: {
 }
 
 describe('PricingService.quote — цена корпоративного тарифа из договора', () => {
+  it('rejects legacy ordinary inheritance from a corporate plan without reading its historical rates', async () => {
+    const { quote, tx } = fixture({
+      plan: { ...OWN, parentRatePlanId: CORPORATE_PLAN },
+      parents: [CORPORATE],
+      standardRates: [
+        { ratePlanId: CORPORATE_PLAN, roomTypeId: ROOM_TYPE, price: D(9999), occupancy: 2 },
+      ],
+    });
+    await expect(quote()).rejects.toThrow(/корпоратив/i);
+    expect(tx.standardRate.findMany).not.toHaveBeenCalled();
+  });
   it('prices a corporate plan only from the contract, despite its own rows', async () => {
     /* Риск: у корпоративного тарифа с прошлой жизни остались свои строки цен
        (rate 9 999 и standard 7 000). Если расчёт возьмёт любую из них, оператору

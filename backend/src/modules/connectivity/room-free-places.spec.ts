@@ -8,13 +8,50 @@ import { ConnectivityService } from './connectivity.service';
  * Новый гость 24.10–08.11 помещается на место 1. Сумма людей давала «2 из 2»
  * и прятала номер как занятый. */
 
-type Res = { room_id: string; place_number: number; adults: number; children: number | null; check_in: string; check_out: string };
+type Res = {
+  room_id: string;
+  place_number: number;
+  adults: number;
+  children: number | null;
+  check_in: string;
+  check_out: string;
+};
 
-const ROOM = { id: 'r46', room_type_id: 'rt', number: '22 Партсъезда 64 кв 46', floor: 1, capacity: 2, bed_type: 'TWIN', view: 'NONE', partner_hold: 'NONE' };
+const ROOM = {
+  id: 'r46',
+  room_type_id: 'rt',
+  number: '22 Партсъезда 64 кв 46',
+  floor: 1,
+  capacity: 2,
+  bed_type: 'TWIN',
+  view: 'NONE',
+  partner_hold: 'NONE',
+};
 const RES: Res[] = [
-  { room_id: 'r46', place_number: 1, adults: 1, children: 0, check_in: '2026-10-21', check_out: '2026-10-24' },
-  { room_id: 'r46', place_number: 2, adults: 1, children: 0, check_in: '2026-10-21', check_out: '2026-10-27' },
-  { room_id: 'r46', place_number: 2, adults: 1, children: 0, check_in: '2026-10-28', check_out: '2026-11-13' },
+  {
+    room_id: 'r46',
+    place_number: 1,
+    adults: 1,
+    children: 0,
+    check_in: '2026-10-21',
+    check_out: '2026-10-24',
+  },
+  {
+    room_id: 'r46',
+    place_number: 2,
+    adults: 1,
+    children: 0,
+    check_in: '2026-10-21',
+    check_out: '2026-10-27',
+  },
+  {
+    room_id: 'r46',
+    place_number: 2,
+    adults: 1,
+    children: 0,
+    check_in: '2026-10-28',
+    check_out: '2026-11-13',
+  },
 ];
 
 function make(multiPlace: boolean, reservations: Res[] = RES) {
@@ -36,9 +73,27 @@ function make(multiPlace: boolean, reservations: Res[] = RES) {
   };
   Object.assign(svc, { prisma });
   return svc as unknown as {
-    listRoomsForCategory: (t: string, rt: string, i: string, o: string) => Promise<{ available: boolean }[]>;
-    pickAvailableRoom: (t: string, rt: string, i: string, o: string, g?: number) => Promise<string | null>;
-    resolvePinnedRoom: (t: string, r: string, rt: string, i: string, o: string, g?: number) => Promise<string>;
+    listRoomsForCategory: (
+      t: string,
+      rt: string,
+      i: string,
+      o: string,
+    ) => Promise<{ available: boolean }[]>;
+    pickAvailableRoom: (
+      t: string,
+      rt: string,
+      i: string,
+      o: string,
+      g?: number,
+    ) => Promise<string | null>;
+    resolvePinnedRoom: (
+      t: string,
+      r: string,
+      rt: string,
+      i: string,
+      o: string,
+      g?: number,
+    ) => Promise<string>;
   };
 }
 
@@ -48,7 +103,9 @@ describe('номер свободен по местам, а не по сумме
     const [room] = await svc.listRoomsForCategory('t', 'rt', '2026-10-24', '2026-11-08');
     expect(room.available).toBe(true);
     expect(await svc.pickAvailableRoom('t', 'rt', '2026-10-24', '2026-11-08')).toBe('r46');
-    await expect(svc.resolvePinnedRoom('t', 'r46', 'rt', '2026-10-24', '2026-11-08')).resolves.toBe('r46');
+    await expect(svc.resolvePinnedRoom('t', 'r46', 'rt', '2026-10-24', '2026-11-08')).resolves.toBe(
+      'r46',
+    );
   });
 
   it('оба места заняты весь период — номер НЕ свободен', async () => {

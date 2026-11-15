@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/context/tenant-context';
 import { TimelineGateway } from '../timeline/timeline.gateway';
@@ -35,16 +40,24 @@ export class GuestDataService {
   async anonymize(id: string, userId: string): Promise<{ id: string; anonymized: true }> {
     const tenantId = TenantContext.getTenantIdOrThrow();
     await this.prisma.forTenant(async (tx) => {
-      const r = await tx.reservation.findUnique({ where: { id }, select: { id: true, status: true } });
+      const r = await tx.reservation.findUnique({
+        where: { id },
+        select: { id: true, status: true },
+      });
       if (!r) throw new NotFoundException('Reservation not found');
       if (!FINISHED.includes(r.status)) {
-        throw new ConflictException('Обезличить можно завершённую бронь: выехал, отменена или неявка');
+        throw new ConflictException(
+          'Обезличить можно завершённую бронь: выехал, отменена или неявка',
+        );
       }
       await tx.reservation.update({
         where: { id },
         data: { guestName: ANONYMIZED_NAME, phone: null, email: null, notes: null },
       });
-      await tx.payment.updateMany({ where: { folio: { reservationId: id } }, data: { note: null } });
+      await tx.payment.updateMany({
+        where: { folio: { reservationId: id } },
+        data: { note: null },
+      });
     });
     // Следы в журнале: те же поля в «до/после» правок этой брони.
     await this.prisma.admin.$executeRaw`
@@ -58,7 +71,13 @@ export class GuestDataService {
          AND diff IS NOT NULL
          AND jsonb_typeof(diff) = 'object'
     `;
-    await this.prisma.writeAuditLog({ tenantId, userId, entity: 'reservation', entityId: id, action: 'anonymize' });
+    await this.prisma.writeAuditLog({
+      tenantId,
+      userId,
+      entity: 'reservation',
+      entityId: id,
+      action: 'anonymize',
+    });
     this.timeline?.notifyUpdate(tenantId, { action: 'updated' });
     return { id, anonymized: true };
   }
@@ -76,7 +95,9 @@ export class GuestDataService {
         where: {
           OR: [
             ...(email ? [{ email: { equals: email, mode: 'insensitive' as const } }] : []),
-            ...(name.length >= 5 ? [{ guestName: { equals: name, mode: 'insensitive' as const } }] : []),
+            ...(name.length >= 5
+              ? [{ guestName: { equals: name, mode: 'insensitive' as const } }]
+              : []),
             ...(phone.length >= 10 ? [{ phone: { not: null } }] : []),
           ],
         },
@@ -121,8 +142,21 @@ export class GuestDataService {
           children: r.children,
           notes: r.notes,
           createdAt: r.createdAt,
-          charges: f?.charges.map((c) => ({ type: c.type, description: c.description, total: Number(c.total), addedAt: c.addedAt })) ?? [],
-          payments: f?.payments.map((p) => ({ type: p.type, method: p.method, amount: Number(p.amount), receivedAt: p.receivedAt, note: p.note })) ?? [],
+          charges:
+            f?.charges.map((c) => ({
+              type: c.type,
+              description: c.description,
+              total: Number(c.total),
+              addedAt: c.addedAt,
+            })) ?? [],
+          payments:
+            f?.payments.map((p) => ({
+              type: p.type,
+              method: p.method,
+              amount: Number(p.amount),
+              receivedAt: p.receivedAt,
+              note: p.note,
+            })) ?? [],
         };
       }),
     };

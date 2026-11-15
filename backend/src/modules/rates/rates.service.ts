@@ -54,10 +54,18 @@ export class RatesService {
     );
     const day = (d: Date) => d.toISOString().slice(0, 10);
     const lines = new Map<string, string[]>(ids.map((id) => [id, []]));
-    for (const r of days) lines.get(r.ratePlanId)?.push(`d|${r.roomTypeId}|${day(r.date)}|${r.occupancy}|${r.price}|${r.currency}`);
+    for (const r of days)
+      lines
+        .get(r.ratePlanId)
+        ?.push(`d|${r.roomTypeId}|${day(r.date)}|${r.occupancy}|${r.price}|${r.currency}`);
     for (const r of seasons)
-      lines.get(r.ratePlanId)?.push(`s|${r.roomTypeId}|${day(r.dateFrom)}|${day(r.dateTo)}|${r.occupancy}|${r.price}|${r.currency}`);
-    for (const r of standard) lines.get(r.ratePlanId)?.push(`b|${r.roomTypeId}|${r.occupancy}|${r.price}|${r.currency}`);
+      lines
+        .get(r.ratePlanId)
+        ?.push(
+          `s|${r.roomTypeId}|${day(r.dateFrom)}|${day(r.dateTo)}|${r.occupancy}|${r.price}|${r.currency}`,
+        );
+    for (const r of standard)
+      lines.get(r.ratePlanId)?.push(`b|${r.roomTypeId}|${r.occupancy}|${r.price}|${r.currency}`);
     return new Map([...lines].map(([id, l]) => [id, l.sort().join(';')]));
   }
 
@@ -129,7 +137,10 @@ export class RatesService {
         },
       },
     });
-    await this.pricesChanged(dto.items.map((it) => it.ratePlanId), before);
+    await this.pricesChanged(
+      dto.items.map((it) => it.ratePlanId),
+      before,
+    );
     return result;
   }
 

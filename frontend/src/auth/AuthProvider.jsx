@@ -1,11 +1,10 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useState,
 } from "react";
+import { AuthContext, AUTH_STATUS as STATUS } from './AuthContext';
 import * as authApi from "../api/auth";
 import * as superAdminApi from "../api/superadmin";
 import { getTenantSettings } from "../api/tenant";
@@ -21,16 +20,6 @@ import {
   setImpersonatedTenant as persistImpersonatedTenant,
   setImpersonatingFlag,
 } from "../api/client";
-
-const AuthContext = createContext(null);
-
-const STATUS = Object.freeze({
-  LOADING: "loading",
-  AUTHENTICATED: "authenticated",
-  UNAUTHENTICATED: "unauthenticated",
-  // Вход вкладки сменился или кончился — работа в ней остановлена (api/session-refresh.js).
-  STOPPED: "stopped",
-});
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -274,11 +263,3 @@ export function AuthProvider({ children }) {
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
-
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used inside <AuthProvider>");
-  return ctx;
-}
-
-export const AUTH_STATUS = STATUS;

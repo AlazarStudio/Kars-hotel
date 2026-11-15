@@ -263,7 +263,9 @@ describe('«Отменено» формой брони', () => {
 
   it('бронь Kars Avia — партнёрский API отменяет: и правкой, и отменой', async () => {
     const edit = make({ status: 'CONFIRMED', channel_managed: true });
-    await expect(save(edit.svc, { status: 'cancelled' }, { fromChannel: true })).resolves.toMatchObject({
+    await expect(
+      save(edit.svc, { status: 'cancelled' }, { fromChannel: true }),
+    ).resolves.toMatchObject({
       status: 'CANCELLED',
     });
     expect(edit.audit.map((a) => a.action)).toEqual(['update', 'cancel']);
@@ -271,20 +273,27 @@ describe('«Отменено» формой брони', () => {
 
     const cancel = make({ status: 'CONFIRMED', channel_managed: true });
     await expect(
-      asOwner(() => cancel.svc.cancel('r1', undefined as never, 'Рейс отменён', { fromChannel: true })),
+      asOwner(() =>
+        cancel.svc.cancel('r1', undefined as never, 'Рейс отменён', { fromChannel: true }),
+      ),
     ).resolves.toMatchObject({ status: 'CANCELLED', cancelled: true });
     expect(cancel.wrote()).toBe(true);
     expect(cancel.audit).toEqual([
       expect.objectContaining({
         action: 'cancel',
-        diff: { before: { status: 'CONFIRMED' }, after: { status: 'CANCELLED', reason: 'Рейс отменён' } },
+        diff: {
+          before: { status: 'CONFIRMED' },
+          after: { status: 'CANCELLED', reason: 'Рейс отменён' },
+        },
       }),
     ]);
   });
 
   it('своя бронь гостиницы — отменяет, как раньше: журнал «cancel», без событий заезда и выезда', async () => {
     const t = make({ status: 'CONFIRMED', channel_managed: false });
-    await expect(save(t.svc, { status: 'cancelled' })).resolves.toMatchObject({ status: 'CANCELLED' });
+    await expect(save(t.svc, { status: 'cancelled' })).resolves.toMatchObject({
+      status: 'CANCELLED',
+    });
     expect(t.audit.map((a) => a.action)).toEqual(['update', 'cancel']);
     expect(t.audit[1]).toMatchObject({
       diff: { before: { status: 'CONFIRMED' }, after: { status: 'CANCELLED', reason: null } },
@@ -309,9 +318,14 @@ describe('«Отменено» формой брони', () => {
   it.each([
     ['бронь Kars Avia', true],
     ['своя бронь', false],
-  ])('повторно «Отменено» — НЕ новая отмена (%s): правка проходит, журнал без «cancel»', async (_n, channel) => {
-    const t = make({ status: 'CANCELLED', channel_managed: channel });
-    await expect(save(t.svc, { status: 'cancelled', notes: 'Гость звонил' })).resolves.toBeDefined();
-    expect(t.audit.map((a) => a.action)).toEqual(['update']);
-  });
+  ])(
+    'повторно «Отменено» — НЕ новая отмена (%s): правка проходит, журнал без «cancel»',
+    async (_n, channel) => {
+      const t = make({ status: 'CANCELLED', channel_managed: channel });
+      await expect(
+        save(t.svc, { status: 'cancelled', notes: 'Гость звонил' }),
+      ).resolves.toBeDefined();
+      expect(t.audit.map((a) => a.action)).toEqual(['update']);
+    },
+  );
 });

@@ -13,20 +13,43 @@ describe('журнал действий: секреты не записываю�
     ['MRZ', { mrzLines: 'P<RUSIVANOV' }],
     ['переменные GraphQL', { query: 'mutation', variables: { input: { password: 'x' } } }],
   ])('%s — скрыт', (_n, body) => {
-    expect(JSON.stringify(redactForJournal(body, '/api/users'))).not.toMatch(/Qwerty|old"|new"|1234|abc|"k"|4510|IVANOV|"x"/);
+    expect(JSON.stringify(redactForJournal(body, '/api/users'))).not.toMatch(
+      /Qwerty|old"|new"|1234|abc|"k"|4510|IVANOV|"x"/,
+    );
   });
 
   it('код входа скрыт на входе и во втором факторе', () => {
-    expect(redactForJournal({ code: '481516' }, '/api/auth/login')).toEqual({ code: JOURNAL_HIDDEN });
-    expect(redactForJournal({ code: '481516' }, '/api/auth/2fa/verify')).toEqual({ code: JOURNAL_HIDDEN });
+    expect(redactForJournal({ code: '481516' }, '/api/auth/login')).toEqual({
+      code: JOURNAL_HIDDEN,
+    });
+    expect(redactForJournal({ code: '481516' }, '/api/auth/2fa/verify')).toEqual({
+      code: JOURNAL_HIDDEN,
+    });
   });
 
   it('код организации и тарифа — НЕ секрет, записывается', () => {
-    expect(redactForJournal({ code: 'SU', name: 'Аэрофлот' }, '/api/organizations')).toEqual({ code: 'SU', name: 'Аэрофлот' });
+    expect(redactForJournal({ code: 'SU', name: 'Аэрофлот' }, '/api/organizations')).toEqual({
+      code: 'SU',
+      name: 'Аэрофлот',
+    });
+  });
+
+  it('ключ отчётов скрыт только на его маршруте, включая вложенные поля', () => {
+    const body = { key: 'fixture-report-key', nested: [{ KEY: 'fixture-another-key' }] };
+    expect(redactForJournal(body, '/API/CONNECT/V1/HOTELS/imperiya/REPORTS-KEY/?x=1')).toEqual({
+      key: JOURNAL_HIDDEN,
+      nested: [{ KEY: JOURNAL_HIDDEN }],
+    });
+    expect(redactForJournal(body, '/api/connect/v1/hotels/imperiya/reports-key-extra')).toEqual(
+      body,
+    );
+    expect(redactForJournal(body, '/api/technical')).toEqual(body);
   });
 
   it('обычные значения записываются как есть', () => {
-    expect(redactForJournal({ adults: 2, guestName: 'Морозова', at: null }, '/api/requests/1')).toEqual({
+    expect(
+      redactForJournal({ adults: 2, guestName: 'Морозова', at: null }, '/api/requests/1'),
+    ).toEqual({
       adults: 2,
       guestName: 'Морозова',
       at: null,
@@ -34,7 +57,10 @@ describe('журнал действий: секреты не записываю�
   });
 
   it('длинное обрезано с пометкой, сколько скрыто', () => {
-    const r = redactForJournal({ notes: 'x'.repeat(2100), ids: Array.from({ length: 60 }, (_, i) => i) }, '/api/x') as {
+    const r = redactForJournal(
+      { notes: 'x'.repeat(2100), ids: Array.from({ length: 60 }, (_, i) => i) },
+      '/api/x',
+    ) as {
       notes: string;
       ids: unknown[];
     };

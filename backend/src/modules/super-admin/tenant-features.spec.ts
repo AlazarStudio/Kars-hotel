@@ -25,13 +25,22 @@ function make(tenants: T[]) {
   const prisma = {
     admin: {
       tenant: {
-        findMany: jest.fn(async ({ where }: { where: Record<string, any> }) =>
-          tenants.filter(
-            (t) =>
-              where.id.in.includes(t.id) &&
-              t.slug !== where.slug.not &&
-              t.multiPlaceEnabled !== where.multiPlaceEnabled.not,
-          ),
+        findMany: jest.fn(
+          async ({
+            where,
+          }: {
+            where: {
+              id: { in: string[] };
+              slug: { not: string };
+              multiPlaceEnabled: { not: boolean };
+            };
+          }) =>
+            tenants.filter(
+              (t) =>
+                where.id.in.includes(t.id) &&
+                t.slug !== where.slug.not &&
+                t.multiPlaceEnabled !== where.multiPlaceEnabled.not,
+            ),
         ),
         updateMany,
       },
@@ -53,7 +62,10 @@ describe('функции гостиниц — массово', () => {
       { id: C, slug: 'c', multiPlaceEnabled: false },
       { id: P, slug: 'platform', multiPlaceEnabled: false },
     ]);
-    const r = await svc.applyFeature({ feature: 'multiPlaceEnabled', enabled: true, tenantIds: [A, B, P] }, actor);
+    const r = await svc.applyFeature(
+      { feature: 'multiPlaceEnabled', enabled: true, tenantIds: [A, B, P] },
+      actor,
+    );
     expect(r).toMatchObject({ changed: 1, requested: 3 });
     expect(tenants.map((t) => t.multiPlaceEnabled)).toEqual([true, true, false, false]);
     expect(createMany).toHaveBeenCalledWith({
@@ -63,18 +75,27 @@ describe('функции гостиниц — массово', () => {
 
   it('ничего не меняется — в журнал ничего не пишется', async () => {
     const { svc, updateMany, createMany } = make([{ id: A, slug: 'a', multiPlaceEnabled: true }]);
-    expect(await svc.applyFeature({ feature: 'multiPlaceEnabled', enabled: true, tenantIds: [A] }, actor)).toMatchObject({ changed: 0 });
+    expect(
+      await svc.applyFeature(
+        { feature: 'multiPlaceEnabled', enabled: true, tenantIds: [A] },
+        actor,
+      ),
+    ).toMatchObject({ changed: 0 });
     expect(updateMany).not.toHaveBeenCalled();
     expect(createMany).not.toHaveBeenCalled();
   });
 
   it('поле вне каталога — НЕ пишется: ни проверкой запроса, ни сервисом', async () => {
-    const bad = plainToInstance(ApplyFeatureDto, { feature: 'isActive', enabled: false, tenantIds: [A] });
+    const bad = plainToInstance(ApplyFeatureDto, {
+      feature: 'isActive',
+      enabled: false,
+      tenantIds: [A],
+    });
     expect(validateSync(bad).map((e) => e.property)).toContain('feature');
     const { svc, updateMany } = make([{ id: A, slug: 'a', multiPlaceEnabled: true }]);
-    await expect(svc.applyFeature({ feature: 'isActive', enabled: false, tenantIds: [A] }, actor)).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(
+      svc.applyFeature({ feature: 'isActive', enabled: false, tenantIds: [A] }, actor),
+    ).rejects.toBeInstanceOf(NotFoundException);
     expect(updateMany).not.toHaveBeenCalled();
   });
 });

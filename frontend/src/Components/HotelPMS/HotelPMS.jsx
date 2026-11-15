@@ -1,5 +1,4 @@
-import React from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import classes from './HotelPMS.module.css';
 import Sidebar from './components/Sidebar/Sidebar';
 import OfferGate from './components/OfferGate/OfferGate';
@@ -20,7 +19,6 @@ import { PMS_SECTIONS as SECTIONS } from './sections';
 
 function HotelPMS() {
   const location = useLocation();
-  const navigate = useNavigate();
 
   const pathSection = location.pathname.slice(1);
   const activeSection = SECTIONS.includes(pathSection) ? pathSection : 'dashboard';

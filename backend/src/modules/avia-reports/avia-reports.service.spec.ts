@@ -25,7 +25,9 @@ describe('AviaReportsService — ключ гостиницы', () => {
   beforeEach(() => {
     process.env.PARTNER_REPORTS_URL = 'http://avia.test/api/hotel/connect/reports';
     process.env.PARTNER_WEBHOOK_SECRET = 'webhook-secret';
-    fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('[]', { status: 200 }));
+    fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('[]', { status: 200 }));
   });
   afterEach(() => {
     process.env = { ...env };

@@ -68,6 +68,15 @@ const fillOf = (from: string, price: number) => [
 ];
 
 describe('contractNightPrice', () => {
+  it('matches legacy document and tariff numbers with surrounding whitespace', () => {
+    expect(
+      contractNightPrice([doc({ contractNumber: ' 205 ' })], slice(), 'rt1', 1, '2026-03-01'),
+    ).toBe(300000);
+    expect(
+      contractNightPrice([doc()], slice({ contractNumber: ' 205 ' }), 'rt1', 1, '2026-03-01'),
+    ).toBe(300000);
+  });
+
   it('берёт ячейку среза: категория и число гостей', () => {
     expect(contractNightPrice([doc()], slice(), 'rt1', 2, '2026-03-01')).toBe(460000);
   });

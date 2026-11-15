@@ -37,7 +37,11 @@ export class OfferService {
       }),
       this.prisma.admin.tenant.findUnique({
         where: { id: tenantId },
-        select: { incidentContactName: true, incidentContactPhone: true, incidentContactEmail: true },
+        select: {
+          incidentContactName: true,
+          incidentContactPhone: true,
+          incidentContactEmail: true,
+        },
       }),
     ]);
     return {
@@ -47,7 +51,11 @@ export class OfferService {
       acceptedAt: last?.acceptedAt ?? null,
       required: version > 0 && (last?.version ?? 0) < version,
       incidentContact: tenant?.incidentContactName
-        ? { name: tenant.incidentContactName, phone: tenant.incidentContactPhone, email: tenant.incidentContactEmail }
+        ? {
+            name: tenant.incidentContactName,
+            phone: tenant.incidentContactPhone,
+            email: tenant.incidentContactEmail,
+          }
         : null,
     };
   }
@@ -64,19 +72,29 @@ export class OfferService {
     const version = offerVersion();
     if (!version) throw new BadRequestException('Оферта ещё не опубликована');
     if (dto.version !== version) {
-      throw new BadRequestException('Версия оферты сменилась — обновите страницу и прочтите текущую');
+      throw new BadRequestException(
+        'Версия оферты сменилась — обновите страницу и прочтите текущую',
+      );
     }
     const c = dto.incidentContact ?? {};
     const name = (c.name ?? '').trim();
     const phone = (c.phone ?? '').trim();
     const email = (c.email ?? '').trim();
-    if (name.length < 2 || phone.replace(/\D/g, '').length < 10 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (
+      name.length < 2 ||
+      phone.replace(/\D/g, '').length < 10 ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+    ) {
       throw new BadRequestException('Укажите контакт для инцидентов: ФИО, телефон и e-mail');
     }
     await this.prisma.admin.$transaction([
       this.prisma.admin.tenant.update({
         where: { id: user.tenantId },
-        data: { incidentContactName: name, incidentContactPhone: phone, incidentContactEmail: email },
+        data: {
+          incidentContactName: name,
+          incidentContactPhone: phone,
+          incidentContactEmail: email,
+        },
       }),
       this.prisma.admin.tenantOfferAcceptance.upsert({
         where: { tenantId_version: { tenantId: user.tenantId, version } },

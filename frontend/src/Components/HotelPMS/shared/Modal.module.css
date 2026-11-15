@@ -26,8 +26,18 @@
   flex-direction: column;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
   overflow: hidden;
-  animation: zoomIn 0.14s ease-out;
+  animation: fadeIn 0.14s ease-out;
 }
+
+.dialog:focus { outline: none; }
+.dialog button:focus-visible { outline: 2px solid #1E88E5; outline-offset: 3px; }
+.dialog button:disabled { cursor: not-allowed; opacity: .6; }
+.dialog[role='alertdialog'] { border: 1px solid #E0E7F0; border-radius: 15px; box-shadow: 0 24px 70px rgba(15,31,63,.24); }
+.dialog[role='alertdialog'] .header { padding: 21px 24px 17px; }
+.dialog[role='alertdialog'] .body { padding-top: 18px; padding-bottom: 24px; }
+.dialog[role='alertdialog'] .footer { gap: 10px; flex-wrap: wrap; padding: 16px 24px; }
+.dialog[role='alertdialog'] .footer button { min-height: 40px; }
+@media (prefers-reduced-motion: reduce) { .backdrop, .dialog { animation: none; } }
 
 @keyframes zoomIn {
   from { transform: scale(0.96); opacity: 0; }

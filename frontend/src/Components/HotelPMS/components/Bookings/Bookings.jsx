@@ -1,10 +1,10 @@
 import UpgradeWish from './UpgradeWish';
-import React, { useState, useMemo } from 'react';
-import { parseISO, format, differenceInDays, subDays, addDays } from 'date-fns';
+import { useState, useMemo, useCallback } from 'react';
+import { parseISO, format, differenceInDays, subDays } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { useQuery } from '@tanstack/react-query';
 import classes from './Bookings.module.css';
-import { BOOKING_STATUS, BOOKING_SOURCE } from '../../constants';
+import { BOOKING_STATUS } from '../../constants';
 import BookingForm from '../Timeline/BookingForm';
 import { reservationErrorText } from '../../shared/reservation-errors';
 import GuestExportModal from './GuestExportModal';
@@ -30,12 +30,13 @@ const DAYS_COUNT = 240;
 const ACTIVE_STATUSES = ['new', 'confirmed', 'checked_in'];
 const ARCHIVED_STATUSES = ['checked_out'];
 const CANCELLED_STATUSES = ['cancelled', 'no_show'];
+const EMPTY = [];
 
 function Bookings() {
   const { data, loading, error, reload } = useTimeline(VIEW_START, DAYS_COUNT);
 
-  const bookings   = data?.bookings   ?? [];
-  const rooms      = data?.rooms      ?? [];
+  const bookings   = data?.bookings   ?? EMPTY;
+  const rooms      = data?.rooms      ?? EMPTY;
   const categories = data?.categories ?? [];
 
   const [activeTab, setActiveTab] = useState('all');
@@ -81,7 +82,7 @@ function Bookings() {
   const [formData, setFormData] = useState(null);
   const [savingError, setSavingError] = useState(null);
 
-  const matchesSearch = (b) => {
+  const matchesSearch = useCallback((b) => {
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -89,7 +90,7 @@ function Bookings() {
       b.phone?.includes(q) ||
       rooms.find(r => r.id === b.roomId)?.number.includes(q)
     );
-  };
+  }, [search, rooms]);
   const byCheckInDesc = (a, b) => (a.checkIn < b.checkIn ? 1 : -1);
 
   // «Все брони» — only active (operational) bookings; archived & cancelled
@@ -103,16 +104,16 @@ function Bookings() {
     return activeBookings
       .filter(b => (statusFilter === 'all' || b.status === statusFilter) && matchesSearch(b))
       .sort(byCheckInDesc);
-  }, [activeBookings, statusFilter, search, rooms]);
+  }, [activeBookings, statusFilter, matchesSearch]);
 
   const archivedBookings = useMemo(
     () => bookings.filter(b => ARCHIVED_STATUSES.includes(b.status) && matchesSearch(b)).sort(byCheckInDesc),
-    [bookings, search, rooms],
+    [bookings, matchesSearch],
   );
 
   const cancelledBookings = useMemo(
     () => bookings.filter(b => CANCELLED_STATUSES.includes(b.status) && matchesSearch(b)).sort(byCheckInDesc),
-    [bookings, search, rooms],
+    [bookings, matchesSearch],
   );
 
   const statusCounts = useMemo(() => {

@@ -95,11 +95,13 @@ export function sliceName(slice) {
 export function planForSlice(plans, slice, partner, contractNumber) {
   const accId = slice.account ? partner?.accounts?.find((a) => a.code === slice.account.code)?.id ?? null : null;
   const custId = slice.customer ? partner?.customers?.find((c) => c.code === slice.customer.code)?.id ?? null : null;
+  if ((slice.account && !accId) || (slice.customer && !custId)) return null;
   return (plans ?? []).find(
     (p) =>
       p.isActive &&
+      p.forOperator !== false &&
       p.partnerId === partner?.id &&
-      p.operatorContract === contractNumber &&
+      p.operatorContract?.trim() === contractNumber?.trim() &&
       (p.partnerAccountId ?? null) === accId &&
       (p.partnerCustomerId ?? null) === custId &&
       (p.guestKind ?? null) === slice.guestKind &&
@@ -131,3 +133,70 @@ export function periodOn(periods, today) {
   }
   return actual;
 }
+
+/** Индекс отображения: цены уже рассчитаны сервером, число гостей не теряем. */
+export function calendarPrices(nights = []) {
+  return new Map(nights.map((n) => [n.day,
+    new Map(n.prices.map((p) => [priceKey(p.categoryId, p.occupancy), p.price])),
+  ]));
+}
+
+export function contractViewKey(plan) {
+  return [plan.id, plan.partnerId, plan.operatorContract, plan.partnerAccountId,
+    plan.partnerCustomerId, plan.guestKind, plan.mealPlan].map((v) => v ?? '').join('|');
+}
+
+/** Варианты условий, а не клиентский расчёт цены. Выбор идёт от общего к частному. */
+export function sliceOptions(contract, partner, selection = {}) {
+  const slices = contract?.slices ?? [];
+  const waiting = slices.length === 0;
+  const accounts = (partner?.accounts ?? []).filter((a) => a.isActive !== false &&
+    (!contract?.account?.code || a.code === contract.account.code));
+  const codes = new Set(slices.map((s) => s.customer).filter(Boolean));
+  const customers = (partner?.customers ?? []).filter((c) => c.isActive !== false && (waiting || codes.has(c.code)));
+  const anyCustomer = waiting || slices.some((s) => !s.customer);
+  const customerCode = customers.find((c) => c.id === selection.partnerCustomerId)?.code;
+  const customerSlices = slices.filter((s) => !s.customer || (customerCode && s.customer === customerCode));
+  const kinds = waiting ? [null, ...Object.keys(GUEST_KIND_LABELS)] : [...new Set(customerSlices.map((s) => s.guestKind))];
+  const kindSlices = customerSlices.filter((s) => (s.guestKind ?? '') === (selection.guestKind ?? ''));
+  const meals = waiting ? Object.keys(MEAL_PLAN_SHORT) : [...new Set(kindSlices.map((s) => s.mealPlan))];
+  return { accounts, customers, anyCustomer, kinds, meals, waiting,
+    unresolvedCustomer: !waiting && !anyCustomer && customers.length === 0,
+    unresolvedAccount: Boolean(contract?.account?.code && accounts.length === 0),
+  };
+}
+
+/** При смене верхнего условия сохраняем остальные, только если сочетание существует. */
+export function reconcileSlice(contract, partner, selection = {}) {
+  const next = { ...selection };
+  let options = sliceOptions(contract, partner, next);
+  if (next.partnerAccountId && !options.accounts.some((a) => a.id === next.partnerAccountId)) {
+    next.partnerAccountId = options.accounts[0]?.id ?? '';
+  }
+  if (!next.partnerAccountId && contract?.account) next.partnerAccountId = options.accounts[0]?.id ?? '';
+  if (!options.customers.some((c) => c.id === next.partnerCustomerId)) {
+    next.partnerCustomerId = options.anyCustomer ? '' : options.customers[0]?.id ?? '';
+  }
+  options = sliceOptions(contract, partner, next);
+  if (!options.kinds.some((k) => (k ?? '') === (next.guestKind ?? ''))) next.guestKind = options.kinds[0] ?? '';
+  options = sliceOptions(contract, partner, next);
+  if (!options.meals.includes(next.mealPlan)) next.mealPlan = options.meals[0] ?? 'NONE';
+  return next;
+}
+
+export function contractAvailabilityText(contract) {
+  if (contract?.hasPrices) return 'Цены доступны — выберите условия тарифа';
+  if (contract?.hasDocuments) return 'Документы получены, но готовой сетки цен нет. Попросите диспетчера обновить договор.';
+  return 'Ценовое приложение ещё не пришло. Можно создать тариф заранее — он будет ждать цен.';
+}
+
+export const PRICE_REASON = {
+  NO_DOCUMENTS: 'Ценовое приложение ещё не пришло',
+  NO_GRIDS: 'В документах нет готовой сетки цен. Попросите диспетчера обновить договор',
+  OUTSIDE_CONTRACT: 'Дата вне срока действия цен договора',
+  NO_SLICE: 'В договоре нет цены для выбранных условий',
+  NO_PRICES: 'В договоре нет цен для категорий гостиницы',
+  UNKNOWN_CUSTOMER: 'Авиакомпания не найдена в справочнике партнёра',
+  NO_CATEGORY_PRICE: 'Для этой категории нет цены в договоре',
+  NO_OCCUPANCY_PRICE: 'Для этого числа гостей нет цены в договоре',
+};

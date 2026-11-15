@@ -151,10 +151,15 @@ describe('состояние корпоративного тарифа', () => {
     expect(s.reason).toContain('ещё не прислал цены');
   });
 
-  it('приложение есть, а цены на сегодня нет — не применяется', () => {
+  it('приложение есть, а цены на выбранную дату нет — не применяется', () => {
     const s = operatorTariffStatus(tariffPlan() as never, [doc()], false);
     expect(s.applies).toBe(false);
-    expect(s.reason).toContain('на сегодня');
+    expect(s.reason).toContain('на выбранную дату');
+  });
+
+  it('legacy whitespace in the contract number does not hide a priced tariff', () => {
+    const s = operatorTariffStatus(tariffPlan() as never, [doc({ contractNumber: ' 18 ' })], true);
+    expect(s.applies).toBe(true);
   });
 
   it('чужой договор не считается', () => {
@@ -181,8 +186,13 @@ describe('название сверенных документов', () => {
   it('одна ДС', () => {
     expect(documentsLabel([doc({ amendmentNumber: '2' })])).toBe('договор 18, ДС 2');
     // Партнёр присылает номер и с приставкой — «ДС ДС 1» быть не должно.
-    expect(documentsLabel([doc({ amendmentNumber: 'ДС 1' }), doc({ amendmentNumber: 'ДС 10' }), doc({ amendmentNumber: 'ДС 2' })]))
-      .toBe('договор 18, ДС 1, 2 и 10');
+    expect(
+      documentsLabel([
+        doc({ amendmentNumber: 'ДС 1' }),
+        doc({ amendmentNumber: 'ДС 10' }),
+        doc({ amendmentNumber: 'ДС 2' }),
+      ]),
+    ).toBe('договор 18, ДС 1, 2 и 10');
   });
   it('несколько ДС перечисляются по-русски', () => {
     expect(

@@ -11,6 +11,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { partnerConditions, periodOn, planForSlice, sliceName } from './corporateTariff.js';
+import * as tariff from './corporateTariff.js';
 
 const AZ = { code: 'org-az', name: 'Азимут' };
 const RU = { code: 'org-ru', name: 'Россия' };
@@ -95,4 +96,71 @@ test('НДС на карточке: у корпоративного — из д�
     label: 'НДС',
     value: 'без НДС',
   });
+});
+
+test('календарь хранит отдельную цену на каждое число гостей', () => {
+  const prices = tariff.calendarPrices([{ day: '2026-11-14', prices: [
+    { categoryId: 'r1', occupancy: 1, price: '3000.00' },
+    { categoryId: 'r1', occupancy: 2, price: '4600.00' },
+  ] }]);
+  assert.equal(prices.get('2026-11-14').get('r1|1'), '3000.00');
+  assert.equal(prices.get('2026-11-14').get('r1|2'), '4600.00');
+  assert.equal(prices.get('2026-11-14').get('r1|3'), undefined);
+});
+
+const directory = {
+  accounts: [{ id: 'a1', code: 'kc-1' }, { id: 'a2', code: 'kc-2' }],
+  customers: [{ id: 'c1', code: 's7' }, { id: 'c2', code: 'az' }],
+};
+const contract = { account: { code: 'kc-1' }, hasPrices: true, slices: [
+  { customer: 's7', guestKind: 'CREW', mealPlan: 'BB' },
+  { customer: 'az', guestKind: 'DISRUPTION', mealPlan: 'FB' },
+] };
+
+test('срез ограничивает юрлица договором, а питание — выбранными авиакомпанией и видом брони', () => {
+  const options = tariff.sliceOptions(contract, directory, { partnerCustomerId: 'c1', guestKind: 'CREW' });
+  assert.deepEqual(options.accounts.map(a => a.id), ['a1']);
+  assert.deepEqual(options.kinds, ['CREW']);
+  assert.deepEqual(options.meals, ['BB']);
+  assert.equal(options.anyCustomer, false);
+});
+
+test('смена авиакомпании выбирает совместимые вид брони и питание', () => {
+  const next = tariff.reconcileSlice(contract, directory, { partnerAccountId: 'a2', partnerCustomerId: 'c2', guestKind: 'CREW', mealPlan: 'BB' });
+  assert.equal(next.partnerAccountId, 'a1');
+  assert.equal(next.partnerCustomerId, 'c2');
+  assert.equal(next.guestKind, 'DISRUPTION');
+  assert.equal(next.mealPlan, 'FB');
+});
+
+test('договор без приложений допускает подготовку тарифа без ложного обещания цен', () => {
+  const empty = { hasPrices: false, hasDocuments: false, slices: [] };
+  const options = tariff.sliceOptions(empty, directory, {});
+  assert.equal(options.waiting, true);
+  assert.ok(options.meals.includes('NONE'));
+  assert.match(tariff.contractAvailabilityText(empty), /приложение/);
+  assert.match(tariff.contractAvailabilityText({ ...empty, hasDocuments: true }), /сетки/);
+});
+
+test('отсутствующий в справочнике код не превращается в любую авиакомпанию', () => {
+  const options = tariff.sliceOptions({ ...contract, slices: [{ customer: 'unknown', guestKind: 'CREW', mealPlan: 'BB' }] }, directory, {});
+  assert.deepEqual(options.customers, []);
+  assert.equal(options.anyCustomer, false);
+  assert.equal(options.unresolvedCustomer, true);
+});
+
+test('смена условий тарифа меняет ключ представления, переименование — нет', () => {
+  const plan = { id: 'p1', operatorContract: '205', partnerId: 'p', mealPlan: 'BB' };
+  assert.notEqual(tariff.contractViewKey(plan), tariff.contractViewKey({ ...plan, operatorContract: '206' }));
+  assert.notEqual(tariff.contractViewKey(plan), tariff.contractViewKey({ ...plan, mealPlan: 'FB' }));
+  assert.equal(tariff.contractViewKey(plan), tariff.contractViewKey({ ...plan, name: 'Другое имя' }));
+});
+
+test('неизвестные коды не совпадают с общим тарифом, пробелы номера не создают дубликат', () => {
+  const partner = { id: 'p1', accounts: [], customers: [] };
+  const generic = { id: 'existing', isActive: true, partnerId: 'p1', operatorContract: ' 205 ', guestKind: null, mealPlan: 'BB' };
+  const slice = { account: null, customer: null, guestKind: null, mealPlan: 'BB' };
+  assert.equal(planForSlice([generic], slice, partner, '205')?.id, 'existing');
+  assert.equal(planForSlice([generic], { ...slice, customer: { code: 'unknown' } }, partner, '205'), null);
+  assert.equal(planForSlice([generic], { ...slice, account: { code: 'unknown' } }, partner, '205'), null);
 });

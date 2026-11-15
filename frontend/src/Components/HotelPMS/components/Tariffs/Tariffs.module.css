@@ -1,11 +1,25 @@
 .root {
   height: 100%;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 24px 32px 0;
+}
+
+.contentScroll {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
   overflow-y: auto;
-  padding: 24px 32px 40px;
+  overflow-anchor: none;
+  padding-bottom: 40px;
 }
 
 .pageHeader {
   display: flex;
+  flex-shrink: 0;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 18px;
@@ -13,6 +27,7 @@
 }
 
 .pageTitle {
+  margin: 0;
   font-size: 22px;
   font-weight: 700;
   color: #0F1F3F;
@@ -1247,7 +1262,8 @@
 
 /* Телефон */
 @media (max-width: 768px) {
-  .root { padding: 16px 16px 32px; }
+  .root { padding: 16px 16px 0; }
+  .contentScroll { padding-bottom: 32px; }
   .planPanelHeader { flex-wrap: wrap; padding: 12px; }
   .formGrid { grid-template-columns: minmax(0, 1fr); padding: 16px; }
   .stdRow { grid-template-columns: minmax(0, 1fr) 120px; }
@@ -1266,3 +1282,253 @@
   flex-wrap: wrap;
 }
 .contractPeriodSelect { width: auto; min-width: 200px; height: 32px; font-size: 13px; }
+
+/* Тарифы: общий язык PMS, ясная иерархия условий, денег и действий. */
+.root { --tariff-ink: #0F1F3F; --tariff-muted: #526277; --tariff-line: #DFE6EE; }
+.pageHeader { align-items: flex-start; margin-bottom: 24px; }
+.pageSubtitle { margin-top: 7px; color: var(--tariff-muted); font-size: 13px; line-height: 1.5; }
+.countBadge { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; padding: 2px 7px; margin-left: 6px; border-radius: 6px; background: #EAF0F6; color: #526277; font-size: 12px; font-weight: 600; vertical-align: middle; }
+.sectionNavigation {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.sectionNavigation > .btnAdd { flex-shrink: 0; white-space: nowrap; }
+.sectionTabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--tariff-line);
+  border-radius: 12px;
+  background: #fff;
+}
+.sectionTab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--tariff-muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sectionTab:hover { background: #F1F5F9; color: var(--tariff-ink); }
+.sectionTab[aria-selected="true"] { background: #E8F2FC; color: #10548D; }
+.sectionTab[aria-selected="true"] .countBadge { background: #D5E8FA; color: #10548D; }
+.sectionPanel[hidden] { display: none; }
+.planPanelTitle { margin: 0; }
+.planPanelTitle:focus-visible { outline: 2px solid #1E88E5; outline-offset: 3px; }
+.contractGroupHead:focus-visible { outline-offset: -4px; }
+.root button:focus-visible, .root summary:focus-visible, .calendarScroll:focus-visible { outline: 2px solid #1E88E5; outline-offset: 3px; }
+.root button:disabled { cursor: not-allowed; opacity: .55; }
+.btnAdd, .btnPrimary, .btnGhost, .btnSave, .btnCancel { min-height: 40px; }
+.iconBtn, .closeBtn { min-width: 38px; min-height: 38px; }
+.fieldHint { color: #64748B; line-height: 1.55; }
+.planTab { min-width: 190px; padding: 14px 16px; gap: 7px; }
+.planTabHead { flex-wrap: wrap; }
+.planTabMeta { font-size: 12px; }
+.planTabCorp { background: #EDF3F9; color: #526277; }
+.planPanelHeader { padding: 20px 22px; align-items: flex-start; }
+.planPanelTitle { font-size: 18px; }
+.planConditions { justify-content: flex-start; max-width: 55%; }
+.planCondition { white-space: normal; line-height: 1.4; padding: 5px 8px; }
+.tariffStatus { margin-top: 10px; color: #334155; font-size: 12px; font-weight: 600; }
+.tariffStatus span { display: block; color: #64748B; font-weight: 400; margin-top: 3px; }
+.subTab { min-height: 44px; }
+.modal { max-width: 650px; max-height: 92vh; max-height: 92dvh; overflow-y: auto; overscroll-behavior: contain; }
+.modalHeader { position: sticky; top: 0; z-index: 3; background: #fff; flex-shrink: 0; padding-top: 16px; padding-bottom: 16px; }
+.modalFooter { position: sticky; bottom: 0; z-index: 3; background: #fff; border-top: 1px solid #DFE6EE; padding-top: 16px; box-shadow: 0 -6px 14px rgba(15, 31, 63, .025); }
+.modalTitle { line-height: 1.35; }
+.formGrid { gap: 20px; }
+.formGroup label { font-size: 13px; }
+.typeChoice { grid-column: 1 / -1; border: 0; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.typeChoice legend { margin-bottom: 8px; font-size: 13px; font-weight: 600; color: #374151; }
+.typeChoice label { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 16px 32px 16px 14px; border: 1px solid #DFE6EE; border-radius: 9px; cursor: pointer; }
+.typeChoice input { position: absolute; right: 12px; top: 16px; accent-color: #1E88E5; }
+.typeChoice strong { font-size: 13px; color: #1B2A47; }
+.typeChoice span { font-size: 12px; line-height: 1.5; color: #526277; }
+.typeChoice .typeChoiceActive { background: #F0F6FC; border-color: #8FBAE0; }
+.typeChoice label:focus-within { outline: 2px solid #1E88E5; outline-offset: 2px; }
+.formError { grid-column: 1 / -1; margin: 8px 22px 16px; padding: 12px 14px; border-radius: 8px; background: #FFF3F1; border: 1px solid #F3C9C4; color: #9F2D24; font-size: 13px; line-height: 1.5; }
+.contractPriceContent { padding-bottom: 18px; }
+.contractPricesHead { padding-top: 20px; align-items: flex-end; gap: 12px; }
+.periodField { display: grid; gap: 7px; min-width: 260px; max-width: 100%; }
+.periodField label { color: #526277; font-size: 12px; font-weight: 600; }
+.periodField .input { min-width: 280px; }
+.rowChip { display: inline-flex; padding: 5px 8px; line-height: 1.4; font-size: 11.5px; white-space: nowrap; }
+.priceContext { padding: 8px 22px 4px; color: #526277; font-size: 12px; line-height: 1.5; }
+.priceContext > span { display: block; margin-top: 3px; color: #64748B; }
+/* Keep the visually hidden caption inside this scroll container, not the page. */
+.contractTableScroll { position: relative; margin: 16px 22px 0; overflow-x: auto; border: 1px solid #DFE6EE; border-radius: 10px; }
+.contractTable { min-width: 560px; }
+.contractTable th, .contractTable td { padding: 13px 16px; text-align: right; border-bottom: 1px solid #E8EDF3; white-space: nowrap; }
+.contractTable th:first-child, .contractTable td:first-child { padding-left: 16px; text-align: left; white-space: normal; }
+.contractTable thead th { background: #F4F7FA; font-size: 12px; color: #526277; }
+.contractTable tbody th { font-weight: 400; }
+.contractTable tbody tr:last-child > * { border-bottom: 0; }
+.contractTable tbody tr:hover { background: #F9FBFD; }
+.contractTable .stdName { font-size: 13px; }
+.money { color: #1B2A47; font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.cellUnavailable { background: #F6F8FA; color: #A3ADBA; }
+.coverageNote { margin: 14px 22px 0; padding: 12px 14px; border-left: 3px solid #D8E1EC; background: #F6F8FB; color: #526277; font-size: 12px; line-height: 1.6; border-radius: 0 6px 6px 0; }
+.coverageNote > span { display: block; margin-top: 4px; }
+.contractPriceValue { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.priceBasis { display: inline-flex; align-items: center; padding: 3px 7px; border-radius: 5px; background: #EDF4FC; color: #34567E; font-size: 11px; line-height: 1.4; font-weight: 500; white-space: nowrap; }
+.priceBasisFallback { background: #FFF3DB; color: #785014; }
+.priceBasisCompact { padding: 2px 4px; font-size: 10px; }
+.calCell.contractCalendarPrice { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 72px; padding: 10px 5px; }
+.priceBasisLegend { margin: 14px 22px 0; padding: 14px 16px; border: 1px solid #DFE6EE; border-radius: 8px; background: #F8FAFD; color: #526277; font-size: 12px; line-height: 1.6; }
+.priceBasisLegend > strong { display: block; color: #263F5F; font-weight: 600; }
+.priceBasisLegend ul { display: grid; gap: 8px; padding: 0; margin: 10px 0 0; list-style: none; }
+.priceBasisLegend li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+.priceBasisLegend p { margin: 8px 0 0; }
+.contractNotice { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: 18px 22px; padding: 18px 20px; border: 1px solid #DFE6EE; border-radius: 10px; background: #F8FAFC; font-size: 13px; line-height: 1.6; color: #526277; }
+.contractNotice strong { font-size: 14px; color: #1B2A47; }
+.contractNotice p { margin: 8px 0 0; }
+.contractCalendar { padding: 18px 0; }
+.calendarToolbar { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 16px; padding: 0 22px 10px; }
+.calendarNav, .calendarControls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.calendarNav strong { color: #334155; font-size: 13px; font-variant-numeric: tabular-nums; }
+.calendarControls { gap: 14px; }
+.guestsField { display: grid; gap: 6px; color: #526277; font-size: 12px; }
+.guestsField .input { min-width: 128px; }
+.calendarControls .calDaysToggle { align-self: flex-end; }
+.calendarControls .calDaysToggleBtn { min-height: 40px; }
+.contractCalendar .calendarScroll { margin-top: 12px; }
+.periodCorner { position: sticky; left: 0; z-index: 2; display: flex; align-items: center; padding: 10px 14px; background: #F4F7FA; border-bottom: 1px solid #DFE6EE; color: #526277; font-size: 11px; }
+.periodBand { padding: 9px 12px; color: #365474; background: #EAF1F8; border-left: 2px solid #9BB8D5; border-bottom: 1px solid #D5E1EF; font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.periodBandEmpty { background: #F3F5F7; color: #718096; border-left-color: #D5DBE3; border-bottom-color: #E3E8ED; font-weight: 400; }
+.sectionCard { background: transparent; padding: 0; border: none; margin-top: 30px; }
+.contractRegistryHead { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 14px; }
+.contractRegistryHead > .input { max-width: 300px; }
+.contractGroup { background: #fff; border: 1px solid #DFE6EE; border-radius: 10px; margin-top: 10px; padding: 0; overflow: hidden; }
+.contractGroupHead { padding: 16px 18px; margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; cursor: pointer; list-style: none; }
+.contractGroupHead::-webkit-details-marker { display: none; }
+.contractGroupHead::after { content: ''; width: 7px; height: 7px; border-right: 1.5px solid #526277; border-bottom: 1.5px solid #526277; transform: rotate(45deg); margin-left: 6px; flex: none; }
+.contractGroup[open] > .contractGroupHead { border-bottom: 1px solid #E8EDF3; background: #FAFBFD; }
+.contractGroup[open] > .contractGroupHead::after { transform: rotate(225deg); }
+.contractGroupHead b { font-size: 14px; }
+.contractState { margin-left: auto; color: #526277; font-size: 12px; }
+.contractEmpty { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 18px; }
+.contractEmpty .emptyHint { max-width: 680px; }
+.sliceList { padding: 0 18px; gap: 0; }
+.sliceList li { display: block; padding: 14px 0; border-bottom: 1px solid #E8EDF3; }
+.sliceList li:last-child { border-bottom: 0; }
+.sliceSummary { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+.sliceSummary > span { font-weight: 500; }
+.sliceActions { margin: 0; flex-wrap: wrap; }
+.slicePreview { margin-top: 12px; border: 1px solid #DFE6EE; border-radius: 10px; }
+.srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+/* Мастер: логика общая с окнами PMS, собственная спокойная композиция формы. */
+.overlay { background: rgba(17, 35, 62, .46); backdrop-filter: blur(3px); }
+.wizardModal { max-width: 760px; max-height: calc(100dvh - 40px); overflow: hidden; border: 1px solid rgba(255, 255, 255, .7); border-radius: 18px; box-shadow: 0 28px 90px -20px rgba(14, 31, 56, .45), 0 4px 16px rgba(14, 31, 56, .08); font-family: 'Inter Variable', 'Inter', sans-serif; color: #24364D; }
+.wizardModal:focus { outline: none; }
+.wizardModal .modalHeader { position: static; padding: 22px 26px 20px; align-items: flex-start; border-bottom: 0; }
+.modalEyebrow { color: #6F839B; font-size: 10px; font-weight: 650; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 7px; }
+.wizardModal .modalTitle { margin: 0; font-size: 21px; letter-spacing: -.35px; font-weight: 650; }
+.modalSubtitle { margin-top: 5px; font-size: 12px; line-height: 1.5; color: #718096; }
+.wizardModal .closeBtn { display: grid; place-items: center; flex: none; padding: 0; width: 36px; height: 36px; min-width: 36px; min-height: 36px; border: 1px solid #E9EDF3; border-radius: 9px; color: #78889D; background: #FBFCFE; }
+.wizardModal .closeBtn:hover { color: #244565; background: #F0F5FB; border-color: #D9E4F1; }
+.wizardBody { min-width: 0; min-height: 0; margin: 0; border: 0; overflow-y: auto; overscroll-behavior: contain; padding: 22px 24px; background: #F4F7FB; scrollbar-gutter: stable; }
+.wizardBody:focus { outline: none; }
+.wizardFields { min-width: 0; margin: 0; padding: 0; border: 0; }
+.wizardModal .formGrid { padding: 22px; gap: 20px 18px; background: #fff; border: 1px solid #E1E8F1; border-radius: 12px; box-shadow: 0 2px 6px rgba(18, 45, 77, .025); }
+.wizardModal .formGroup { min-width: 0; gap: 7px; }
+.wizardModal .formGroup label { font-size: 12px; color: #43546B; font-weight: 600; }
+.wizardModal .input, .wizardModal .textarea { border: 1px solid #D6DFEA; border-radius: 8px; font-size: 13px; color: #1F3551; background: #FCFDFE; }
+.wizardModal .input { min-height: 42px; }
+.wizardModal .input::placeholder, .wizardModal .textarea::placeholder { color: #93A0B2; }
+.wizardModal .input:focus, .wizardModal .textarea:focus { border-color: #5CA6E8; box-shadow: 0 0 0 3px #EAF3FC; outline: none; background: #fff; }
+.wizardModal .input[aria-invalid="true"] { border-color: #D07970; }
+.wizardModal .fieldHint { font-size: 11px; color: #738399; }
+.wizardModal .typeChoice { gap: 12px; padding-bottom: 18px; border-bottom: 1px solid #EDF1F6; }
+.wizardModal .typeChoice legend { color: #43546B; font-size: 12px; margin-bottom: 10px; }
+.wizardModal .typeChoice label { min-width: 0; padding: 16px 35px 16px 16px; border: 1px solid #DEE6F0; background: #FBFCFE; border-radius: 10px; text-align: left; transition: border-color .15s, background .15s, box-shadow .15s; }
+.wizardModal .typeChoice label:hover { border-color: #A9C9E8; }
+.wizardModal .typeChoice strong { font-size: 13px; color: #304862; }
+.wizardModal .typeChoice span { font-size: 11px; line-height: 1.55; color: #78889D; }
+.wizardModal .typeChoice .typeChoiceActive { background: #F2F8FF; border-color: #8EBCE8; box-shadow: inset 0 0 0 1px #DFEDFB; }
+.wizardModal .typeChoiceActive strong { color: #17588F; }
+.wizardModal .modalFooter { position: static; flex-shrink: 0; gap: 10px; padding: 16px 24px; box-shadow: 0 -4px 12px rgba(18, 45, 77, .025); }
+.wizardModal .btnSave, .wizardModal .btnCancel, .wizardModal .btnDelete { min-height: 42px; padding: 10px 18px; border-radius: 9px; font-size: 13px; }
+.wizardModal .btnSave { box-shadow: 0 3px 8px rgba(30, 136, 229, .15); }
+.wizardModal .btnSave:disabled { box-shadow: none; background: #9CC6EB; opacity: 1; }
+.wizardModal .btnCancel { border-color: #DFE6EF; color: #53657C; }
+.wizardModal button:focus-visible { outline: 2px solid #1E88E5; outline-offset: 3px; }
+.wizardModal button:disabled { cursor: not-allowed; }
+.actionGate { display: inline-flex; }
+.actionGate > button:disabled { pointer-events: none; }
+.wizardModal .reviewGrid { padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; display: block; margin-bottom: 18px; }
+.reviewSummary { border: 1px solid #D8E5F3; border-left: 3px solid #69A8DF; border-radius: 12px; padding: 20px 22px; background: #fff; box-shadow: 0 3px 8px rgba(18, 45, 77, .025); }
+.reviewHeading { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-bottom: 17px; border-bottom: 1px solid #EDF1F6; }
+.reviewOverline { display: block; margin-bottom: 5px; font-size: 10px; color: #5882A6; font-weight: 650; text-transform: uppercase; letter-spacing: .7px; }
+.reviewHeading h3 { margin: 0; color: #203C59; font-size: 18px; font-weight: 650; overflow-wrap: anywhere; }
+.reviewHeading code { background: #F3F6FA; color: #65788F; padding: 5px 8px; border: 1px solid #E7EDF4; border-radius: 6px; font-size: 11px; overflow-wrap: anywhere; }
+.reviewFacts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 24px; margin: 18px 0 0; }
+.reviewFacts > div { min-width: 0; }
+.reviewFacts > div:nth-child(2) { grid-column: span 2; }
+.reviewFacts dt { font-size: 11px; line-height: 1.4; color: #7B8A9C; margin-bottom: 5px; }
+.reviewFacts dd { margin: 0; font-size: 13px; line-height: 1.5; font-weight: 500; color: #304862; overflow-wrap: anywhere; }
+.reviewPrices, .wizardEditor { background: #fff; border: 1px solid #DFE7F1; border-radius: 12px; box-shadow: 0 2px 6px rgba(18, 45, 77, .025); }
+.reviewPricesTitle { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px 16px; padding: 18px 22px; border-bottom: 1px solid #EAF0F6; }
+.reviewPricesTitle h3 { margin: 0; font-size: 14px; font-weight: 650; color: #2D4663; }
+.reviewPricesTitle > span { font-size: 11px; color: #8090A3; }
+.reviewPrices .contractPricesHead { padding-top: 16px; }
+.reviewPrices .priceContext { font-size: 11px; }
+.reviewPrices .contractTable th, .reviewPrices .contractTable td { padding-top: 12px; padding-bottom: 12px; }
+.contractGroup { box-shadow: 0 2px 5px rgba(18, 45, 77, .025); transition: border-color .15s, box-shadow .15s; }
+.contractGroup:hover { border-color: #BFCFE1; box-shadow: 0 3px 10px rgba(18, 45, 77, .045); }
+.planPanel { box-shadow: 0 3px 10px rgba(18, 45, 77, .035); }
+.planTabActive { box-shadow: 0 3px 9px rgba(30, 100, 170, .08); }
+@media (max-width: 640px) {
+  .wizardModal { max-height: calc(100dvh - 16px); border-radius: 14px; }
+  .wizardModal .modalHeader { padding: 18px 16px 16px; }
+  .wizardBody { padding: 14px 12px; }
+  .wizardModal .formGrid { padding: 16px 14px; gap: 17px; }
+  .wizardModal .modalFooter { padding: 14px 16px; }
+  .reviewSummary { padding: 16px; }
+  .reviewFacts { grid-template-columns: 1fr 1fr; gap: 14px; }
+  .reviewFacts > div:nth-child(2) { grid-column: auto; }
+  .reviewPricesTitle { padding: 16px 14px; }
+}
+@media (prefers-reduced-motion: reduce) { .wizardModal *, .contractGroup { transition: none; } }
+@media (max-width: 900px) {
+  .planConditions { max-width: none; flex-basis: 100%; margin: 8px 0 0; order: 3; }
+  .planPanelHeader { flex-wrap: wrap; }
+  .planPanelActions { margin-left: auto; }
+}
+@media (max-width: 640px) {
+  .root { padding: 16px 12px 0; }
+  .contentScroll { padding-bottom: 28px; }
+  .pageHeader { flex-wrap: wrap; }
+  .sectionNavigation { flex-wrap: wrap; }
+  .sectionTabs { flex-basis: 100%; }
+  .sectionNavigation > .btnAdd { width: 100%; justify-content: center; }
+  .planTabs { flex-wrap: nowrap; overflow-x: auto; padding: 3px 3px 8px; }
+  .planTab { min-width: 190px; }
+  .contractRegistryHead { flex-direction: column; align-items: stretch; }
+  .contractRegistryHead > .input { max-width: none; }
+  .contractGroupHead { padding: 14px; }
+  .contractState { margin-left: 0; }
+  .contractEmpty { padding: 14px; }
+  .sliceActions .btnGhost, .contractEmpty .btnGhost { min-height: 44px; }
+  .periodField { min-width: 0; width: 100%; }
+  .periodField .input { min-width: 0; width: 100%; }
+  .contractPricesHead, .priceContext, .calendarToolbar { padding-left: 14px; padding-right: 14px; }
+  .contractNotice, .coverageNote, .contractTableScroll { margin-left: 14px; margin-right: 14px; }
+  .modalFooter { gap: 8px; }
+  .modalFooter .btnSave { flex-grow: 1; }
+  .modal { border-radius: 12px; }
+  .typeChoice { grid-template-columns: 1fr; }
+}

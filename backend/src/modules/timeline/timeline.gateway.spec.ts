@@ -42,7 +42,10 @@ function connect(auth: Record<string, unknown> | undefined) {
 }
 
 function accessToken(payload: Record<string, unknown>, secret = ACCESS_SECRET) {
-  return jwt.sign({ sub: USER, tid: HOTEL_A, role: 'OWNER', perms: [], email: 'a@hotel.ru', ...payload }, { secret });
+  return jwt.sign(
+    { sub: USER, tid: HOTEL_A, role: 'OWNER', perms: [], email: 'a@hotel.ru', ...payload },
+    { secret },
+  );
 }
 
 function expectRejected(client: ReturnType<typeof connect>) {
@@ -71,7 +74,10 @@ describe('сокет шахматки: комната — только по пр
   });
 
   it('токен продления (свой секрет) вместо access — ни в какую комнату', () => {
-    const refresh = jwt.sign({ sub: USER, tid: HOTEL_A, jti: 'abc' }, { secret: 'test-refresh-secret' });
+    const refresh = jwt.sign(
+      { sub: USER, tid: HOTEL_A, jti: 'abc' },
+      { secret: 'test-refresh-secret' },
+    );
     expectRejected(connect({ token: refresh }));
   });
 

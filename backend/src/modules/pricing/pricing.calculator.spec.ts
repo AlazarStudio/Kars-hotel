@@ -1,8 +1,6 @@
-import { Prisma } from '@prisma/client';
 import { calculatePricing, makeMapLookup } from './pricing.calculator';
 import { RatePlanLike } from './pricing.types';
 
-const D = (v: string | number) => new Prisma.Decimal(v);
 const date = (s: string) => new Date(`${s}T00:00:00.000Z`);
 
 const ROOM_TYPE_ID = '00000000-0000-0000-0000-000000000001';

@@ -7,7 +7,7 @@ import App from './App.jsx'
 // страницы отдавала Google адрес и устройство сотрудника гостиницы.
 import '@fontsource-variable/inter'
 import './index.css'
-import { AuthProvider } from './auth/AuthContext'
+import { AuthProvider } from './auth/AuthProvider'
 
 const queryClient = new QueryClient({
   defaultOptions: {

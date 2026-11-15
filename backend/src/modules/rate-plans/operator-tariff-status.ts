@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { contractNumberKey } from '../contracts/contract-identity';
 
 /* СОСТОЯНИЕ КОРПОРАТИВНОГО ТАРИФА — правило, а не поле.
  *
@@ -122,8 +123,7 @@ export function tariffFingerprint(input: {
       ),
     );
 
-  const day = (v: Date | string | null | undefined) =>
-    v == null ? '' : iso(v).slice(0, 10);
+  const day = (v: Date | string | null | undefined) => (v == null ? '' : iso(v).slice(0, 10));
 
   const prices = [...input.prices]
     .map((r) => ({
@@ -154,9 +154,7 @@ export function tariffFingerprint(input: {
   if (input.plan.guestKind) plan.guestKind = input.plan.guestKind;
   if (input.plan.vatRate != null) plan.vatRate = String(input.plan.vatRate);
 
-  return createHash('sha256')
-    .update(JSON.stringify({ docs, plan, prices }))
-    .digest('hex');
+  return createHash('sha256').update(JSON.stringify({ docs, plan, prices })).digest('hex');
 }
 
 /** Приложения ИМЕННО того договора, который воплощает тариф. */
@@ -168,7 +166,9 @@ export function docsOfContract(
   if (!contractNumber) return [];
   // Номера договоров у разных партнёров могут совпасть — сверяем со своим.
   return docs.filter(
-    (d) => d.contractNumber === contractNumber && (!partnerId || !d.partnerId || d.partnerId === partnerId),
+    (d) =>
+      contractNumberKey(d.contractNumber) === contractNumberKey(contractNumber) &&
+      (!partnerId || !d.partnerId || d.partnerId === partnerId),
   );
 }
 
@@ -225,7 +225,7 @@ export function operatorTariffStatus(
     };
   }
   if (!hasPrice) {
-    return { state: 'DRAFT', reason: 'Цены договора на сегодня нет', applies: false };
+    return { state: 'DRAFT', reason: 'Цены договора на выбранную дату нет', applies: false };
   }
   return { state: 'CONFIRMED', reason: 'Цены из договора', applies: true };
 }

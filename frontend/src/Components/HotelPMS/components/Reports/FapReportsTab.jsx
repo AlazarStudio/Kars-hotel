@@ -49,11 +49,11 @@ function Report({ item, onDone }) {
 
   return (
     <div className={classes.fapBody}>
-      {error && <div className={form.alert}>{error}</div>}
-      {!rows && !error && <div className={classes.fapMuted}>Загрузка…</div>}
+      {error && <div className={form.alert} role="alert">{error}</div>}
+      {!rows && !error && <div className={classes.fapMuted} role="status">Загрузка…</div>}
       {rows && (
         <>
-          <div className={classes.fapTableWrap}>
+          {rows.length === 0 ? <div className={classes.fapEmpty}>Нет гостей для детализации.</div> : <div className={classes.fapTableWrap}>
             <table className={classes.fapTable}>
               <thead>
                 <tr>
@@ -93,7 +93,7 @@ function Report({ item, onDone }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </div>}
           {!item.submitted && (
             <div className={classes.fapActions}>
               <button type="button" className={form.btnPrimary} disabled={busy} onClick={send}>
@@ -180,9 +180,10 @@ export default function FapReportsTab() {
   };
 
   return (
-    <div className={classes.section}>
-      <div className={classes.sectionTitle}>Детализация для Kars Avia</div>
-      {error && <div className={form.alert}>{error}</div>}
+    <section className={classes.section}>
+      <h2 className={classes.sectionTitle}>Детализация ФАП</h2>
+      {error && <div className={classes.sectionBody}><div className={form.alert} role="alert">{error}</div></div>}
+      {items === null && !error && <div className={classes.fapEmpty} role="status">Загрузка…</div>}
       {items?.length === 0 && !error && <div className={classes.fapEmpty}>Заявок с вашей гостиницей пока нет.</div>}
       {items?.map((i) => (
         <div key={i.fapHotelId} className={classes.fapItem}>
@@ -201,6 +202,6 @@ export default function FapReportsTab() {
           {i.approved && !i.invoice && <Invoice item={i} onDone={done} />}
         </div>
       ))}
-    </div>
+    </section>
   );
 }

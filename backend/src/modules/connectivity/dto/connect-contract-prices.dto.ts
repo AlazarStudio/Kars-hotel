@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { CONTRACT_PRICE_BASES, ContractPriceBasis } from '../../contracts/contract-price';
 import {
   ArrayMaxSize,
   IsArray,
@@ -163,6 +164,14 @@ export class ConnectFillCellDto {
   @IsInt()
   @Min(0)
   price!: number;
+
+  @ApiPropertyOptional({
+    enum: [...CONTRACT_PRICE_BASES],
+    description: 'Основание цены партнёра; только для пояснения на экране',
+  })
+  @IsOptional()
+  @IsIn(CONTRACT_PRICE_BASES)
+  basis?: ContractPriceBasis | null;
 }
 
 /** Срез договора: авиакомпания × вид брони × питание. */

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { addDays, addMonths, endOfMonth, endOfWeek, format, isSameMonth, parseISO, startOfMonth, startOfWeek } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import './controls.css';
+import { useDialogOwner } from './dialogContext';
 
 /* Свой выбор даты PMS. Значение то же, что у <input type="date">: 'YYYY-MM-DD',
    onChange получает { target: { value, name } }. */
@@ -13,6 +14,7 @@ const Chevron = ({ d }) => (
 );
 
 export default function DateInput({ value, onChange, min, max, name, id, disabled, required, className = '', style, placeholder = 'Выберите дату', ...rest }) {
+  const dialogOwner = useDialogOwner();
   const [open, setOpen] = useState(false);
   const [month, setMonth] = useState(() => (value ? parseISO(value) : new Date()));
   const [box, setBox] = useState(null);
@@ -33,9 +35,10 @@ export default function DateInput({ value, onChange, min, max, name, id, disable
       if (!button.current?.contains(e.target) && !pop.current?.contains(e.target)) setOpen(false);
     };
     const esc = (e) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !pop.current?.hasAttribute('inert')) {
         e.stopPropagation();
         setOpen(false);
+        button.current?.focus();
       }
     };
     document.addEventListener('mousedown', away);
@@ -76,7 +79,7 @@ export default function DateInput({ value, onChange, min, max, name, id, disable
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></svg>
       </button>
       {open && box && createPortal(
-        <div ref={pop} className="pms-pop pms-cal" role="dialog" aria-label="Календарь" style={box}>
+        <div ref={pop} className="pms-pop pms-cal" role="dialog" data-dialog-owner={dialogOwner} aria-label="Календарь" style={box}>
           <div className="pms-cal-head">
             <button type="button" aria-label="Предыдущий месяц" onClick={() => setMonth(addMonths(month, -1))}><Chevron d="m15 6-6 6 6 6" /></button>
             <b>{format(month, 'LLLL yyyy', { locale: ru })}</b>

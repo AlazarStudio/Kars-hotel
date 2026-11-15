@@ -1,4 +1,5 @@
 import { TariffSlice } from './contract-price';
+import { contractNumberKey } from './contract-identity';
 
 /** Условия тарифа в объёме, который нужен срезу. */
 export interface PlanSliceSource {
@@ -22,7 +23,7 @@ export function sliceFromPlan(
   accountCode: string | null,
   customerCode: string | null,
 ): SliceResolution {
-  if (!plan.partnerId || !plan.operatorContract) {
+  if (!plan.partnerId || !contractNumberKey(plan.operatorContract)) {
     return { slice: null, unknownCustomer: false };
   }
   if (plan.partnerCustomerId && !customerCode) {
@@ -31,7 +32,7 @@ export function sliceFromPlan(
   return {
     slice: {
       partnerId: plan.partnerId,
-      contractNumber: plan.operatorContract,
+      contractNumber: contractNumberKey(plan.operatorContract),
       accountCode,
       customerCode,
       guestKind: plan.guestKind,

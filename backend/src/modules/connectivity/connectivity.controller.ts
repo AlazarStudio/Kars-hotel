@@ -188,7 +188,11 @@ export class ConnectivityController {
   @Get('hotels/:slug/availability')
   @RequireScopes(PARTNER_SCOPES.AvailabilityRead)
   @ApiOperation({ summary: 'Availability + nightly rates for a stay period' })
-  availability(@Param('slug') slug: string, @Query() dto: ConnectAvailabilityDto, @Req() req: PartnerRequest,) {
+  availability(
+    @Param('slug') slug: string,
+    @Query() dto: ConnectAvailabilityDto,
+    @Req() req: PartnerRequest,
+  ) {
     return this.connectivity.availabilityFor(slug, dto, req.partner!.partnerId);
   }
 
@@ -209,7 +213,10 @@ export class ConnectivityController {
     @Req() req: PartnerRequest,
   ) {
     return this.connectivity.createReservation(
-      slug, dto, req.partner!.partnerId, req.headers['x-idempotency-key'],
+      slug,
+      dto,
+      req.partner!.partnerId,
+      req.headers['x-idempotency-key'],
     );
   }
 
@@ -266,7 +273,11 @@ export class ConnectivityController {
   @Get('hotels/:slug/reservations/:id/meals')
   @RequireScopes(PARTNER_SCOPES.ReservationsRead)
   @ApiOperation({ summary: 'Read the meal plan of a reservation' })
-  getReservationMeals(@Param('slug') slug: string, @Param('id') id: string, @Req() req: PartnerRequest) {
+  getReservationMeals(
+    @Param('slug') slug: string,
+    @Param('id') id: string,
+    @Req() req: PartnerRequest,
+  ) {
     return this.connectivity.getReservationMeals(slug, id, req.partner!.partnerId);
   }
 
@@ -302,7 +313,13 @@ export class ConnectivityController {
     @Body() dto: ConnectStayFactDto,
     @Req() req: PartnerRequest,
   ) {
-    return this.connectivity.recordStayFact(slug, id, req.partner!.partnerId, 'CHECKED_OUT', dto.at);
+    return this.connectivity.recordStayFact(
+      slug,
+      id,
+      req.partner!.partnerId,
+      'CHECKED_OUT',
+      dto.at,
+    );
   }
 
   /* Э6 · Зеркало закупочных цен договора. PUT, а не POST: приложение одно на
@@ -394,8 +411,20 @@ export class ConnectivityController {
   @RequireScopes(PARTNER_SCOPES.ReservationsWrite)
   @HttpCode(204)
   @ApiOperation({ summary: 'Passenger asks for a better room' })
-  async setUpgradeWish(@Param('slug') slug: string, @Param('id') id: string, @Body() dto: { want?: boolean }, @Req() req: PartnerRequest) {
+  async setUpgradeWish(
+    @Param('slug') slug: string,
+    @Param('id') id: string,
+    @Body() dto: { want?: boolean },
+    @Req() req: PartnerRequest,
+  ) {
     await this.connectivity.setUpgradeWish(slug, id, dto.want === true, req.partner!.partnerId);
+  }
+
+  @Get('report-keys')
+  @RequireScopes(PARTNER_SCOPES.HotelsWrite)
+  @ApiOperation({ summary: 'Check report key synchronization for active hotels' })
+  getReportKeys(@Req() req: PartnerRequest) {
+    return this.connectivity.listReportKeys(req.partner!.partnerId);
   }
 
   @Put('hotels/:slug/reports-key')
