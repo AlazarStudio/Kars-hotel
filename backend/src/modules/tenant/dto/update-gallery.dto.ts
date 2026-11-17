@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ArrayMaxSize, IsArray, IsString, MaxLength } from 'class-validator';
+import { IsArray, IsString, MaxLength } from 'class-validator';
 
 /**
  * Replace the hotel gallery with an explicit ordered list of image URLs.
@@ -11,8 +11,10 @@ import { ArrayMaxSize, IsArray, IsString, MaxLength } from 'class-validator';
  */
 export class UpdateGalleryDto {
   @ApiProperty({ type: [String], description: 'Ordered image URLs; first is the cover.' })
+  /* Потолка в 30 здесь НЕТ намеренно (17.11.2026): правило живёт в
+     gallery-limit.ts и разрешает уменьшать список, даже если он длиннее 30 —
+     иначе отель с 37 фотографиями не может удалить ни одной. */
   @IsArray()
-  @ArrayMaxSize(30)
   @IsString({ each: true })
   @MaxLength(500, { each: true })
   photos!: string[];

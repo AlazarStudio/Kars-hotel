@@ -1,11 +1,13 @@
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'node:crypto';
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { MAX_GALLERY_PHOTOS, galleryCanAdd, galleryWriteDecision } from './gallery-limit';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TenantContext } from '../../common/context/tenant-context';
 import { StorageService, UploadedFile } from '../../common/storage/storage.service';
@@ -175,8 +177,15 @@ export class TenantService {
    */
   async addGalleryPhoto(file: UploadedFile) {
     const tenantId = TenantContext.getTenantIdOrThrow();
-    const key = await this.storage.uploadTenantGalleryPhoto(tenantId, file);
     const current = await this.readGallery(tenantId);
+    /* Потолок стоит и на добавлении (17.11.2026): без него галерея росла сверх
+       30, а удаление упиралось в тот же потолок — отель запирался сам с собой. */
+    if (!galleryCanAdd(current.length)) {
+      throw new BadRequestException(
+        `В галерее уже ${MAX_GALLERY_PHOTOS} фотографий — сначала удалите лишние.`,
+      );
+    }
+    const key = await this.storage.uploadTenantGalleryPhoto(tenantId, file);
     return this.present(
       await this.prisma.admin.tenant.update({
         where: { id: tenantId },
@@ -203,6 +212,17 @@ export class TenantService {
       );
     }
     const current = await this.readGallery(tenantId);
+    /* Потолок проверяется ЗДЕСЬ, а не в DTO (17.11.2026): DTO отказывал любой
+       записи длиннее 30, поэтому отель с 37 фото не мог удалить ни одного —
+       «убрать одно» всё равно присылало 36. Уменьшать разрешаем всегда. */
+    const decision = galleryWriteDecision(next.length, current.length);
+    if (decision !== 'ok') {
+      throw new BadRequestException(
+        decision === 'add-at-limit'
+          ? `В галерее уже ${MAX_GALLERY_PHOTOS} фотографий — сначала удалите лишние.`
+          : `В галерее может быть не больше ${MAX_GALLERY_PHOTOS} фотографий.`,
+      );
+    }
     const updated = await this.prisma.admin.tenant.update({
       where: { id: tenantId },
       data: { galleryPhotos: next },
