@@ -68,6 +68,67 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+  # Сервер PMS (:3001) — поднимается сам после перезагрузки компьютера, без
+  # `pnpm start:dev` в терминале (17.11.2026). Собирается из backend/Dockerfile:
+  # в образе код на момент сборки; после правок в backend —
+  #   docker compose -f docker-compose.dev.yml up -d --build api
+  # Настройки — из backend/.env. Адреса «localhost» из него внутри контейнера
+  # не работают, поэтому на старте переписываются на имена контейнеров и
+  # host.docker.internal (Kars Avia на этом же компьютере). Пока контейнер
+  # запущен, `start:dev` вручную не запускать — один порт :3001.
+  api:
+    build:
+      context: ./backend
+    image: kars-hotel-api-dev
+    container_name: kars-hotel-api
+    restart: unless-stopped
+    env_file: ./backend/.env
+    environment:
+      NODE_ENV: development
+      PORT: "3001"
+    ports:
+      - "3001:3001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - |
+        to_docker() { echo "$$1" | sed -e 's#localhost:5442#postgres:5432#g' -e 's#127.0.0.1:5442#postgres:5432#g' -e 's#localhost:6380#redis:6379#g' -e 's#127.0.0.1:6380#redis:6379#g' -e 's#localhost#host.docker.internal#g' -e 's#127.0.0.1#host.docker.internal#g'; }
+        export DATABASE_URL="$$(to_docker "$$DATABASE_URL")"
+        export DATABASE_URL_MIGRATIONS="$$(to_docker "$$DATABASE_URL_MIGRATIONS")"
+        export REDIS_URL="$$(to_docker "$$REDIS_URL")"
+        export S3_ENDPOINT="$$(to_docker "$$S3_ENDPOINT")"
+        export PARTNER_WEBHOOK_URL="$$(to_docker "$$PARTNER_WEBHOOK_URL")"
+        export PARTNER_REPORTS_URL="$$(to_docker "$$PARTNER_REPORTS_URL")"
+        export SMTP_HOST=mailhog
+        exec node dist/src/main
+
+  # Кабинет гостиницы (:5273) — собранный, раздаётся Caddy из образа
+  # frontend/Dockerfile. Порт тот же, что у `vite dev`: на него ведут ссылки
+  # «Открыть Hotel PMS» из Kars Avia (HOTEL_PMS_WEB_URL). Адрес API вшивается
+  # в сборку — браузер ходит на сервер PMS напрямую, :3001. После правок во
+  # frontend — `docker compose -f docker-compose.dev.yml up -d --build web`;
+  # `pnpm dev` вручную, пока он запущен, не запускать — один порт.
+  web:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: http://127.0.0.1:3001/api
+        VITE_PRIVACY_URL: https://app.karsavia.ru/privacy
+    image: kars-hotel-web-dev
+    container_name: kars-hotel-web
+    restart: unless-stopped
+    ports:
+      - "5273:8080"
+    depends_on:
+      - api
+
 volumes:
   postgres_data:
   redis_data:
