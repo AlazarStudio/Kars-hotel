@@ -1,0 +1,16 @@
+# Подключение PMS к кластеру базы (Patroni, три узла). Добавляется ПОСЛЕДНИМ
+# в список -f при каждом выпуске на vk-hotel — без него выпуск поднимет
+# прежнюю одиночную базу из тома pgdata мимо кластера.
+# Сервис postgres перестаёт быть базой: под тем же именем работает HAProxy,
+# api и backup по-прежнему ходят на postgres:5432.
+services:
+  postgres:
+    image: haproxy:3.2-alpine
+    environment: !reset {}
+    volumes: !override
+      - ./cluster/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'nc -z 127.0.0.1 5432']
+      interval: 5s
+      timeout: 3s
+      retries: 5

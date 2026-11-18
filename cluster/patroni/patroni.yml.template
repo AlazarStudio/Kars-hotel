@@ -1,0 +1,67 @@
+# Patroni узла базы Kars Hotel PMS. Готовый файл собирает render.sh — секреты
+# в репозиторий не попадают. Образец — кластер Авии (scope karsavia), но порты
+# свои: PostgreSQL 5442, REST 8018, etcd 2479 — на офисном узле рядом работает
+# база Авии на 5432/8008/2379.
+scope: kars-hotel
+name: @NAME@
+restapi:
+  listen: @IP@:8018
+  connect_address: @IP@:8018
+  authentication: {username: patroni, password: "@PATRONI_PASSWORD@"}
+ctl:
+  authentication: {username: patroni, password: "@PATRONI_PASSWORD@"}
+etcd3:
+  hosts: 10.77.0.4:2479,10.77.0.5:2479,10.77.0.3:2479
+bootstrap:
+  dcs:
+    ttl: 30
+    loop_wait: 10
+    retry_timeout: 10
+    maximum_lag_on_failover: 1048576
+    # Синхронная — pms-tw; при его недоступности Patroni снимает синхронность
+    # сам (strict выключен), запись не встаёт.
+    synchronous_mode: true
+    synchronous_mode_strict: false
+    failsafe_mode: true
+    postgresql:
+      use_pg_rewind: true
+      parameters:
+        wal_level: replica
+        hot_standby: "on"
+        wal_log_hints: "on"
+        max_wal_senders: 10
+        max_replication_slots: 10
+        wal_keep_size: 256MB
+        max_slot_wal_keep_size: 1GB
+        max_connections: 100
+        shared_buffers: 256MB
+        password_encryption: scram-sha-256
+  # Новую пустую базу Patroni не создаёт НИКОГДА: кластер начинается с готовой
+  # базы vk-hotel (Patroni берёт существующий каталог), реплики делают
+  # pg_basebackup. Если pms-tw или pms-local по ошибке запустят раньше pms-vk,
+  # initdb дал бы пустой кластер-самозванец, к которому база vk-hotel уже не
+  # присоединится, — поэтому способ начальной загрузки заведомо проваливается.
+  method: no_initdb
+  no_initdb:
+    command: /bin/false
+    no_params: true
+postgresql:
+  listen: @IP@,127.0.0.1:5442
+  connect_address: @IP@:5442
+  data_dir: /var/lib/postgresql/data/pg16
+  pg_hba:
+    - local all all trust
+    - local replication all trust
+    - host replication replicator 127.0.0.1/32 scram-sha-256
+    - host all all 127.0.0.1/32 scram-sha-256
+    - host replication replicator 10.77.0.0/24 scram-sha-256
+    - host all all 10.77.0.0/24 scram-sha-256
+    # HAProxy и приложение PMS в сетях docker (на vk-hotel — 172.18.0.0/16,
+    # подсеть compose не закреплена, поэтому весь диапазон docker).
+    - host all all 172.16.0.0/12 scram-sha-256
+  authentication:
+    superuser: {username: postgres, password: "@SUPERUSER_PASSWORD@"}
+    replication: {username: replicator, password: "@REPLICATOR_PASSWORD@"}
+    rewind: {username: rewinder, password: "@REWINDER_PASSWORD@"}
+tags:
+@TAGS@
