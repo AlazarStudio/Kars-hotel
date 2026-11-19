@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Modal from '../../shared/Modal';
 import formClasses from '../../shared/Form.module.css';
 import {
@@ -49,9 +49,12 @@ const EMPTY = {
  *   onClose: () => void
  *   onSubmit: (payload) => Promise<void>
  *   onSubmitMany: (payload) => Promise<{ created, skipped, skippedArchived }>  (пачка, только при создании)
+ *   onOpenCategory: (roomType, draft) => void  (настройки категории; draft — несохранённые поля номера)
+ *   draft: values | undefined  (вернуть несохранённые поля после окна категории)
+ *   focusField: 'capacity' | undefined  (поле, к которому привёл переход: в фокусе и подсвечено)
  *   onDelete: (() => void) | undefined  (only when editing; opens the confirm dialog)
  */
-export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTypeId, onClose, onSubmit, onSubmitMany, onDelete }) {
+export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTypeId, onClose, onSubmit, onSubmitMany, onOpenCategory, draft, focusField, onDelete }) {
   const [values, setValues] = useState(EMPTY);
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState(null);
@@ -61,21 +64,38 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
      лежит в удалённых. */
   const [mode, setMode] = useState('one');
   const [result, setResult] = useState(null);
+  const [highlight, setHighlight] = useState(null);
+  const capacityRef = useRef(null);
 
   /* Сброс режима и итога — только при открытии окна, а не в общем эффекте
      ниже: тот срабатывает и при обновлении категорий, а пачка их обновляет
      (число номеров) — итог исчезал бы, едва появившись. */
   useEffect(() => {
     if (open) {
-      setMode('one');
+      setMode(draft?.mode ?? 'one');
       setResult(null);
+      setHighlight(focusField ?? null);
     }
-  }, [open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, focusField]);
+
+  useEffect(() => {
+    if (!open || focusField !== 'capacity') return undefined;
+    const t = setTimeout(() => {
+      const input = capacityRef.current?.querySelector('input');
+      capacityRef.current?.scrollIntoView({ block: 'center' });
+      input?.focus();
+      input?.select?.();
+    }, 50);
+    return () => clearTimeout(t);
+  }, [open, focusField]);
 
   useEffect(() => {
     if (open) {
       setValues(
-        editing
+        draft
+          ? draft
+          : editing
           ? {
               roomTypeId: editing.roomTypeId,
               number: editing.number,
@@ -98,9 +118,22 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
       setErrors({});
       setServerError(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editing, defaultRoomTypeId, draft]);
+
+  /* Категории пришли позже открытия окна — подставить первую. Значения формы
+     при обновлении категорий не сбрасываем: поднятие максимума их обновляет. */
+  useEffect(() => {
+    if (open && !editing && roomTypes?.length) {
+      setValues((p) => (p.roomTypeId ? p : { ...p, roomTypeId: defaultRoomTypeId ?? roomTypes[0].id }));
+    }
   }, [open, editing, defaultRoomTypeId, roomTypes]);
 
   const set = (k, v) => setValues((p) => ({ ...p, [k]: v }));
+
+  const category = roomTypes?.find((rt) => rt.id === values.roomTypeId);
+  const places = Number(values.capacity) || 1;
+  const overCategory = !!category && places > category.maxOccupancy;
 
   const many = !editing && mode === 'many';
   const rangeOk = many && Object.keys(validateRange(values)).length === 0;
@@ -127,6 +160,7 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
     const beds = BEDS.map(([k]) => Number(values[k]));
     if (beds.some((n) => !Number.isInteger(n) || n < 0 || n > 20)) e.beds = 'Целое число от 0 до 20';
     else if (beds[0] + beds[1] + beds[2] === 0) e.beds = 'Укажите хотя бы одну кровать или диван';
+    if (overCategory) e.capacity = 'Мест больше, чем вмещает категория';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -245,6 +279,15 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
               ))}
             </Select>
             {errors.roomTypeId && <div className={formClasses.fieldError}>{errors.roomTypeId}</div>}
+            {/* Перейти к категории, не меняя её у номера (19.11.2026): поля
+                номера вернутся, когда окно категории закроют. */}
+            {category && onOpenCategory && (
+              <div className={formClasses.hint}>
+                <button type="button" className={formClasses.linkBtn} onClick={() => onOpenCategory(category, { ...values, mode })}>
+                  Настройки категории
+                </button>
+              </div>
+            )}
           </div>
           {!many && (
             <div className={formClasses.field}>
@@ -334,14 +377,21 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
               onChange={(v) => set('floor', (v == null ? '' : String(v)))}
             />
           </div>
-          <div className={formClasses.field}>
+          <div
+            ref={capacityRef}
+            className={`${formClasses.field} ${highlight === 'capacity' ? formClasses.fieldHighlight : ''}`}
+          >
             <label className={formClasses.label}>Мест</label>
             <NumberInput decimal={false}
               className={formClasses.input}
               min={1}
               max={10}
               value={values.capacity}
-              onChange={(v) => set('capacity', (v == null ? '' : String(v)))}
+              onChange={(v) => {
+                set('capacity', v == null ? '' : String(v));
+                setHighlight(null);
+              }}
+              aria-invalid={errors.capacity ? 'true' : 'false'}
             />
           </div>
           <div className={formClasses.field}>
@@ -357,6 +407,24 @@ export default function RoomFormModal({ open, editing, roomTypes, defaultRoomTyp
             </Select>
           </div>
         </div>
+
+        {overCategory && (
+          <div className={formClasses.field}>
+          {/* Мест больше, чем вмещает категория (19.11.2026): сервер такое не
+              сохранит — продажа и цены считают людей по категории. Максимум
+              меняют только в самой категории, не отсюда. */}
+          <div className={formClasses.alert}>
+            {`Категория «${category.name}» вмещает до ${category.maxOccupancy} чел. — ${places}-е место продать будет нельзя. Уменьшите число мест или поднимите максимум в настройках категории.`}
+            {onOpenCategory && (
+              <div style={{ marginTop: 8 }}>
+                <button type="button" className={formClasses.btnSecondary} onClick={() => onOpenCategory(category, { ...values, mode })}>
+                  Настройки категории
+                </button>
+              </div>
+            )}
+          </div>
+          </div>
+        )}
 
         {/* Кровати числами (27.10.2026): из одного списка нельзя было сказать
             «двуспальная и диван». Доп. кровати — здесь, у номера: в одной

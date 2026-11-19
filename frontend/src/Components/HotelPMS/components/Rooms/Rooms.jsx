@@ -62,7 +62,9 @@ function Rooms() {
   const archived = archivedQ.data ?? [];
 
   // ── Modal state ────────────────────────────────────────────────────────────
-  const [rtModal, setRtModal] = useState({ open: false, editing: null });
+  /* returnTo — окно номера, из которого пришли в категорию (19.11.2026): после
+     категории возвращаемся к номеру с его несохранёнными полями. */
+  const [rtModal, setRtModal] = useState({ open: false, editing: null, returnTo: null });
   const [roomModal, setRoomModal] = useState({
     open: false,
     editing: null,
@@ -463,7 +465,24 @@ function Rooms() {
       <RoomTypeFormModal
         open={rtModal.open}
         editing={rtModal.editing}
-        onClose={() => setRtModal({ open: false, editing: null })}
+        draft={rtModal.draft}
+        rooms={rtModal.editing ? rooms.filter((r) => r.roomTypeId === rtModal.editing.id) : []}
+        onEditRoom={(room, draft) => {
+          const category = rtModal.editing;
+          setRtModal({ open: false, editing: null, returnTo: null });
+          setRoomModal({
+            open: true,
+            editing: room,
+            defaultRoomTypeId: undefined,
+            focusField: 'capacity',
+            returnTo: { categoryId: category.id, draft },
+          });
+        }}
+        onClose={() => {
+          const back = rtModal.returnTo;
+          setRtModal({ open: false, editing: null, returnTo: null });
+          if (back) setRoomModal({ open: true, editing: back.editing, defaultRoomTypeId: undefined, draft: back.draft });
+        }}
         onSubmit={(payload) =>
           rtModal.editing
             ? updateRT.mutateAsync({ id: rtModal.editing.id, payload })
@@ -476,13 +495,26 @@ function Rooms() {
         editing={roomModal.editing}
         roomTypes={roomTypes}
         defaultRoomTypeId={roomModal.defaultRoomTypeId}
-        onClose={() => setRoomModal({ open: false, editing: null, defaultRoomTypeId: undefined })}
+        onClose={() => {
+          /* Пришли из категории — возвращаемся в неё с её несохранёнными полями,
+             как и в обратную сторону. Категорию берём свежую: номер мог её поменять. */
+          const back = roomModal.returnTo;
+          setRoomModal({ open: false, editing: null, defaultRoomTypeId: undefined });
+          const category = back && roomTypes.find((rt) => rt.id === back.categoryId);
+          if (category) setRtModal({ open: true, editing: category, returnTo: null, draft: back.draft });
+        }}
         onSubmit={(payload) =>
           roomModal.editing
             ? updateRoom.mutateAsync({ id: roomModal.editing.id, payload })
             : createRoom.mutateAsync(payload)
         }
         onSubmitMany={(payload) => createRooms.mutateAsync(payload)}
+        draft={roomModal.draft}
+        focusField={roomModal.focusField}
+        onOpenCategory={(category, draft) => {
+          setRtModal({ open: true, editing: category, returnTo: { editing: roomModal.editing, draft } });
+          setRoomModal({ open: false, editing: null, defaultRoomTypeId: undefined });
+        }}
         onDelete={() => {
           const room = roomModal.editing;
           setRoomModal({ open: false, editing: null, defaultRoomTypeId: undefined });

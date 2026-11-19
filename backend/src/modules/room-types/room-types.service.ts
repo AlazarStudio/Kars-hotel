@@ -95,6 +95,9 @@ export class RoomTypesService {
         dto.baseOccupancy ?? existing.baseOccupancy,
         dto.maxOccupancy ?? existing.maxOccupancy,
       );
+      if (dto.maxOccupancy != null && dto.maxOccupancy < existing.maxOccupancy) {
+        await this.assertRoomsFit(id, dto.maxOccupancy);
+      }
     }
     try {
       const updated = await this.prisma.forTenant((tx) =>
@@ -211,6 +214,25 @@ export class RoomTypesService {
   private assertOccupancyConsistent(baseOccupancy?: number, maxOccupancy?: number) {
     if (baseOccupancy != null && maxOccupancy != null && maxOccupancy < baseOccupancy) {
       throw new BadRequestException('maxOccupancy не может быть меньше baseOccupancy');
+    }
+  }
+
+  /* Максимум категории не опускается ниже мест её номеров (19.11.2026) —
+     обратная сторона rooms/room-capacity.ts. Архивные номера не держат:
+     их проверяет восстановление. */
+  private async assertRoomsFit(id: string, maxOccupancy: number) {
+    const rooms = await this.prisma.forTenant((tx) =>
+      tx.room.findMany({
+        where: { roomTypeId: id, archivedAt: null, capacity: { gt: maxOccupancy } },
+        select: { number: true, capacity: true },
+        orderBy: { number: 'asc' },
+      }),
+    );
+    if (rooms.length) {
+      const list = rooms.map((r) => `№${r.number} (${r.capacity})`).join(', ');
+      throw new ConflictException(
+        `В категории есть номера, где мест больше ${maxOccupancy}: ${list}. Сначала уменьшите число мест в них.`,
+      );
     }
   }
 

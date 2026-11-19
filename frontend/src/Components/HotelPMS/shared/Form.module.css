@@ -196,3 +196,31 @@
 @media (max-width: 768px) {
   .row, .row3, .row4 { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Поле, к которому привёл переход из другого окна (19.11.2026): из категории —
+   к местам номера, мешающим уменьшить её максимум. Горит, пока поле не тронут. */
+.fieldHighlight .label {
+  color: #1E88E5;
+}
+
+.fieldHighlight .input {
+  border-color: #1E88E5;
+  box-shadow: 0 0 0 3px rgba(30, 136, 229, 0.25);
+}
+
+/* Переход в соседнее окно внутри текста формы: номер, категория. */
+.linkBtn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #1E88E5;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.linkBtn:hover {
+  color: #1565C0;
+}

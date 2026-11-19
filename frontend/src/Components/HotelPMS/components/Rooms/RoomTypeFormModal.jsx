@@ -27,8 +27,12 @@ const readPhotos = (rt) => (Array.isArray(rt?.photos) ? rt.photos.filter((p) => 
  *   editing: RoomType | null  (null = create mode)
  *   onClose: () => void
  *   onSubmit: (payload) => Promise<void>
+ *   rooms: Room[]  (номера этой категории — для проверки максимума)
+ *   onEditRoom: (room, draft) => void  (перейти к номеру, который мешает уменьшить максимум;
+ *     draft — несохранённые поля категории, вернутся после окна номера)
+ *   draft: values | undefined
  */
-export default function RoomTypeFormModal({ open, editing, onClose, onSubmit }) {
+export default function RoomTypeFormModal({ open, editing, onClose, onSubmit, rooms = [], onEditRoom, draft }) {
   const [values, setValues] = useState(EMPTY);
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState(null);
@@ -49,7 +53,9 @@ export default function RoomTypeFormModal({ open, editing, onClose, onSubmit }) 
   useEffect(() => {
     if (open) {
       setValues(
-        editing
+        draft
+          ? draft
+          : editing
           ? {
               code: editing.code,
               name: editing.name,
@@ -70,9 +76,15 @@ export default function RoomTypeFormModal({ open, editing, onClose, onSubmit }) 
       setServerError(null);
       setPhotoError(null);
     }
-  }, [open, editing]);
+  }, [open, editing, draft]);
 
   const set = (k, v) => setValues((p) => ({ ...p, [k]: v }));
+
+  /* Номера, в которых мест больше нового максимума (19.11.2026): сервер такой
+     максимум не примет. Показываем их сразу и ссылками — к месту правки. */
+  const tooBig = editing
+    ? rooms.filter((r) => r.capacity > Number(values.maxOccupancy))
+    : [];
 
   const handlePickFile = async (ev) => {
     const files = Array.from(ev.target.files ?? []);
@@ -144,6 +156,7 @@ export default function RoomTypeFormModal({ open, editing, onClose, onSubmit }) 
       e.baseOccupancy = 'От 1 до 10';
     if (values.maxOccupancy < values.baseOccupancy)
       e.maxOccupancy = 'Не меньше базовой';
+    else if (tooBig.length) e.maxOccupancy = 'Меньше мест в номерах категории';
     if (values.basePrice < 0) e.basePrice = 'Не отрицательно';
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -283,6 +296,23 @@ export default function RoomTypeFormModal({ open, editing, onClose, onSubmit }) 
             {errors.maxOccupancy && <div className={formClasses.fieldError}>{errors.maxOccupancy}</div>}
           </div>
         </div>
+        {tooBig.length > 0 && (
+          <div className={formClasses.field}>
+            <div className={formClasses.alert}>
+              Мест больше {Number(values.maxOccupancy)} в номерах:{' '}
+              {tooBig.map((r, i) => (
+                <span key={r.id}>
+                  {i > 0 && ', '}
+                  <button type="button" className={formClasses.linkBtn} onClick={() => onEditRoom?.(r, values)}>
+                    №{r.number}
+                  </button>{' '}
+                  ({r.capacity})
+                </span>
+              ))}
+              . Сначала уменьшите число мест в них.
+            </div>
+          </div>
+        )}
 
         <div className={formClasses.field}>
           <label className={formClasses.label}>Базовая цена за ночь (₽)</label>

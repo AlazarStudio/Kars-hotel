@@ -10,6 +10,7 @@ import {
 } from '../../common/prisma/prisma-error';
 import { TenantContext } from '../../common/context/tenant-context';
 import { bedsForCreate, bedsForUpdate } from './room-beds';
+import { assertRoomFitsCategory } from './room-capacity';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 import { CreateManyRoomsDto } from './dto/create-many-rooms.dto';
@@ -78,9 +79,13 @@ export class RoomsService {
     // Verify the RoomType belongs to this tenant (RLS will block otherwise,
     // but we want a clear 404 message before going to insert).
     const rt = await this.prisma.forTenant((tx) =>
-      tx.roomType.findUnique({ where: { id: dto.roomTypeId }, select: { id: true } }),
+      tx.roomType.findUnique({
+        where: { id: dto.roomTypeId },
+        select: { id: true, name: true, maxOccupancy: true },
+      }),
     );
     if (!rt) throw new NotFoundException('Категория номера не найдена');
+    assertRoomFitsCategory(dto.capacity ?? 1, rt);
 
     const tenantId = TenantContext.getTenantIdOrThrow();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -143,9 +148,13 @@ export class RoomsService {
    */
   async createMany(dto: CreateManyRoomsDto) {
     const rt = await this.prisma.forTenant((tx) =>
-      tx.roomType.findUnique({ where: { id: dto.roomTypeId }, select: { id: true } }),
+      tx.roomType.findUnique({
+        where: { id: dto.roomTypeId },
+        select: { id: true, name: true, maxOccupancy: true },
+      }),
     );
     if (!rt) throw new NotFoundException('Категория номера не найдена');
+    assertRoomFitsCategory(dto.capacity ?? 1, rt);
 
     const tenantId = TenantContext.getTenantIdOrThrow();
     const prefix = dto.prefix ?? '';
@@ -226,16 +235,24 @@ export class RoomsService {
     /* Архивный номер не правится: правкой (isActive) его можно было бы
        незаметно вернуть в продажу мимо «Восстановить». */
     const current = await this.prisma.forTenant((tx) =>
-      tx.room.findUnique({ where: { id }, select: { archivedAt: true } }),
+      tx.room.findUnique({
+        where: { id },
+        select: { archivedAt: true, capacity: true, roomTypeId: true },
+      }),
     );
     if (current?.archivedAt) {
       throw new ConflictException('Номер в архиве удалённых — сначала восстановите его');
     }
-    if (dto.roomTypeId) {
+    if (dto.roomTypeId || (current && dto.capacity != null)) {
+      const roomTypeId = dto.roomTypeId ?? current?.roomTypeId;
       const rt = await this.prisma.forTenant((tx) =>
-        tx.roomType.findUnique({ where: { id: dto.roomTypeId }, select: { id: true } }),
+        tx.roomType.findUnique({
+          where: { id: roomTypeId },
+          select: { id: true, name: true, maxOccupancy: true },
+        }),
       );
       if (!rt) throw new NotFoundException('Категория номера не найдена');
+      assertRoomFitsCategory(dto.capacity ?? current?.capacity ?? 1, rt);
     }
     let updated: unknown;
     try {
@@ -437,11 +454,15 @@ export class RoomsService {
           number: true,
           archivedAt: true,
           archivedBy: true,
-          roomType: { select: { id: true, code: true, archivedAt: true } },
+          capacity: true,
+          roomType: { select: { id: true, code: true, name: true, maxOccupancy: true, archivedAt: true } },
         },
       });
       if (!room) throw new NotFoundException('Номер не найден');
       if (!room.archivedAt) return { room, changed: false };
+      /* Пока номер лежал в архиве, максимум категории могли опустить: тупика
+         нет — его можно поднять и восстановить номер снова. */
+      assertRoomFitsCategory(room.capacity, room.roomType);
       /* Категория номера удалена (27.10.2026) — возвращаем и её: иначе номер
          восстановился бы вне номерного фонда (фонд показывает номера по живым
          категориям), а завести такой номер заново не даёт архивный тёзка.
