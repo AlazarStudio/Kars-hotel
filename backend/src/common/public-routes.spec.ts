@@ -24,6 +24,7 @@ const ALLOWED: Record<string, string> = {
   'AuthController.ssoExchange': 'вход диспетчера — по одноразовому коду',
   'AuthController.registerTenant': 'закрыта: всегда 403 «по приглашению»',
   'HealthController.check': 'проверка живости без данных',
+  'DomainsController.status': 'живость адреса и список адресов PMS для редиректа по приоритету, без данных',
 };
 
 function controllers(): Array<new (...a: never[]) => unknown> {

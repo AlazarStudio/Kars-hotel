@@ -8,6 +8,7 @@ import App from './App.jsx'
 import '@fontsource-variable/inter'
 import './index.css'
 import { AuthProvider } from './auth/AuthContext'
+import { redirectToPrimary } from './lib/domainFailover'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -19,14 +20,21 @@ const queryClient = new QueryClient({
   },
 })
 
-ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
-      </QueryClientProvider>
-    </BrowserRouter>
-  </React.StrictMode>,
-)
+function render() {
+  ReactDOM.createRoot(document.getElementById('root')).render(
+    <React.StrictMode>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </QueryClientProvider>
+      </BrowserRouter>
+    </React.StrictMode>,
+  )
+}
+
+// Резервный адрес уходит на живой основной до первой отрисовки (domainFailover.js).
+redirectToPrimary().then((leaving) => {
+  if (!leaving) render()
+}, render)
